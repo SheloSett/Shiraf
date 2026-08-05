@@ -1,0 +1,132 @@
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { Menu } from "lucide-react";
+import { LogoWordmark } from "@/components/logo";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+
+const links = [
+  { to: "/", label: "Inicio" },
+  { to: "/servicios", label: "Servicios" },
+  { to: "/profesionales", label: "Profesionales" },
+  { to: "/contacto", label: "Contacto" },
+] as const;
+
+export function SiteHeader() {
+  const { user, isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  async function signOut() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  }
+
+  return (
+    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
+      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-5">
+        <Link to="/" className="shrink-0">
+          <LogoWordmark />
+        </Link>
+
+        <nav className="hidden items-center gap-9 md:flex">
+          {links.map((l) => (
+            <Link
+              key={l.to}
+              to={l.to}
+              activeOptions={{ exact: l.to === "/" }}
+              activeProps={{ className: "text-foreground" }}
+              inactiveProps={{ className: "text-muted-foreground" }}
+              className="text-[13px] tracking-wide transition-colors hover:text-foreground"
+            >
+              {l.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="hidden sm:inline-flex">
+                  Mi cuenta
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem asChild>
+                  <Link to="/mi-cuenta">Mi perfil y turnos</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/reservar">Reservar turno</Link>
+                </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/admin">Panel de administración</Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={signOut}>Cerrar sesión</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+              <Link to="/auth">Ingresar</Link>
+            </Button>
+          )}
+
+          <Button asChild size="sm">
+            <Link to="/reservar">Reservar turno</Link>
+          </Button>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden" aria-label="Abrir menú">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-72">
+              <nav className="mt-10 flex flex-col gap-5">
+                {links.map((l) => (
+                  <Link key={l.to} to={l.to} className="text-base text-foreground">
+                    {l.label}
+                  </Link>
+                ))}
+                <div className="my-2 h-px bg-border" />
+                {user ? (
+                  <>
+                    <Link to="/mi-cuenta" className="text-base">
+                      Mi perfil y turnos
+                    </Link>
+                    {isAdmin && (
+                      <Link to="/admin" className="text-base">
+                        Panel de administración
+                      </Link>
+                    )}
+                    <button onClick={signOut} className="text-left text-base text-muted-foreground">
+                      Cerrar sesión
+                    </button>
+                  </>
+                ) : (
+                  <Link to="/auth" className="text-base">
+                    Ingresar
+                  </Link>
+                )}
+              </nav>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </div>
+    </header>
+  );
+}
