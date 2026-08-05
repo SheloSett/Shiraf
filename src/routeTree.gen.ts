@@ -22,6 +22,7 @@ import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
 import { Route as AuthenticatedAdminServiciosRouteImport } from './routes/_authenticated/admin.servicios'
+import { Route as AuthenticatedAdminStockRouteImport } from './routes/_authenticated/admin.stock'
 import { Route as AuthenticatedAdminTurnosRouteImport } from './routes/_authenticated/admin.turnos'
 
 const IndexRoute = IndexRouteImport.update({
@@ -91,6 +92,11 @@ const AuthenticatedAdminServiciosRoute =
     path: '/servicios',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminStockRoute = AuthenticatedAdminStockRouteImport.update({
+  id: '/stock',
+  path: '/stock',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
 const AuthenticatedAdminTurnosRoute =
   AuthenticatedAdminTurnosRouteImport.update({
     id: '/turnos',
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
+  '/admin/stock': typeof AuthenticatedAdminStockRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
 }
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
+  '/admin/stock': typeof AuthenticatedAdminStockRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
 }
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/_authenticated/admin/servicios': typeof AuthenticatedAdminServiciosRoute
+  '/_authenticated/admin/stock': typeof AuthenticatedAdminStockRoute
   '/_authenticated/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
 }
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/admin/clientes'
     | '/admin/profesionales'
     | '/admin/servicios'
+    | '/admin/stock'
     | '/admin/turnos'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/admin/clientes'
     | '/admin/profesionales'
     | '/admin/servicios'
+    | '/admin/stock'
     | '/admin/turnos'
     | '/admin'
   id:
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/clientes'
     | '/_authenticated/admin/profesionales'
     | '/_authenticated/admin/servicios'
+    | '/_authenticated/admin/stock'
     | '/_authenticated/admin/turnos'
     | '/_authenticated/admin/'
   fileRoutesById: FileRoutesById
@@ -294,6 +306,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminServiciosRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/stock': {
+      id: '/_authenticated/admin/stock'
+      path: '/stock'
+      fullPath: '/admin/stock'
+      preLoaderRoute: typeof AuthenticatedAdminStockRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/turnos': {
       id: '/_authenticated/admin/turnos'
       path: '/turnos'
@@ -308,6 +327,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
   AuthenticatedAdminProfesionalesRoute: typeof AuthenticatedAdminProfesionalesRoute
   AuthenticatedAdminServiciosRoute: typeof AuthenticatedAdminServiciosRoute
+  AuthenticatedAdminStockRoute: typeof AuthenticatedAdminStockRoute
   AuthenticatedAdminTurnosRoute: typeof AuthenticatedAdminTurnosRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
@@ -316,6 +336,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
   AuthenticatedAdminProfesionalesRoute: AuthenticatedAdminProfesionalesRoute,
   AuthenticatedAdminServiciosRoute: AuthenticatedAdminServiciosRoute,
+  AuthenticatedAdminStockRoute: AuthenticatedAdminStockRoute,
   AuthenticatedAdminTurnosRoute: AuthenticatedAdminTurnosRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
