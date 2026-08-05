@@ -10,33 +10,195 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ContactoRouteImport } from './routes/contacto'
+import { Route as ProfesionalesRouteImport } from './routes/profesionales'
+import { Route as ServiciosRouteImport } from './routes/servicios'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated/mi-cuenta'
+import { Route as AuthenticatedReservarRouteImport } from './routes/_authenticated/reservar'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
+import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
+import { Route as AuthenticatedAdminServiciosRouteImport } from './routes/_authenticated/admin.servicios'
+import { Route as AuthenticatedAdminTurnosRouteImport } from './routes/_authenticated/admin.turnos'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactoRoute = ContactoRouteImport.update({
+  id: '/contacto',
+  path: '/contacto',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfesionalesRoute = ProfesionalesRouteImport.update({
+  id: '/profesionales',
+  path: '/profesionales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServiciosRoute = ServiciosRouteImport.update({
+  id: '/servicios',
+  path: '/servicios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
+  id: '/mi-cuenta',
+  path: '/mi-cuenta',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedReservarRoute = AuthenticatedReservarRouteImport.update({
+  id: '/reservar',
+  path: '/reservar',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const AuthenticatedAdminClientesRoute =
+  AuthenticatedAdminClientesRouteImport.update({
+    id: '/clientes',
+    path: '/clientes',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminProfesionalesRoute =
+  AuthenticatedAdminProfesionalesRouteImport.update({
+    id: '/profesionales',
+    path: '/profesionales',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminServiciosRoute =
+  AuthenticatedAdminServiciosRouteImport.update({
+    id: '/servicios',
+    path: '/servicios',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminTurnosRoute =
+  AuthenticatedAdminTurnosRouteImport.update({
+    id: '/turnos',
+    path: '/turnos',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/contacto': typeof ContactoRoute
+  '/profesionales': typeof ProfesionalesRoute
+  '/servicios': typeof ServiciosRoute
+  '/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/reservar': typeof AuthenticatedReservarRoute
+  '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
+  '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
+  '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
+  '/admin/': typeof AuthenticatedAdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/contacto': typeof ContactoRoute
+  '/profesionales': typeof ProfesionalesRoute
+  '/servicios': typeof ServiciosRoute
+  '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/reservar': typeof AuthenticatedReservarRoute
+  '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
+  '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
+  '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
+  '/admin': typeof AuthenticatedAdminIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/contacto': typeof ContactoRoute
+  '/profesionales': typeof ProfesionalesRoute
+  '/servicios': typeof ServiciosRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
+  '/_authenticated/reservar': typeof AuthenticatedReservarRoute
+  '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
+  '/_authenticated/admin/servicios': typeof AuthenticatedAdminServiciosRoute
+  '/_authenticated/admin/turnos': typeof AuthenticatedAdminTurnosRoute
+  '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/contacto'
+    | '/profesionales'
+    | '/servicios'
+    | '/admin'
+    | '/mi-cuenta'
+    | '/reservar'
+    | '/admin/clientes'
+    | '/admin/profesionales'
+    | '/admin/servicios'
+    | '/admin/turnos'
+    | '/admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/contacto'
+    | '/profesionales'
+    | '/servicios'
+    | '/mi-cuenta'
+    | '/reservar'
+    | '/admin/clientes'
+    | '/admin/profesionales'
+    | '/admin/servicios'
+    | '/admin/turnos'
+    | '/admin'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/contacto'
+    | '/profesionales'
+    | '/servicios'
+    | '/_authenticated/admin'
+    | '/_authenticated/mi-cuenta'
+    | '/_authenticated/reservar'
+    | '/_authenticated/admin/clientes'
+    | '/_authenticated/admin/profesionales'
+    | '/_authenticated/admin/servicios'
+    | '/_authenticated/admin/turnos'
+    | '/_authenticated/admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
+  ContactoRoute: typeof ContactoRoute
+  ProfesionalesRoute: typeof ProfesionalesRoute
+  ServiciosRoute: typeof ServiciosRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,22 +210,142 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contacto': {
+      id: '/contacto'
+      path: '/contacto'
+      fullPath: '/contacto'
+      preLoaderRoute: typeof ContactoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profesionales': {
+      id: '/profesionales'
+      path: '/profesionales'
+      fullPath: '/profesionales'
+      preLoaderRoute: typeof ProfesionalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/servicios': {
+      id: '/servicios'
+      path: '/servicios'
+      fullPath: '/servicios'
+      preLoaderRoute: typeof ServiciosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/mi-cuenta': {
+      id: '/_authenticated/mi-cuenta'
+      path: '/mi-cuenta'
+      fullPath: '/mi-cuenta'
+      preLoaderRoute: typeof AuthenticatedMiCuentaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/reservar': {
+      id: '/_authenticated/reservar'
+      path: '/reservar'
+      fullPath: '/reservar'
+      preLoaderRoute: typeof AuthenticatedReservarRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/clientes': {
+      id: '/_authenticated/admin/clientes'
+      path: '/clientes'
+      fullPath: '/admin/clientes'
+      preLoaderRoute: typeof AuthenticatedAdminClientesRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/profesionales': {
+      id: '/_authenticated/admin/profesionales'
+      path: '/profesionales'
+      fullPath: '/admin/profesionales'
+      preLoaderRoute: typeof AuthenticatedAdminProfesionalesRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/servicios': {
+      id: '/_authenticated/admin/servicios'
+      path: '/servicios'
+      fullPath: '/admin/servicios'
+      preLoaderRoute: typeof AuthenticatedAdminServiciosRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/turnos': {
+      id: '/_authenticated/admin/turnos'
+      path: '/turnos'
+      fullPath: '/admin/turnos'
+      preLoaderRoute: typeof AuthenticatedAdminTurnosRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
   }
 }
 
+interface AuthenticatedAdminRouteChildren {
+  AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
+  AuthenticatedAdminProfesionalesRoute: typeof AuthenticatedAdminProfesionalesRoute
+  AuthenticatedAdminServiciosRoute: typeof AuthenticatedAdminServiciosRoute
+  AuthenticatedAdminTurnosRoute: typeof AuthenticatedAdminTurnosRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+}
+
+const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
+  AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
+  AuthenticatedAdminProfesionalesRoute: AuthenticatedAdminProfesionalesRoute,
+  AuthenticatedAdminServiciosRoute: AuthenticatedAdminServiciosRoute,
+  AuthenticatedAdminTurnosRoute: AuthenticatedAdminTurnosRoute,
+  AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+}
+
+const AuthenticatedAdminRouteWithChildren =
+  AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
+
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
+  AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
+  AuthenticatedReservarRoute: typeof AuthenticatedReservarRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
+  AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
+  AuthenticatedReservarRoute: AuthenticatedReservarRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
+  ContactoRoute: ContactoRoute,
+  ProfesionalesRoute: ProfesionalesRoute,
+  ServiciosRoute: ServiciosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
