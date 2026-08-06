@@ -1,0 +1,44 @@
+# Dependencias y artefactos: se reconstruyen dentro de la imagen.
+node_modules
+.output
+.nitro
+.vinxi
+.tanstack
+.wrangler
+dist
+dist-ssr
+
+# Lockfile de npm: el build usa bun.lock. Tener los dos en el contexto invita a
+# que se compile con el equivocado.
+package-lock.json
+
+# Secretos: las VITE_* entran por build args, no copiando .env a la imagen.
+.env
+.env.*
+!.env.example
+
+# Git y herramientas locales.
+.git
+.gitignore
+.gitattributes
+.claude
+.vscode
+.idea
+.DS_Store
+
+# Logs
+*.log
+logs
+
+# Docs y config que no afectan el build.
+README.md
+DOCKER.md
+AGENTS.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+.prettierrc
+.prettierignore
+
+# Migraciones: se aplican contra Supabase, no van en la imagen de la app.
+supabase

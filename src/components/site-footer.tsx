@@ -1,17 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import { Instagram, MapPin, Phone } from "lucide-react";
-import { Logo } from "@/components/logo";
+import { LogoLockup } from "@/components/logo";
 
 export function SiteFooter() {
   return (
     <footer className="mt-24 surface-olive">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:grid-cols-3">
+        {/* Lockup completo: el fondo oliva del archivo se funde con la
+            superficie, así que no hace falta repetir el nombre ni la bajada. */}
         <div>
-          <Logo className="h-14 w-14" />
-          <p className="mt-4 font-display text-2xl tracking-[0.28em] text-primary-foreground">
-            SHIRAF
-          </p>
-          <p className="mt-2 text-sm text-primary-foreground/70">Calma, belleza y bienestar.</p>
+          <LogoLockup className="w-40" />
         </div>
 
         <div className="text-sm text-primary-foreground/80">

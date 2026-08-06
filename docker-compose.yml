@@ -1,0 +1,45 @@
+# Compose lee automáticamente el .env de esta carpeta para resolver los ${...}.
+# El .env que ya tenés en el repo trae las 6 variables que hacen falta.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Build args, no environment: se hornean en el bundle del navegador.
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?falta VITE_SUPABASE_URL en .env}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?falta VITE_SUPABASE_PUBLISHABLE_KEY en .env}
+        VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID:-}
+    image: shiraf-app:latest
+    container_name: shiraf-app
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      # Las usa el cliente Supabase del lado servidor (SSR) y el middleware de
+      # auth de TanStack Start, que leen process.env en runtime.
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+
+    # Publicado sólo en loopback: en el VPS ya tenés un reverse proxy para los
+    # otros dos sitios, así que este contenedor no debe quedar expuesto directo
+    # a internet. El proxy le pega a 127.0.0.1:3000.
+    # Para probar en tu máquina, "3000:3000" también sirve.
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    # La app es sin estado: no escribe en disco, todo vive en Supabase.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

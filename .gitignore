@@ -30,3 +30,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.lovable
+
+# El lockfile del repo es bun.lock. Un package-lock.json generado en Windows
+# rompe los builds en Linux por las dependencias opcionales de rollup/esbuild.
+package-lock.json
+
+.claude/

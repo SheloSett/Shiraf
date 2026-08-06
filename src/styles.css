@@ -52,7 +52,11 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --font-display: "Cormorant Garamond", Georgia, serif;
+  /* Didone de alto contraste, para acercarse al wordmark del logo. Cormorant
+     Garamond era un revival de Garamond: contraste bajo y formas blandas, otra
+     familia. Bodoni Moda es variable en tamaño óptico (6..96), así que las
+     hairlines se afinan solas a medida que crece el cuerpo. */
+  --font-display: "Bodoni Moda", "Didot", Georgia, serif;
   --font-sans: "Karla", ui-sans-serif, system-ui, sans-serif;
   --shadow-soft: var(--shadow-soft);
   --shadow-lift: var(--shadow-lift);
@@ -70,8 +74,9 @@
   --popover: oklch(0.99 0.004 95);
   --popover-foreground: oklch(0.28 0.024 130);
 
-  /* Verde oliva del logo */
-  --primary: oklch(0.4 0.032 128);
+  /* Verde oliva del logo. Croma subido de 0.032 a 0.048: a 0.032 se leía como
+     gris verdoso apagado, sobre todo en campos grandes de color. */
+  --primary: oklch(0.375 0.048 132);
   --primary-foreground: oklch(0.97 0.012 92);
 
   --secondary: oklch(0.93 0.014 100);
@@ -81,9 +86,9 @@
   --muted-foreground: oklch(0.52 0.02 120);
 
   /* Dorado del logo */
-  --accent: oklch(0.75 0.098 84);
+  --accent: oklch(0.755 0.112 83);
   --accent-foreground: oklch(0.28 0.03 110);
-  --gold: oklch(0.75 0.098 84);
+  --gold: oklch(0.755 0.112 83);
   --gold-soft: oklch(0.87 0.055 88);
 
   --destructive: oklch(0.55 0.19 25);
@@ -183,4 +188,110 @@
   height: 1px;
   width: 3.5rem;
   background-image: linear-gradient(to right, var(--gold), transparent);
+}
+
+/*
+ * ── Sistema editorial ────────────────────────────────────────────────────────
+ * Cormorant recién se luce en tamaños grandes. La distancia entre `display-hero`
+ * (hasta 11rem) y `text-eyebrow` (11px) es deliberada: ese salto enorme entre lo
+ * más grande y lo más chico es lo que hace que algo se lea como compuesto y no
+ * como una escala por defecto.
+ */
+
+/* Bodoni no baja de 400, y en display no lo necesita: el tamaño óptico ya
+   adelgaza las hairlines solo. */
+@utility display-hero {
+  font-family: var(--font-display);
+  font-size: clamp(3.5rem, 12vw, 10rem);
+  font-weight: 400;
+  line-height: 0.9;
+  letter-spacing: -0.012em;
+}
+
+@utility display-section {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 6.5vw, 5rem);
+  font-weight: 400;
+  line-height: 0.96;
+  letter-spacing: -0.008em;
+}
+
+
+/* Cifras del índice de tratamientos: monoespaciadas para que la columna quede
+   perfectamente alineada sin importar el dígito. */
+@utility numeral {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
+/* Grano sobre los campos de color. Rompe la planicie del color digital y da
+   sensación de papel — cuesta ~400 bytes y es de lo que más "caro" hace ver. */
+@utility grain {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.32;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+  }
+}
+
+/*
+ * Revelado al entrar en viewport. Lento y corto a propósito: el movimiento
+ * rápido se siente barato en este rubro.
+ *
+ * Va scopeado bajo `.js`, que agrega un script inline en el <head> antes del
+ * primer pintado. Sin esa guarda, el HTML del servidor sale con opacity:0 y el
+ * hero queda invisible si el JS falla o tarda. Con la guarda, sin JS el
+ * contenido simplemente se muestra estático.
+ */
+.js .reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 900ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.js .reveal.reveal-shown {
+  opacity: 1;
+  transform: none;
+}
+
+/* Entrada del panel de detalle al cambiar de tratamiento. Corta y con un
+   desplazamiento mínimo: sólo tiene que acusar el cambio, no llamar la atención. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.panel-in {
+  animation: panel-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .panel-in {
+    animation: none;
+  }
 }

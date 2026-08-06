@@ -12,13 +12,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { buildSlots, formatMoney, formatTime, toDateKey } from "@/lib/shiraf";
 
-type Search = { service: string | undefined; professional: string | undefined };
+// Claves opcionales, no claves obligatorias con valor `undefined`: con
+// `exactOptionalPropertyTypes` activado esa diferencia hace que el router exija
+// `search` en cada <Link to="/reservar">, aunque los dos params sean opcionales.
+type Search = { service?: string; professional?: string };
 
 export const Route = createFileRoute("/_authenticated/reservar")({
-  validateSearch: (search: Record<string, unknown>): Search => ({
-    service: typeof search["service"] === "string" ? search["service"] : undefined,
-    professional: typeof search["professional"] === "string" ? search["professional"] : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): Search => {
+    const parsed: Search = {};
+    if (typeof search["service"] === "string") parsed.service = search["service"];
+    if (typeof search["professional"] === "string") parsed.professional = search["professional"];
+    return parsed;
+  },
   head: () => ({
     meta: [
       { title: "Reservar turno — Shiraf" },
