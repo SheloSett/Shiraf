@@ -1,14 +1,22 @@
-# Welcome to your Lovable project
+# Serene Sanctuary
+
+necesito crear un sitio de un centro de estetica (SPA) con obviamente la vista del cliente donde podra ver los servicios, sacar turno,  elegir dia y hora y seguramente podra elegir a la profesional que quiere que lo atienda.  Estara la posibilidad de abonar en el momento o solo sacar turno, no lo hable con el cliente aun. el cliene tendra un perfil con sus datos y su historial de servicios a los que fue, y los proximos turnos pendientes.
+esto lo bascico del cliente.
+despues tenemos la vista del admin donde podra crear y publicar esos servicios, estara la disponibilidad del prodcuto, habra un recuento del stock de cremas y lociones, habra un calendario donde figuraran todos los turnos del mes.
+una vista de clientes, otr de profesionales, seguramente las profesionales no esten todo el dia, y no den todos los servicios, seguramente hayan algunas para casos especificos y en horarios especificos.
+hasta ahi lo que puedo recordar
 
 This project was built with [Lovable](https://lovable.dev).
 
+**Live app**: https://beauty-appt-planner.lovable.app
+
 ## Build with Lovable
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/b276d7f3-430a-4353-809b-21f446ed18b9).
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+- **Stay in sync**: every change made in Lovable is committed straight to this repository.
+- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 
@@ -20,10 +28,3 @@ cd <repository-name>
 npm i
 npm run dev
 ```
-
-## Built with
-
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
