@@ -18,6 +18,8 @@ import { Route as ServiciosRouteImport } from './routes/servicios'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated/mi-cuenta'
 import { Route as AuthenticatedReservarRouteImport } from './routes/_authenticated/reservar'
+import { Route as ServiciosIndexRouteImport } from './routes/servicios.index'
+import { Route as ServiciosServiceIdRouteImport } from './routes/servicios.$serviceId'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
@@ -69,6 +71,16 @@ const AuthenticatedReservarRoute = AuthenticatedReservarRouteImport.update({
   path: '/reservar',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ServiciosIndexRoute = ServiciosIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ServiciosRoute,
+} as any)
+const ServiciosServiceIdRoute = ServiciosServiceIdRouteImport.update({
+  id: '/$serviceId',
+  path: '/$serviceId',
+  getParentRoute: () => ServiciosRoute,
+} as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -109,10 +121,12 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
-  '/servicios': typeof ServiciosRoute
+  '/servicios': typeof ServiciosRouteWithChildren
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/reservar': typeof AuthenticatedReservarRoute
+  '/servicios/$serviceId': typeof ServiciosServiceIdRoute
+  '/servicios/': typeof ServiciosIndexRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
@@ -125,9 +139,10 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
-  '/servicios': typeof ServiciosRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/reservar': typeof AuthenticatedReservarRoute
+  '/servicios/$serviceId': typeof ServiciosServiceIdRoute
+  '/servicios': typeof ServiciosIndexRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
@@ -142,10 +157,12 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
-  '/servicios': typeof ServiciosRoute
+  '/servicios': typeof ServiciosRouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/reservar': typeof AuthenticatedReservarRoute
+  '/servicios/$serviceId': typeof ServiciosServiceIdRoute
+  '/servicios/': typeof ServiciosIndexRoute
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/_authenticated/admin/servicios': typeof AuthenticatedAdminServiciosRoute
@@ -164,6 +181,8 @@ export interface FileRouteTypes {
     | '/admin'
     | '/mi-cuenta'
     | '/reservar'
+    | '/servicios/$serviceId'
+    | '/servicios/'
     | '/admin/clientes'
     | '/admin/profesionales'
     | '/admin/servicios'
@@ -176,9 +195,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/contacto'
     | '/profesionales'
-    | '/servicios'
     | '/mi-cuenta'
     | '/reservar'
+    | '/servicios/$serviceId'
+    | '/servicios'
     | '/admin/clientes'
     | '/admin/profesionales'
     | '/admin/servicios'
@@ -196,6 +216,8 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/mi-cuenta'
     | '/_authenticated/reservar'
+    | '/servicios/$serviceId'
+    | '/servicios/'
     | '/_authenticated/admin/clientes'
     | '/_authenticated/admin/profesionales'
     | '/_authenticated/admin/servicios'
@@ -210,7 +232,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ContactoRoute: typeof ContactoRoute
   ProfesionalesRoute: typeof ProfesionalesRoute
-  ServiciosRoute: typeof ServiciosRoute
+  ServiciosRoute: typeof ServiciosRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -277,6 +299,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/reservar'
       preLoaderRoute: typeof AuthenticatedReservarRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/servicios/': {
+      id: '/servicios/'
+      path: '/'
+      fullPath: '/servicios/'
+      preLoaderRoute: typeof ServiciosIndexRouteImport
+      parentRoute: typeof ServiciosRoute
+    }
+    '/servicios/$serviceId': {
+      id: '/servicios/$serviceId'
+      path: '/$serviceId'
+      fullPath: '/servicios/$serviceId'
+      preLoaderRoute: typeof ServiciosServiceIdRouteImport
+      parentRoute: typeof ServiciosRoute
     }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
@@ -359,13 +395,27 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface ServiciosRouteChildren {
+  ServiciosServiceIdRoute: typeof ServiciosServiceIdRoute
+  ServiciosIndexRoute: typeof ServiciosIndexRoute
+}
+
+const ServiciosRouteChildren: ServiciosRouteChildren = {
+  ServiciosServiceIdRoute: ServiciosServiceIdRoute,
+  ServiciosIndexRoute: ServiciosIndexRoute,
+}
+
+const ServiciosRouteWithChildren = ServiciosRoute._addFileChildren(
+  ServiciosRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   ContactoRoute: ContactoRoute,
   ProfesionalesRoute: ProfesionalesRoute,
-  ServiciosRoute: ServiciosRoute,
+  ServiciosRoute: ServiciosRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

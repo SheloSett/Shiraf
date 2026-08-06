@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Instagram, MapPin, Phone } from "lucide-react";
 import { LogoLockup } from "@/components/logo";
+import { buildWhatsappUrl, CONTACT } from "@/lib/contact";
 
 export function SiteFooter() {
   return (
@@ -24,16 +25,32 @@ export function SiteFooter() {
 
         <div className="text-sm text-primary-foreground/80">
           <p className="text-eyebrow text-gold">Visitanos</p>
+          {/* Mismos datos que la página de contacto, desde una sola fuente. */}
           <div className="mt-4 flex flex-col gap-3">
-            <span className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-gold" /> Av. Siempreviva 1234, CABA
-            </span>
-            <span className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-gold" /> +54 11 5555-5555
-            </span>
-            <span className="flex items-center gap-2">
-              <Instagram className="h-4 w-4 text-gold" /> @shiraf.estetica
-            </span>
+            <a
+              href={CONTACT.mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 underline-offset-4 hover:underline"
+            >
+              <MapPin className="h-4 w-4 shrink-0 text-gold" /> {CONTACT.address}, {CONTACT.city}
+            </a>
+            <a
+              href={buildWhatsappUrl({})}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 underline-offset-4 hover:underline"
+            >
+              <Phone className="h-4 w-4 shrink-0 text-gold" /> {CONTACT.phoneDisplay}
+            </a>
+            <a
+              href={CONTACT.instagramUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 underline-offset-4 hover:underline"
+            >
+              <Instagram className="h-4 w-4 shrink-0 text-gold" /> {CONTACT.instagram}
+            </a>
           </div>
         </div>
       </div>

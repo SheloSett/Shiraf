@@ -1,7 +1,17 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Clock, Instagram, Mail, MapPin, Phone } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Instagram, Mail, MapPin, Phone } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { OrganicRule } from "@/components/organic-rule";
+import { Reveal } from "@/components/reveal";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
+import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
 
 export const Route = createFileRoute("/contacto")({
   head: () => ({
@@ -10,68 +20,221 @@ export const Route = createFileRoute("/contacto")({
       {
         name: "description",
         content:
-          "Dirección, teléfono, mail y horarios de atención del centro de estética Shiraf. Escribinos para asesorarte sobre tratamientos.",
+          "Escribinos por WhatsApp, conocé la dirección, los horarios de atención y cómo llegar al centro de estética Shiraf.",
       },
       { property: "og:title", content: "Contacto y horarios — Shiraf" },
       {
         property: "og:description",
-        content: "Dónde estamos, cómo contactarnos y nuestros horarios de atención.",
+        content: "Consultanos por WhatsApp. Dirección, horarios y cómo llegar.",
       },
     ],
   }),
   component: ContactPage,
 });
 
-const items = [
-  { icon: MapPin, label: "Dirección", value: "Av. Siempreviva 1234, Buenos Aires" },
-  { icon: Phone, label: "Teléfono / WhatsApp", value: "+54 9 11 5555-5555" },
-  { icon: Mail, label: "Mail", value: "hola@shiraf.com" },
-  { icon: Instagram, label: "Instagram", value: "@shiraf.estetica" },
-];
-
 function ContactPage() {
+  const [name, setName] = useState("");
+  const [treatment, setTreatment] = useState("");
+  const [message, setMessage] = useState("");
+
+  // Los tratamientos publicados alimentan el desplegable: la consulta llega con
+  // el nombre exacto del servicio en vez de una descripción aproximada.
+  const services = useQuery({
+    queryKey: ["services", "published", "contacto"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("services")
+        .select("id, name, category")
+        .eq("is_published", true)
+        .order("category")
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  function openWhatsapp(event: React.FormEvent) {
+    event.preventDefault();
+    const url = buildWhatsappUrl({ name, treatment, message });
+    // Gesto del usuario: los bloqueadores de popups lo dejan pasar. En celular
+    // abre la app directamente.
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       <SiteHeader />
 
-      <section className="mx-auto max-w-6xl px-5 pt-16 pb-20">
-        <p className="text-eyebrow text-muted-foreground">Estamos cerca</p>
-        <h1 className="mt-4 text-5xl text-foreground">Contacto</h1>
-        <div className="gold-rule mt-6" />
+      <section className="grid lg:grid-cols-12">
+        <div className="px-5 pt-16 lg:col-span-8 lg:col-start-2 lg:px-0 lg:pt-24">
+          <Reveal>
+            <p className="text-eyebrow text-muted-foreground">Estamos cerca</p>
+            <h1 className="display-hero mt-6 text-foreground">
+              Contanos
+              <br />
+              qué necesitás
+            </h1>
+            <div className="gold-rule mt-10 w-24" />
+            <p className="mt-8 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
+              Si no sabés qué tratamiento te conviene, escribinos y te asesoramos. Respondemos por
+              WhatsApp dentro del horario de atención.
+            </p>
+          </Reveal>
+        </div>
+      </section>
 
-        <div className="mt-12 grid gap-12 md:grid-cols-2">
-          <ul className="space-y-7">
-            {items.map((item) => (
-              <li key={item.label} className="flex gap-4">
-                <item.icon className="mt-1 h-5 w-5 shrink-0 text-gold" />
+      <OrganicRule className="mt-16 lg:mt-24" />
+
+      <section className="grid lg:grid-cols-12">
+        <div className="grid gap-16 px-5 py-20 lg:col-span-10 lg:col-start-2 lg:grid-cols-[1.15fr_1fr] lg:gap-20 lg:px-0 lg:py-28">
+          {/* Formulario. No manda mail ni guarda nada: redacta el mensaje y
+              abre WhatsApp, que es donde el centro ya atiende. Cero backend,
+              cero turnos perdidos en una casilla que nadie mira. */}
+          <Reveal>
+            <h2 className="display-section text-foreground">Escribinos</h2>
+
+            <form onSubmit={openWhatsapp} className="mt-10 space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="name">Tu nombre</Label>
+                <Input
+                  id="name"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Cómo te llamás"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="treatment">Tratamiento de interés</Label>
+                <select
+                  id="treatment"
+                  value={treatment}
+                  onChange={(e) => setTreatment(e.target.value)}
+                  className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  <option value="">Todavía no sé / consulta general</option>
+                  {services.data?.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.category} · {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="message">Tu consulta</Label>
+                <Textarea
+                  id="message"
+                  rows={4}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Contanos qué te gustaría tratar, o preguntanos lo que necesites."
+                />
+              </div>
+
+              <Button type="submit" size="lg" className="w-full sm:w-auto">
+                Enviar por WhatsApp
+              </Button>
+
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Se abre WhatsApp con el mensaje ya escrito. Podés revisarlo antes de enviarlo.
+              </p>
+            </form>
+          </Reveal>
+
+          {/* Datos directos, para quien prefiere no llenar nada. */}
+          <Reveal delay={120}>
+            <h2 className="display-section text-foreground">Dónde estamos</h2>
+
+            <ul className="mt-10 space-y-7">
+              <li className="flex gap-4">
+                <MapPin className="mt-1 h-4 w-4 shrink-0 text-gold" />
                 <div>
-                  <p className="text-eyebrow text-muted-foreground">{item.label}</p>
-                  <p className="mt-1 text-[15px] text-foreground">{item.value}</p>
+                  <p className="text-eyebrow text-muted-foreground/70">Dirección</p>
+                  <a
+                    href={CONTACT.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
+                  >
+                    {CONTACT.address}, {CONTACT.city}
+                  </a>
                 </div>
               </li>
-            ))}
-          </ul>
 
-          <div className="surface-olive rounded-sm p-8">
-            <Clock className="h-5 w-5 text-gold" />
-            <p className="text-eyebrow mt-4 text-primary-foreground/70">Horarios</p>
-            <ul className="mt-4 space-y-2 text-[15px] text-primary-foreground">
-              <li className="flex justify-between gap-6">
-                <span>Lunes a viernes</span>
-                <span className="text-primary-foreground/75">9:00 — 20:00</span>
+              <li className="flex gap-4">
+                <Phone className="mt-1 h-4 w-4 shrink-0 text-gold" />
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">Teléfono / WhatsApp</p>
+                  <a
+                    href={buildWhatsappUrl({})}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
+                  >
+                    {CONTACT.phoneDisplay}
+                  </a>
+                </div>
               </li>
-              <li className="flex justify-between gap-6">
-                <span>Sábados</span>
-                <span className="text-primary-foreground/75">9:00 — 15:00</span>
+
+              <li className="flex gap-4">
+                <Mail className="mt-1 h-4 w-4 shrink-0 text-gold" />
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">Mail</p>
+                  <a
+                    href={`mailto:${CONTACT.email}`}
+                    className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
+                  >
+                    {CONTACT.email}
+                  </a>
+                </div>
               </li>
-              <li className="flex justify-between gap-6">
-                <span>Domingos</span>
-                <span className="text-primary-foreground/75">Cerrado</span>
+
+              <li className="flex gap-4">
+                <Instagram className="mt-1 h-4 w-4 shrink-0 text-gold" />
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">Instagram</p>
+                  <a
+                    href={CONTACT.instagramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
+                  >
+                    {CONTACT.instagram}
+                  </a>
+                </div>
               </li>
             </ul>
-            <p className="mt-8 text-sm leading-relaxed text-primary-foreground/70">
-              Los turnos se reservan online y quedan pendientes hasta que el centro los confirma.
-            </p>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* Campo de color a sangre: cierra la página y llena el vacío que quedaba
+          entre el contenido y el footer. */}
+      <section className="surface-olive grain">
+        <div className="grid lg:grid-cols-12">
+          <div className="px-5 py-24 lg:col-span-10 lg:col-start-2 lg:px-0 lg:py-28">
+            <Reveal>
+              <p className="text-eyebrow text-primary-foreground/60">Horarios de atención</p>
+            </Reveal>
+
+            <dl className="mt-12 grid gap-x-16 gap-y-10 sm:grid-cols-3">
+              {OPENING_HOURS.map((slot, i) => (
+                <Reveal key={slot.days} delay={i * 80}>
+                  <dt className="text-eyebrow text-gold">{slot.days}</dt>
+                  <dd className="mt-4 font-display text-4xl leading-none text-primary-foreground">
+                    {slot.hours}
+                  </dd>
+                </Reveal>
+              ))}
+            </dl>
+
+            <Reveal delay={260}>
+              <p className="mt-16 max-w-md border-t border-primary-foreground/20 pt-8 text-sm leading-relaxed text-primary-foreground/70">
+                Los turnos se reservan online y quedan pendientes hasta que el centro los confirma.
+              </p>
+            </Reveal>
           </div>
         </div>
       </section>
