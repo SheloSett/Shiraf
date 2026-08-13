@@ -35,7 +35,7 @@ function Home() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("services")
-        .select("id, name, description, category, duration_minutes, price")
+        .select("id, name, description, category, duration_minutes, price, image_url")
         .eq("is_published", true)
         .order("category")
         .order("price", { ascending: true })
@@ -67,7 +67,9 @@ function Home() {
   });
 
   return (
-    <div className="min-h-screen overflow-x-hidden">
+    // `clip` en vez de `hidden`: `hidden` crea contenedor de scroll y anula el
+    // `sticky` del header.
+    <div className="min-h-screen overflow-x-clip">
       <SiteHeader />
 
       {/*
@@ -200,9 +202,7 @@ function Home() {
                         <span className="flex items-baseline justify-between gap-5">
                           <span
                             className={`font-display text-[28px] leading-tight transition-all duration-500 ease-out lg:text-[32px] ${
-                              isActive
-                                ? "translate-x-1.5 text-foreground"
-                                : "text-muted-foreground"
+                              isActive ? "translate-x-1.5 text-foreground" : "text-muted-foreground"
                             }`}
                           >
                             {s.name}
@@ -234,8 +234,20 @@ function Home() {
                 nada: se agrega un <img> de fondo y el texto queda encima.
               */}
               {active && (
-                <div className="surface-olive grain hidden aspect-4/5 flex-col justify-end p-10 lg:sticky lg:top-28 lg:flex">
-                  <div key={active.id} className="panel-in">
+                <div className="surface-olive grain relative hidden aspect-4/5 flex-col justify-end overflow-hidden p-10 lg:sticky lg:top-28 lg:flex">
+                  {active.image_url && (
+                    <>
+                      <img
+                        src={active.image_url}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                      {/* Degradado desde abajo: sin esto el texto crema se pierde
+                          sobre las zonas claras de la foto. */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/75 to-primary/20" />
+                    </>
+                  )}
+                  <div key={active.id} className="panel-in relative">
                     <p className="text-eyebrow text-gold">{active.category}</p>
                     <h3 className="mt-5 font-display text-5xl leading-[1.02] text-primary-foreground">
                       {active.name}
@@ -289,9 +301,7 @@ function Home() {
                     {p.full_name}
                   </h3>
                   <p className="text-eyebrow mt-4 text-gold">{p.specialty}</p>
-                  <p className="mt-5 text-sm leading-relaxed text-primary-foreground/70">
-                    {p.bio}
-                  </p>
+                  <p className="mt-5 text-sm leading-relaxed text-primary-foreground/70">{p.bio}</p>
                 </Reveal>
               ))}
             </div>

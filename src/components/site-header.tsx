@@ -21,6 +21,13 @@ const links = [
   { to: "/contacto", label: "Contacto" },
 ] as const;
 
+// Los botones de shadcn asumen fondo claro. Sobre el oliva del header hay que
+// reescribirles el borde, el texto y el hover.
+const onOliveOutline =
+  "hidden border-primary-foreground/30 bg-transparent text-primary-foreground shadow-none hover:bg-primary-foreground/10 hover:text-primary-foreground sm:inline-flex";
+const onOliveGhost =
+  "hidden text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground sm:inline-flex";
+
 export function SiteHeader() {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -34,10 +41,13 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
+    // Barra en oliva: sobre el crema del cuerpo el header se confundía con la
+    // página. El fondo va con algo de alfa + blur para que el contenido se
+    // insinúe al pasar por debajo.
+    <header className="sticky top-0 z-40 border-b border-primary-foreground/15 bg-primary/95 text-primary-foreground backdrop-blur">
       <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-5">
         <Link to="/" className="shrink-0">
-          <LogoWordmark />
+          <LogoWordmark tone="light" />
         </Link>
 
         <nav className="hidden items-center gap-9 md:flex">
@@ -46,9 +56,9 @@ export function SiteHeader() {
               key={l.to}
               to={l.to}
               activeOptions={{ exact: l.to === "/" }}
-              activeProps={{ className: "text-foreground" }}
-              inactiveProps={{ className: "text-muted-foreground" }}
-              className="text-[13px] tracking-wide transition-colors hover:text-foreground"
+              activeProps={{ className: "text-primary-foreground" }}
+              inactiveProps={{ className: "text-primary-foreground/65" }}
+              className="text-[13px] tracking-wide transition-colors hover:text-primary-foreground"
             >
               {l.label}
             </Link>
@@ -59,7 +69,7 @@ export function SiteHeader() {
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="hidden sm:inline-flex">
+                <Button variant="outline" size="sm" className={onOliveOutline}>
                   Mi cuenta
                 </Button>
               </DropdownMenuTrigger>
@@ -80,18 +90,28 @@ export function SiteHeader() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+            <Button asChild variant="ghost" size="sm" className={onOliveGhost}>
               <Link to="/auth">Ingresar</Link>
             </Button>
           )}
 
-          <Button asChild size="sm">
+          {/* El botón por defecto es oliva sobre oliva: acá manda el dorado. */}
+          <Button
+            asChild
+            size="sm"
+            className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
+          >
             <Link to="/reservar">Reservar turno</Link>
           </Button>
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden" aria-label="Abrir menú">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground md:hidden"
+                aria-label="Abrir menú"
+              >
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>

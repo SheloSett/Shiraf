@@ -46,7 +46,7 @@ function ServiceDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("services")
-        .select("id, name, description, category, duration_minutes, price")
+        .select("id, name, description, category, duration_minutes, price, image_url")
         .eq("id", serviceId)
         .eq("is_published", true)
         .maybeSingle();
@@ -75,7 +75,9 @@ function ServiceDetail() {
     return (
       <div className="min-h-screen">
         <SiteHeader />
-        <p className="px-5 py-32 text-center text-sm text-muted-foreground">Cargando tratamiento…</p>
+        <p className="px-5 py-32 text-center text-sm text-muted-foreground">
+          Cargando tratamiento…
+        </p>
         <SiteFooter />
       </div>
     );
@@ -102,7 +104,9 @@ function ServiceDetail() {
   const s = service.data;
 
   return (
-    <div className="min-h-screen overflow-x-hidden">
+    // `clip` en vez de `hidden`: `hidden` crea contenedor de scroll y anula el
+    // `sticky` del header.
+    <div className="min-h-screen overflow-x-clip">
       <SiteHeader />
 
       <section className="grid items-stretch gap-y-10 lg:grid-cols-12">
@@ -151,7 +155,17 @@ function ServiceDetail() {
 
         {/* Mismo campo oliva con grano que el panel del home: acá también es
             donde entra la foto del tratamiento cuando la tengas. */}
-        <div className="surface-olive grain hidden lg:col-span-5 lg:col-start-8 lg:block" />
+        {/* La foto del tratamiento. Sin foto queda el campo oliva con grano,
+            que era el marcador de posición desde el principio. */}
+        <div className="surface-olive grain relative hidden overflow-hidden lg:col-span-5 lg:col-start-8 lg:block">
+          {s.image_url && (
+            <img
+              src={s.image_url}
+              alt={`Tratamiento de ${s.name} en Shiraf`}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
+        </div>
       </section>
 
       <OrganicRule className="mt-20 lg:mt-28" />

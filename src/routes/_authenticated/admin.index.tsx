@@ -43,14 +43,13 @@ function AdminCalendar() {
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 
-  const byDay = (appointments.data ?? []).reduce<Record<number, NonNullable<typeof appointments.data>>>(
-    (acc, a) => {
-      const day = new Date(a.starts_at).getDate();
-      acc[day] = [...(acc[day] ?? []), a];
-      return acc;
-    },
-    {},
-  );
+  const byDay = (appointments.data ?? []).reduce<
+    Record<number, NonNullable<typeof appointments.data>>
+  >((acc, a) => {
+    const day = new Date(a.starts_at).getDate();
+    acc[day] = [...(acc[day] ?? []), a];
+    return acc;
+  }, {});
 
   return (
     <div>
@@ -81,7 +80,10 @@ function AdminCalendar() {
 
       <div className="mt-8 grid grid-cols-7 gap-px overflow-hidden rounded-sm border border-border bg-border">
         {WEEKDAYS.map((w) => (
-          <div key={w} className="bg-secondary px-2 py-2 text-center text-[11px] tracking-[0.12em] uppercase text-muted-foreground">
+          <div
+            key={w}
+            className="bg-secondary px-2 py-2 text-center text-[11px] tracking-[0.12em] uppercase text-muted-foreground"
+          >
             {w.slice(0, 3)}
           </div>
         ))}

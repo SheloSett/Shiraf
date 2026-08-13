@@ -25,12 +25,30 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 const nav = [
-  { to: "/admin", label: "Calendario", icon: CalendarDays, exact: true },
-  { to: "/admin/turnos", label: "Turnos", icon: ClipboardList, exact: false },
-  { to: "/admin/servicios", label: "Servicios", icon: Sparkles, exact: false },
-  { to: "/admin/profesionales", label: "Profesionales", icon: UserSquare, exact: false },
-  { to: "/admin/clientes", label: "Clientes", icon: Users, exact: false },
-  { to: "/admin/stock", label: "Stock", icon: Package, exact: false },
+  { to: "/admin", label: "Calendario", icon: CalendarDays, exact: true, children: [] },
+  { to: "/admin/turnos", label: "Turnos", icon: ClipboardList, exact: false, children: [] },
+  {
+    to: "/admin/servicios",
+    label: "Servicios",
+    icon: Sparkles,
+    exact: false,
+    children: [{ to: "/admin/categorias-servicios", label: "Categorías" }],
+  },
+  {
+    to: "/admin/profesionales",
+    label: "Profesionales",
+    icon: UserSquare,
+    exact: false,
+    children: [],
+  },
+  { to: "/admin/clientes", label: "Clientes", icon: Users, exact: false, children: [] },
+  {
+    to: "/admin/productos",
+    label: "Productos",
+    icon: Package,
+    exact: false,
+    children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
+  },
 ] as const;
 
 function AdminLayout() {
@@ -81,19 +99,45 @@ function AdminLayout() {
             const active = item.exact
               ? location.pathname === item.to
               : location.pathname.startsWith(item.to);
+            // La sección se despliega si estás en el padre o en cualquier hijo.
+            const sectionActive =
+              active || item.children.some((child) => location.pathname.startsWith(child.to));
+
             return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
-                  active
-                    ? "bg-primary-foreground/15 text-primary-foreground"
-                    : "text-primary-foreground/65 hover:text-primary-foreground"
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
+              <div key={item.to} className="contents lg:block">
+                <Link
+                  to={item.to}
+                  className={`flex items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
+                    active
+                      ? "bg-primary-foreground/15 text-primary-foreground"
+                      : "text-primary-foreground/65 hover:text-primary-foreground"
+                  }`}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+
+                {item.children.length > 0 && sectionActive && (
+                  <div className="flex gap-1 lg:mt-1 lg:ml-4 lg:flex-col lg:border-l lg:border-primary-foreground/20 lg:pl-3">
+                    {item.children.map((child) => {
+                      const childActive = location.pathname.startsWith(child.to);
+                      return (
+                        <Link
+                          key={child.to}
+                          to={child.to}
+                          className={`whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors lg:px-2 lg:py-1.5 ${
+                            childActive
+                              ? "bg-primary-foreground/15 text-primary-foreground lg:bg-transparent"
+                              : "text-primary-foreground/55 hover:text-primary-foreground"
+                          }`}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>

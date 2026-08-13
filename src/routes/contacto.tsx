@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Instagram, Mail, MapPin, Phone } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
-import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,36 +61,26 @@ function ContactPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden">
+    // `clip` y no `hidden`: `overflow-x: hidden` convierte al div en contenedor
+    // de scroll y rompe el `sticky` del header, que dejaba de acompañar la
+    // página. `clip` recorta igual sin crear el contenedor.
+    <div className="min-h-screen overflow-x-clip">
       <SiteHeader />
 
+      {/* Sin portada: la página entra directo al formulario. El h1 lo lleva
+          "Escribinos", que es lo que la persona vino a hacer. */}
       <section className="grid lg:grid-cols-12">
-        <div className="px-5 pt-16 lg:col-span-8 lg:col-start-2 lg:px-0 lg:pt-24">
-          <Reveal>
-            <p className="text-eyebrow text-muted-foreground">Estamos cerca</p>
-            <h1 className="display-hero mt-6 text-foreground">
-              Contanos
-              <br />
-              qué necesitás
-            </h1>
-            <div className="gold-rule mt-10 w-24" />
-            <p className="mt-8 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-              Si no sabés qué tratamiento te conviene, escribinos y te asesoramos. Respondemos por
-              WhatsApp dentro del horario de atención.
-            </p>
-          </Reveal>
-        </div>
-      </section>
-
-      <OrganicRule className="mt-16 lg:mt-24" />
-
-      <section className="grid lg:grid-cols-12">
-        <div className="grid gap-16 px-5 py-20 lg:col-span-10 lg:col-start-2 lg:grid-cols-[1.15fr_1fr] lg:gap-20 lg:px-0 lg:py-28">
+        <div className="grid gap-16 px-5 pt-14 pb-20 lg:col-span-10 lg:col-start-2 lg:grid-cols-[1.15fr_1fr] lg:gap-20 lg:px-0 lg:pt-20 lg:pb-28">
           {/* Formulario. No manda mail ni guarda nada: redacta el mensaje y
               abre WhatsApp, que es donde el centro ya atiende. Cero backend,
               cero turnos perdidos en una casilla que nadie mira. */}
           <Reveal>
-            <h2 className="display-section text-foreground">Escribinos</h2>
+            <p className="text-eyebrow text-muted-foreground">Estamos cerca</p>
+            <h1 className="display-section mt-5 text-foreground">Escribinos</h1>
+            <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+              Si no sabés qué tratamiento te conviene, contanos y te asesoramos. Respondemos por
+              WhatsApp dentro del horario de atención.
+            </p>
 
             <form onSubmit={openWhatsapp} className="mt-10 space-y-6">
               <div className="space-y-2">
@@ -119,6 +108,9 @@ function ContactPage() {
                       {s.category} · {s.name}
                     </option>
                   ))}
+                  {/* Salida para lo que no está en la lista: el detalle lo pone
+                      la persona en el campo de consulta. */}
+                  <option value="Otro (lo detallo abajo)">Otro — lo escribo en la consulta</option>
                 </select>
               </div>
 
@@ -145,9 +137,14 @@ function ContactPage() {
 
           {/* Datos directos, para quien prefiere no llenar nada. */}
           <Reveal delay={120}>
-            <h2 className="display-section text-foreground">Dónde estamos</h2>
+            {/* Mismo eyebrow + título que la columna izquierda, para que los
+                dos encabezados arranquen a la misma altura. */}
+            <p className="text-eyebrow text-muted-foreground">Visitanos</p>
+            <h2 className="display-section mt-5 text-foreground">Dónde estamos</h2>
 
-            <ul className="mt-10 space-y-7">
+            {/* Dos columnas: los cuatro datos entran en el alto del formulario y
+                dejan lugar al mapa abajo. */}
+            <ul className="mt-10 grid gap-7 sm:grid-cols-2">
               <li className="flex gap-4">
                 <MapPin className="mt-1 h-4 w-4 shrink-0 text-gold" />
                 <div>
@@ -206,6 +203,18 @@ function ContactPage() {
                 </div>
               </li>
             </ul>
+
+            {/* Mapa. La dirección de arriba sigue abriendo Google Maps en una
+                pestaña; esto es para ubicarse sin salir de la página. */}
+            <div className="mt-10 overflow-hidden rounded-sm border border-border">
+              <iframe
+                title="Ubicación de Shiraf en el mapa"
+                src={CONTACT.mapsEmbedUrl}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                className="block h-[300px] w-full border-0 lg:h-[340px]"
+              />
+            </div>
           </Reveal>
         </div>
       </section>

@@ -154,6 +154,12 @@
     border-color: var(--color-border);
   }
 
+  /* Para los saltos del índice de categorías. Cada ancla lleva su propio
+     scroll-margin, porque el header sticky tapa el destino. */
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
@@ -215,7 +221,6 @@
   line-height: 0.96;
   letter-spacing: -0.008em;
 }
-
 
 /* Cifras del índice de tratamientos: monoespaciadas para que la columna quede
    perfectamente alineada sin importar el dígito. */
@@ -285,6 +290,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   .js .reveal {
     opacity: 1;
     transform: none;

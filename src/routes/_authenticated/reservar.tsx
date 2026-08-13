@@ -93,28 +93,42 @@ function BookingPage() {
       const next = new Date(day);
       next.setDate(next.getDate() + 1);
 
-      const [schedules, appointments] = await Promise.all([
+      const [schedules, busy] = await Promise.all([
         supabase
           .from("professional_schedules")
           .select("weekday, start_time, end_time")
           .eq("professional_id", professionalId!),
-        supabase
-          .from("appointments")
-          .select("starts_at, duration_minutes")
-          .eq("professional_id", professionalId!)
-          .in("status", ["pending", "confirmed"])
-          .gte("starts_at", day.toISOString())
-          .lt("starts_at", next.toISOString()),
+        // Vía RPC y no consultando appointments: la RLS sólo deja ver los
+        // turnos propios, así que leer la tabla directo devolvía los horarios
+        // de las demás clientas como libres. La función corre con SECURITY
+        // DEFINER y devuelve nada más que inicio y duración.
+        supabase.rpc("professional_busy_slots", {
+          _professional_id: professionalId!,
+          _from: day.toISOString(),
+          _to: next.toISOString(),
+        }),
       ]);
       if (schedules.error) throw schedules.error;
-      if (appointments.error) throw appointments.error;
-      return { schedules: schedules.data ?? [], busy: appointments.data ?? [] };
+      if (busy.error) throw busy.error;
+
+      return {
+        schedules: schedules.data ?? [],
+        busy: (busy.data ?? []).map((row) => ({
+          starts_at: row.slot_start,
+          duration_minutes: row.slot_minutes,
+        })),
+      };
     },
   });
 
   const slots = useMemo(() => {
     if (!date || !service || !availability.data) return [];
-    return buildSlots(date, availability.data.schedules, availability.data.busy, service.duration_minutes);
+    return buildSlots(
+      date,
+      availability.data.schedules,
+      availability.data.busy,
+      service.duration_minutes,
+    );
   }, [date, service, availability.data]);
 
   const book = useMutation({
@@ -136,7 +150,20 @@ function BookingPage() {
       toast.success("¡Turno solicitado! Queda pendiente de confirmación.");
       navigate({ to: "/mi-cuenta" });
     },
-    onError: (error: Error) => toast.error(error.message),
+    // El trigger de la base rechaza los turnos superpuestos. Puede pasar si
+    // alguien reservó ese mismo horario mientras esta clienta completaba el
+    // formulario: se avisa y se recargan los horarios para que vea el que quedó
+    // ocupado.
+    onError: (error: Error) => {
+      const taken = error.message.includes("ya fue tomado") || error.message.includes("exclusion");
+      if (taken) {
+        setSlot(undefined);
+        queryClient.invalidateQueries({ queryKey: ["availability"] });
+        toast.error("Ese horario se acaba de ocupar. Elegí otro, por favor.");
+        return;
+      }
+      toast.error(error.message);
+    },
   });
 
   return (
@@ -298,7 +325,8 @@ function BookingPage() {
                 />
 
                 <p className="text-xs text-muted-foreground">
-                  El pago se realiza en el centro. Tu turno queda pendiente hasta que lo confirmemos.
+                  El pago se realiza en el centro. Tu turno queda pendiente hasta que lo
+                  confirmemos.
                 </p>
 
                 <Button

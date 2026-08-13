@@ -21,10 +21,12 @@ import { Route as AuthenticatedReservarRouteImport } from './routes/_authenticat
 import { Route as ServiciosIndexRouteImport } from './routes/servicios.index'
 import { Route as ServiciosServiceIdRouteImport } from './routes/servicios.$serviceId'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as AuthenticatedAdminCategoriasProductosRouteImport } from './routes/_authenticated/admin.categorias-productos'
+import { Route as AuthenticatedAdminCategoriasServiciosRouteImport } from './routes/_authenticated/admin.categorias-servicios'
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
+import { Route as AuthenticatedAdminProductosRouteImport } from './routes/_authenticated/admin.productos'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
 import { Route as AuthenticatedAdminServiciosRouteImport } from './routes/_authenticated/admin.servicios'
-import { Route as AuthenticatedAdminStockRouteImport } from './routes/_authenticated/admin.stock'
 import { Route as AuthenticatedAdminTurnosRouteImport } from './routes/_authenticated/admin.turnos'
 
 const IndexRoute = IndexRouteImport.update({
@@ -86,10 +88,28 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const AuthenticatedAdminCategoriasProductosRoute =
+  AuthenticatedAdminCategoriasProductosRouteImport.update({
+    id: '/categorias-productos',
+    path: '/categorias-productos',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminCategoriasServiciosRoute =
+  AuthenticatedAdminCategoriasServiciosRouteImport.update({
+    id: '/categorias-servicios',
+    path: '/categorias-servicios',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminClientesRoute =
   AuthenticatedAdminClientesRouteImport.update({
     id: '/clientes',
     path: '/clientes',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminProductosRoute =
+  AuthenticatedAdminProductosRouteImport.update({
+    id: '/productos',
+    path: '/productos',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminProfesionalesRoute =
@@ -104,11 +124,6 @@ const AuthenticatedAdminServiciosRoute =
     path: '/servicios',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedAdminStockRoute = AuthenticatedAdminStockRouteImport.update({
-  id: '/stock',
-  path: '/stock',
-  getParentRoute: () => AuthenticatedAdminRoute,
-} as any)
 const AuthenticatedAdminTurnosRoute =
   AuthenticatedAdminTurnosRouteImport.update({
     id: '/turnos',
@@ -127,10 +142,12 @@ export interface FileRoutesByFullPath {
   '/reservar': typeof AuthenticatedReservarRoute
   '/servicios/$serviceId': typeof ServiciosServiceIdRoute
   '/servicios/': typeof ServiciosIndexRoute
+  '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
+  '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
-  '/admin/stock': typeof AuthenticatedAdminStockRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
 }
@@ -143,10 +160,12 @@ export interface FileRoutesByTo {
   '/reservar': typeof AuthenticatedReservarRoute
   '/servicios/$serviceId': typeof ServiciosServiceIdRoute
   '/servicios': typeof ServiciosIndexRoute
+  '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
+  '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
-  '/admin/stock': typeof AuthenticatedAdminStockRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
 }
@@ -163,10 +182,12 @@ export interface FileRoutesById {
   '/_authenticated/reservar': typeof AuthenticatedReservarRoute
   '/servicios/$serviceId': typeof ServiciosServiceIdRoute
   '/servicios/': typeof ServiciosIndexRoute
+  '/_authenticated/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
+  '/_authenticated/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/_authenticated/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/_authenticated/admin/servicios': typeof AuthenticatedAdminServiciosRoute
-  '/_authenticated/admin/stock': typeof AuthenticatedAdminStockRoute
   '/_authenticated/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
 }
@@ -183,10 +204,12 @@ export interface FileRouteTypes {
     | '/reservar'
     | '/servicios/$serviceId'
     | '/servicios/'
+    | '/admin/categorias-productos'
+    | '/admin/categorias-servicios'
     | '/admin/clientes'
+    | '/admin/productos'
     | '/admin/profesionales'
     | '/admin/servicios'
-    | '/admin/stock'
     | '/admin/turnos'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -199,10 +222,12 @@ export interface FileRouteTypes {
     | '/reservar'
     | '/servicios/$serviceId'
     | '/servicios'
+    | '/admin/categorias-productos'
+    | '/admin/categorias-servicios'
     | '/admin/clientes'
+    | '/admin/productos'
     | '/admin/profesionales'
     | '/admin/servicios'
-    | '/admin/stock'
     | '/admin/turnos'
     | '/admin'
   id:
@@ -218,10 +243,12 @@ export interface FileRouteTypes {
     | '/_authenticated/reservar'
     | '/servicios/$serviceId'
     | '/servicios/'
+    | '/_authenticated/admin/categorias-productos'
+    | '/_authenticated/admin/categorias-servicios'
     | '/_authenticated/admin/clientes'
+    | '/_authenticated/admin/productos'
     | '/_authenticated/admin/profesionales'
     | '/_authenticated/admin/servicios'
-    | '/_authenticated/admin/stock'
     | '/_authenticated/admin/turnos'
     | '/_authenticated/admin/'
   fileRoutesById: FileRoutesById
@@ -321,11 +348,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/categorias-productos': {
+      id: '/_authenticated/admin/categorias-productos'
+      path: '/categorias-productos'
+      fullPath: '/admin/categorias-productos'
+      preLoaderRoute: typeof AuthenticatedAdminCategoriasProductosRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/categorias-servicios': {
+      id: '/_authenticated/admin/categorias-servicios'
+      path: '/categorias-servicios'
+      fullPath: '/admin/categorias-servicios'
+      preLoaderRoute: typeof AuthenticatedAdminCategoriasServiciosRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/clientes': {
       id: '/_authenticated/admin/clientes'
       path: '/clientes'
       fullPath: '/admin/clientes'
       preLoaderRoute: typeof AuthenticatedAdminClientesRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/productos': {
+      id: '/_authenticated/admin/productos'
+      path: '/productos'
+      fullPath: '/admin/productos'
+      preLoaderRoute: typeof AuthenticatedAdminProductosRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/profesionales': {
@@ -342,13 +390,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminServiciosRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/admin/stock': {
-      id: '/_authenticated/admin/stock'
-      path: '/stock'
-      fullPath: '/admin/stock'
-      preLoaderRoute: typeof AuthenticatedAdminStockRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
     '/_authenticated/admin/turnos': {
       id: '/_authenticated/admin/turnos'
       path: '/turnos'
@@ -360,19 +401,25 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAdminRouteChildren {
+  AuthenticatedAdminCategoriasProductosRoute: typeof AuthenticatedAdminCategoriasProductosRoute
+  AuthenticatedAdminCategoriasServiciosRoute: typeof AuthenticatedAdminCategoriasServiciosRoute
   AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
+  AuthenticatedAdminProductosRoute: typeof AuthenticatedAdminProductosRoute
   AuthenticatedAdminProfesionalesRoute: typeof AuthenticatedAdminProfesionalesRoute
   AuthenticatedAdminServiciosRoute: typeof AuthenticatedAdminServiciosRoute
-  AuthenticatedAdminStockRoute: typeof AuthenticatedAdminStockRoute
   AuthenticatedAdminTurnosRoute: typeof AuthenticatedAdminTurnosRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
+  AuthenticatedAdminCategoriasProductosRoute:
+    AuthenticatedAdminCategoriasProductosRoute,
+  AuthenticatedAdminCategoriasServiciosRoute:
+    AuthenticatedAdminCategoriasServiciosRoute,
   AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
+  AuthenticatedAdminProductosRoute: AuthenticatedAdminProductosRoute,
   AuthenticatedAdminProfesionalesRoute: AuthenticatedAdminProfesionalesRoute,
   AuthenticatedAdminServiciosRoute: AuthenticatedAdminServiciosRoute,
-  AuthenticatedAdminStockRoute: AuthenticatedAdminStockRoute,
   AuthenticatedAdminTurnosRoute: AuthenticatedAdminTurnosRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }

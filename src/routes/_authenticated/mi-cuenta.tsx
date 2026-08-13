@@ -184,7 +184,9 @@ function AccountPage() {
             </div>
           ))}
           {history.length === 0 && (
-            <p className="py-4 text-sm text-muted-foreground">Todavía no hay visitas registradas.</p>
+            <p className="py-4 text-sm text-muted-foreground">
+              Todavía no hay visitas registradas.
+            </p>
           )}
         </div>
 
