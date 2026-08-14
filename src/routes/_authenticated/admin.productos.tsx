@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { formatMoney } from "@/lib/shiraf";
+import { useAccess } from "@/hooks/useAccess";
 
 export const Route = createFileRoute("/_authenticated/admin/productos")({
   component: AdminProducts,
@@ -70,16 +71,30 @@ function AdminProducts() {
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
 
+  const { can } = useAccess();
+  const canSeeCosts = can("stock_costs");
+
   const products = useQuery({
-    queryKey: ["admin-products"],
+    // El permiso va en la clave para que quien lo tiene y quien no, no
+    // compartan la misma entrada de caché.
+    queryKey: ["admin-products", canSeeCosts],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, name, brand, category, unit, stock, min_stock, cost")
+        .select("id, name, brand, category, unit, stock, min_stock")
         .order("category")
         .order("name");
       if (error) throw error;
-      return data;
+
+      // El costo se mudó a product_costs (migración 20260814010000) para que
+      // "Ver costos de compra" sea un candado real: la RLS protege filas, no
+      // columnas, y mientras vivió en products.cost bastaba el permiso de stock.
+      const costs = canSeeCosts
+        ? (await supabase.from("product_costs").select("product_id, cost")).data
+        : [];
+      const costByProduct = new Map((costs ?? []).map((c) => [c.product_id, c.cost]));
+
+      return (data ?? []).map((p) => ({ ...p, cost: costByProduct.get(p.id) ?? null }));
     },
   });
 
@@ -124,8 +139,12 @@ function AdminProducts() {
         category: form.category.trim() || "Sin categoría",
         unit: form.unit.trim() || "unidad",
         min_stock: Number(form.min_stock) || 0,
-        cost: form.cost === "" ? null : Number(form.cost),
       };
+
+      // El costo se guarda aparte, en product_costs, y sólo si la persona tiene
+      // el permiso. Sin él ni siquiera se intenta: el campo no se le mostró, así
+      // que form.cost está vacío y escribirlo borraría el costo que ya había.
+      const nextCost = form.cost === "" ? null : Number(form.cost);
 
       if (editingId) {
         const { error } = await supabase.from("products").update(payload).eq("id", editingId);
@@ -148,11 +167,29 @@ function AdminProducts() {
           });
           if (moveError) throw moveError;
         }
+
+        if (canSeeCosts) {
+          const { error: costError } = await supabase
+            .from("product_costs")
+            .upsert({ product_id: editingId, cost: nextCost });
+          if (costError) throw costError;
+        }
       } else {
-        const { error } = await supabase
+        const { data: created, error } = await supabase
           .from("products")
-          .insert({ ...payload, stock: Number(form.stock) || 0 });
+          .insert({ ...payload, stock: Number(form.stock) || 0 })
+          .select("id")
+          .single();
         if (error) throw error;
+
+        // Sólo si hay costo cargado: no tiene sentido crear una fila vacía en
+        // product_costs por cada producto sin costo.
+        if (canSeeCosts && nextCost !== null) {
+          const { error: costError } = await supabase
+            .from("product_costs")
+            .insert({ product_id: created.id, cost: nextCost });
+          if (costError) throw costError;
+        }
       }
     },
     onSuccess: async () => {
@@ -370,16 +407,18 @@ function AdminProducts() {
                     onChange={(e) => setForm({ ...form, unit: e.target.value })}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="p-cost">Costo</Label>
-                  <Input
-                    id="p-cost"
-                    type="number"
-                    min={0}
-                    value={form.cost}
-                    onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                  />
-                </div>
+                {canSeeCosts && (
+                  <div className="space-y-2">
+                    <Label htmlFor="p-cost">Costo</Label>
+                    <Input
+                      id="p-cost"
+                      type="number"
+                      min={0}
+                      value={form.cost}
+                      onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -436,7 +475,7 @@ function AdminProducts() {
               <TableHead>Unidad</TableHead>
               <TableHead>Stock</TableHead>
               <TableHead>Quiebre de Stock</TableHead>
-              <TableHead>Costo</TableHead>
+              {canSeeCosts && <TableHead>Costo</TableHead>}
               <TableHead className="text-right">Movimiento</TableHead>
               <TableHead className="w-24 text-right">Acciones</TableHead>
             </TableRow>
@@ -462,9 +501,11 @@ function AdminProducts() {
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{Number(p.min_stock)}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {p.cost === null ? "—" : formatMoney(p.cost)}
-                  </TableCell>
+                  {canSeeCosts && (
+                    <TableCell className="text-muted-foreground">
+                      {p.cost === null ? "—" : formatMoney(p.cost)}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <div className="flex items-center justify-end gap-2">
                       <Input
@@ -524,7 +565,10 @@ function AdminProducts() {
 
             {products.data?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={canSeeCosts ? 8 : 7}
+                  className="py-10 text-center text-sm text-muted-foreground"
+                >
                   Todavía no hay productos cargados.
                 </TableCell>
               </TableRow>

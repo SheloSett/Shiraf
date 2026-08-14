@@ -1,0 +1,26 @@
+# Finales de línea: LF en el repo Y en el working tree.
+#
+# El repo siempre guardó LF, pero con core.autocrlf=true (el default de Git for
+# Windows) el checkout los convertía a CRLF. Prettier espera LF, así que
+# `npm run lint` devolvía 11.141 errores "Delete `␍`" — uno por cada línea del
+# proyecto — y el comando quedaba inservible en Windows. Peor todavía:
+# `npm run format` habría reescrito los 100+ archivos y ensuciado el diff.
+#
+# `eol=lf` pisa a core.autocrlf, así que el working tree también queda en LF sin
+# tener que tocar la config de git de cada máquina. Es además lo que ya asumía
+# el .gitignore, que evita el package-lock.json de Windows porque rompe los
+# builds en Linux.
+* text=auto eol=lf
+
+# Binarios: que git no intente convertir nada adentro.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.avif binary
+*.ico binary
+
+# Generado por el plugin de TanStack Router en cada build. Marcarlo como
+# `linguist-generated` lo colapsa en los diffs de GitHub, que es donde más
+# ruido metía.
+src/routeTree.gen.ts linguist-generated=true

@@ -10,24 +10,38 @@ import {
 } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDateTime } from "@/lib/shiraf";
+import { useAccess } from "@/hooks/useAccess";
 
 export const Route = createFileRoute("/_authenticated/admin/clientes")({
   component: AdminClients,
 });
 
 function AdminClients() {
+  const { can } = useAccess();
+  const canSeeNotes = can("clients_notes");
+
   const clients = useQuery({
-    queryKey: ["admin-clients"],
+    // El permiso entra en la clave: sin esto, quien lo tenga y quien no
+    // compartirían la misma entrada de caché y una vería la columna de la otra.
+    queryKey: ["admin-clients", canSeeNotes],
     queryFn: async () => {
       const [profiles, appointments] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, full_name, phone, notes, created_at")
+          .select("id, full_name, phone, created_at")
           .order("created_at", { ascending: false }),
         supabase.from("appointments").select("client_id, starts_at, status"),
       ]);
       if (profiles.error) throw profiles.error;
       if (appointments.error) throw appointments.error;
+
+      // Las notas viven en su propia tabla desde la migración 20260814010000.
+      // Ni siquiera se pide la consulta sin el permiso: la RLS la devolvería
+      // vacía igual, pero así el pedido tampoco sale del navegador.
+      const notes = canSeeNotes
+        ? (await supabase.from("client_notes").select("client_id, body")).data
+        : [];
+      const noteByClient = new Map((notes ?? []).map((n) => [n.client_id, n.body]));
 
       return (profiles.data ?? []).map((p) => {
         const own = (appointments.data ?? []).filter((a) => a.client_id === p.id);
@@ -36,7 +50,7 @@ function AdminClients() {
           .map((a) => a.starts_at)
           .sort()
           .at(-1);
-        return { ...p, total: own.length, done, last };
+        return { ...p, notes: noteByClient.get(p.id) ?? null, total: own.length, done, last };
       });
     },
   });
@@ -55,7 +69,10 @@ function AdminClients() {
               <TableHead>Turnos</TableHead>
               <TableHead>Realizados</TableHead>
               <TableHead>Última visita</TableHead>
-              <TableHead>Notas</TableHead>
+              {/* La columna entera desaparece sin el permiso, en vez de mostrar
+                  una fila de "—": así no queda la duda de si la clienta no
+                  escribió nada o si es que no se puede ver. */}
+              {canSeeNotes && <TableHead>Notas clínicas</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -68,14 +85,19 @@ function AdminClients() {
                 <TableCell className="whitespace-nowrap">
                   {c.last ? formatDateTime(c.last) : "—"}
                 </TableCell>
-                <TableCell className="max-w-64 text-xs text-muted-foreground">
-                  {c.notes ?? "—"}
-                </TableCell>
+                {canSeeNotes && (
+                  <TableCell className="max-w-64 text-xs text-muted-foreground">
+                    {c.notes ?? "—"}
+                  </TableCell>
+                )}
               </TableRow>
             ))}
             {clients.data?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={canSeeNotes ? 6 : 5}
+                  className="py-10 text-center text-sm text-muted-foreground"
+                >
                   Todavía no hay clientas registradas.
                 </TableCell>
               </TableRow>

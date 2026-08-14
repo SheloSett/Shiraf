@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
+import { Plus } from "lucide-react";
+import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
 
@@ -26,6 +28,7 @@ type Status = (typeof FILTERS)[number];
 function AdminAppointments() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Status>("pending");
+  const [creating, setCreating] = useState(false);
 
   const appointments = useQuery({
     queryKey: ["admin-appointments", filter],
@@ -64,8 +67,24 @@ function AdminAppointments() {
 
   return (
     <div>
-      <p className="text-eyebrow text-muted-foreground">Solicitudes y agenda</p>
-      <h1 className="mt-3 font-display text-4xl text-foreground">Turnos</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-eyebrow text-muted-foreground">Solicitudes y agenda</p>
+          <h1 className="mt-3 font-display text-4xl text-foreground">Turnos</h1>
+        </div>
+        <Button onClick={() => setCreating(true)}>
+          <Plus className="mr-2 h-4 w-4" /> Nuevo turno
+        </Button>
+      </div>
+
+      {/* El turno cargado desde acá nace confirmado, así que la lista salta a
+          esa pestaña: si no, se creaba y no aparecía en pantalla (el filtro por
+          defecto es "pendientes") y parecía que no había pasado nada. */}
+      <NewAppointmentDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={(status) => setFilter(status)}
+      />
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Status)} className="mt-8">
         <TabsList>

@@ -43,13 +43,20 @@ function AccountPage() {
     queryKey: ["my-profile"],
     queryFn: async () => {
       const { data: auth } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, phone, notes, birth_date")
-        .eq("id", auth.user!.id)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
+      // La nota ya no vive en profiles.notes: se mudó a client_notes para que
+      // el permiso "Ver notas clínicas" del panel sea un candado de verdad y no
+      // sólo un filtro de pantalla. Ver migración 20260814010000.
+      const [row, note] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, full_name, phone, birth_date")
+          .eq("id", auth.user!.id)
+          .maybeSingle(),
+        supabase.from("client_notes").select("body").eq("client_id", auth.user!.id).maybeSingle(),
+      ]);
+      if (row.error) throw row.error;
+      if (note.error) throw note.error;
+      return row.data ? { ...row.data, notes: note.data?.body ?? "" } : null;
     },
   });
 
@@ -80,9 +87,16 @@ function AccountPage() {
       const { data: auth } = await supabase.auth.getUser();
       const { error } = await supabase
         .from("profiles")
-        .update({ full_name: fullName, phone, notes })
+        .update({ full_name: fullName, phone })
         .eq("id", auth.user!.id);
       if (error) throw error;
+
+      // upsert y no update: la primera vez que escribe una nota todavía no hay
+      // fila en client_notes.
+      const { error: noteError } = await supabase
+        .from("client_notes")
+        .upsert({ client_id: auth.user!.id, body: notes.trim() || null });
+      if (noteError) throw noteError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-profile"] });

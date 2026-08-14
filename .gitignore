@@ -16,6 +16,15 @@ dist-ssr
 .nitro
 *.local
 
+# Secretos. El .env estuvo trackeado hasta ahora: las claves que tenía son
+# publishable (públicas por diseño, viajan igual en el bundle del navegador),
+# así que no hubo fuga ni hay nada que rotar. Se saca del repo de forma
+# preventiva: el día que se agregue SUPABASE_SERVICE_ROLE_KEY —que sí bypasea
+# toda la RLS— se habría commiteado sola. La plantilla vive en .env.example.
+.env
+.env.*
+!.env.example
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

@@ -23,6 +23,14 @@ services:
       # auth de TanStack Start, que leen process.env en runtime.
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      # Secreta: bypasea toda la RLS. La usa el alta de empleadas
+      # (src/lib/team.functions.ts), que necesita la Admin API de Supabase para
+      # crear cuentas — lo único que no se puede hacer desde el navegador.
+      #
+      # Va acá y NUNCA como build arg ni con prefijo VITE_: los build args se
+      # hornean en el bundle que baja el navegador. Acá entra por runtime al
+      # proceso del servidor y no sale de ahí.
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?falta SUPABASE_SERVICE_ROLE_KEY en .env}
 
     # Publicado sólo en loopback: en el VPS ya tenés un reverse proxy para los
     # otros dos sitios, así que este contenedor no debe quedar expuesto directo

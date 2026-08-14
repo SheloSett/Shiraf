@@ -16,6 +16,10 @@ export type Database = {
           created_at: string;
           duration_minutes: number;
           id: string;
+          // La agrega la migración 20260813040000: congela el precio del
+          // catálogo al momento de reservar. La completa un trigger, por eso en
+          // Insert va opcional.
+          price: number;
           professional_id: string | null;
           service_id: string;
           starts_at: string;
@@ -29,6 +33,7 @@ export type Database = {
           created_at?: string;
           duration_minutes?: number;
           id?: string;
+          price?: number;
           professional_id?: string | null;
           service_id: string;
           starts_at: string;
@@ -42,6 +47,7 @@ export type Database = {
           created_at?: string;
           duration_minutes?: number;
           id?: string;
+          price?: number;
           professional_id?: string | null;
           service_id?: string;
           starts_at?: string;
@@ -369,6 +375,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      // ⚠️ Agregado a mano, no por `supabase gen types`. Las migraciones
+      // 20260813060000 y 20260813070000 todavía no se aplicaron al proyecto,
+      // así que el generador no las ve, pero la app necesita compilar contra
+      // ellas. Regenerar este archivo después de correrlas y borrar esta nota.
+      // Migración 20260814010000: notas y costos salen a su propia tabla para
+      // que la RLS pueda protegerlos (row-level no puede esconder columnas).
+      client_notes: {
+        Row: { client_id: string; body: string | null; updated_at: string };
+        Insert: { client_id: string; body?: string | null; updated_at?: string };
+        Update: { client_id?: string; body?: string | null; updated_at?: string };
+        Relationships: [];
+      };
+      product_costs: {
+        Row: { product_id: string; cost: number | null; updated_at: string };
+        Insert: { product_id: string; cost?: number | null; updated_at?: string };
+        Update: { product_id?: string; cost?: number | null; updated_at?: string };
+        Relationships: [];
+      };
+      user_permissions: {
+        Row: {
+          created_at: string;
+          id: string;
+          permission: Database["public"]["Enums"]["app_permission"];
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          permission: Database["public"]["Enums"]["app_permission"];
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          permission?: Database["public"]["Enums"]["app_permission"];
+          user_id?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -377,6 +422,13 @@ export type Database = {
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];
+          _user_id: string;
+        };
+        Returns: boolean;
+      };
+      has_permission: {
+        Args: {
+          _permission: Database["public"]["Enums"]["app_permission"];
           _user_id: string;
         };
         Returns: boolean;
@@ -394,8 +446,18 @@ export type Database = {
       };
     };
     Enums: {
-      app_role: "admin" | "professional" | "client";
+      // 'staff' lo agrega la migración 20260813060000.
+      app_role: "admin" | "professional" | "client" | "staff";
       appointment_status: "pending" | "confirmed" | "completed" | "cancelled";
+      // app_permission la crea la migración 20260813070000.
+      app_permission:
+        | "appointments"
+        | "clients_contact"
+        | "clients_notes"
+        | "catalog"
+        | "stock"
+        | "stock_costs"
+        | "team";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -517,8 +579,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "professional", "client"],
+      app_role: ["admin", "professional", "client", "staff"],
       appointment_status: ["pending", "confirmed", "completed", "cancelled"],
+      app_permission: [
+        "appointments",
+        "clients_contact",
+        "clients_notes",
+        "catalog",
+        "stock",
+        "stock_costs",
+        "team",
+      ],
     },
   },
 } as const;

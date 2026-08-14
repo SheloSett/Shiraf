@@ -1,9 +1,17 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, ClipboardList, Package, Sparkles, Users, UserSquare } from "lucide-react";
+import {
+  CalendarDays,
+  ClipboardList,
+  Package,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  UserSquare,
+} from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { useAccess } from "@/hooks/useAccess";
+import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
@@ -24,14 +32,35 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminLayout,
 });
 
+// Cada sección declara qué permiso la habilita, para que una empleada sólo vea
+// en el menú lo que realmente puede abrir. `adminOnly` es para lo que no se
+// delega: repartir accesos.
 const nav = [
-  { to: "/admin", label: "Calendario", icon: CalendarDays, exact: true, children: [] },
-  { to: "/admin/turnos", label: "Turnos", icon: ClipboardList, exact: false, children: [] },
+  {
+    to: "/admin",
+    label: "Calendario",
+    icon: CalendarDays,
+    exact: true,
+    permission: "appointments",
+    adminOnly: false,
+    children: [],
+  },
+  {
+    to: "/admin/turnos",
+    label: "Turnos",
+    icon: ClipboardList,
+    exact: false,
+    permission: "appointments",
+    adminOnly: false,
+    children: [],
+  },
   {
     to: "/admin/servicios",
     label: "Servicios",
     icon: Sparkles,
     exact: false,
+    permission: "catalog",
+    adminOnly: false,
     children: [{ to: "/admin/categorias-servicios", label: "Categorías" }],
   },
   {
@@ -39,39 +68,76 @@ const nav = [
     label: "Profesionales",
     icon: UserSquare,
     exact: false,
+    permission: "team",
+    adminOnly: false,
     children: [],
   },
-  { to: "/admin/clientes", label: "Clientes", icon: Users, exact: false, children: [] },
+  {
+    to: "/admin/clientes",
+    label: "Clientes",
+    icon: Users,
+    exact: false,
+    permission: "clients_contact",
+    adminOnly: false,
+    children: [],
+  },
   {
     to: "/admin/productos",
     label: "Productos",
     icon: Package,
     exact: false,
+    permission: "stock",
+    adminOnly: false,
     children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
+  },
+  {
+    to: "/admin/equipo",
+    label: "Equipo",
+    icon: ShieldCheck,
+    exact: false,
+    permission: "appointments", // ignorado: manda adminOnly
+    adminOnly: true,
+    children: [],
   },
 ] as const;
 
 function AdminLayout() {
   const location = useLocation();
 
-  const isAdmin = useQuery({
-    queryKey: ["is-admin"],
-    queryFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", auth.user!.id);
-      if (error) throw error;
-      return (data ?? []).some((r) => r.role === "admin");
-    },
-  });
+  // Antes acá vivía una consulta propia `["is-admin"]` que sólo miraba si el
+  // usuario tenía el rol admin. Se reemplaza por useAccess, que además trae los
+  // permisos: con el rol 'staff' el panel dejó de ser de una sola persona, y
+  // con la consulta vieja una secretaria rebotaba en "Acceso restringido"
+  // aunque tuviera accesos tildados.
+  //
+  //   const isAdmin = useQuery({
+  //     queryKey: ["is-admin"],
+  //     queryFn: async () => {
+  //       const { data: auth } = await supabase.auth.getUser();
+  //       const { data, error } = await supabase
+  //         .from("user_roles")
+  //         .select("role")
+  //         .eq("user_id", auth.user!.id);
+  //       if (error) throw error;
+  //       return (data ?? []).some((r) => r.role === "admin");
+  //     },
+  //   });
+  const { isAdmin, canEnterPanel, can, loading } = useAccess();
 
-  if (isAdmin.isLoading) {
+  // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
+  const visibleNav = nav.filter((item) => (item.adminOnly ? isAdmin : can(item.permission)));
+
+  // Guard de la sección abierta. Va acá y no en cada ruta hija porque todas
+  // renderizan dentro de este <Outlet />: en un solo lugar no hay forma de
+  // olvidarse de ponerlo en una pantalla nueva.
+  const required = requiredAccessFor(location.pathname);
+  const allowed = required === "admin" ? isAdmin : can(required);
+
+  if (loading) {
     return <p className="p-10 text-sm text-muted-foreground">Verificando permisos…</p>;
   }
 
-  if (!isAdmin.data) {
+  if (!canEnterPanel) {
     return (
       <div className="mx-auto max-w-md px-5 py-24 text-center">
         <h1 className="font-display text-3xl text-foreground">Acceso restringido</h1>
@@ -95,7 +161,7 @@ function AdminLayout() {
           </span>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-col lg:overflow-visible">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const active = item.exact
               ? location.pathname === item.to
               : location.pathname.startsWith(item.to);
@@ -152,7 +218,28 @@ function AdminLayout() {
       </aside>
 
       <main className="flex-1 bg-background px-5 py-10 lg:px-10">
-        <Outlet />
+        {/* El bloqueo va adentro del layout, con el menú a la vista: así se ve
+            qué secciones sí están disponibles en vez de quedar en una pantalla
+            muerta. Esto es cortesía, no seguridad — el candado real es la RLS. */}
+        {allowed ? (
+          <Outlet />
+        ) : (
+          <div className="mx-auto max-w-md py-20 text-center">
+            <h1 className="font-display text-3xl text-foreground">
+              No tenés acceso a esta sección
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              {required === "admin"
+                ? "Es una sección reservada a la dueña del centro."
+                : `Necesitás el acceso "${permissionLabel(required)}". Pedíselo a la dueña.`}
+            </p>
+            {visibleNav.length > 0 && (
+              <Button asChild className="mt-6">
+                <Link to={visibleNav[0]!.to}>Ir a {visibleNav[0]!.label}</Link>
+              </Button>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );

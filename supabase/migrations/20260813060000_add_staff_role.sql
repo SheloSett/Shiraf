@@ -1,0 +1,21 @@
+-- ============================================================================
+-- Nuevo rol: 'staff' (secretaría / recepción).
+--
+-- Va SOLO en esta migración, sin nada más. Postgres no deja usar un valor de
+-- enum recién agregado dentro de la misma transacción:
+--
+--   ERROR: unsafe use of new value "staff" of enum type app_role
+--   HINT:  New enum values must be committed before they can be used.
+--
+-- Y el SQL Editor de Supabase envuelve lo que se pega en una transacción, así
+-- que si esto viniera junto con la tabla de permisos que lo referencia, fallaría
+-- entero. La migración siguiente (20260813070000) ya lo puede usar.
+--
+-- Los cuatro actores quedan:
+--   admin        → la dueña. Puede todo, siempre, por estructura.
+--   staff        → empleada de recepción. Sólo lo que la dueña le habilite.
+--   professional → quien realiza los tratamientos.
+--   client       → la clienta.
+-- ============================================================================
+
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'staff';
