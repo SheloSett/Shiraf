@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
 import { formatMoney } from "@/lib/shiraf";
+import { imageUrl } from "@/lib/cloudinary";
 import { removeServiceImage, uploadServiceImage } from "@/lib/storage";
 
 export const Route = createFileRoute("/_authenticated/admin/servicios")({
@@ -367,7 +368,7 @@ function AdminServices() {
                 {form.image_url ? (
                   <div className="flex items-start gap-4">
                     <img
-                      src={form.image_url}
+                      src={imageUrl(form.image_url, "card") ?? undefined}
                       alt="Vista previa del tratamiento"
                       className="h-28 w-24 shrink-0 rounded-sm object-cover"
                     />
@@ -472,7 +473,7 @@ function AdminServices() {
                   <div className="flex items-start gap-3">
                     {s.image_url ? (
                       <img
-                        src={s.image_url}
+                        src={imageUrl(s.image_url, "thumb") ?? undefined}
                         alt=""
                         className="h-12 w-12 shrink-0 rounded-sm object-cover"
                       />

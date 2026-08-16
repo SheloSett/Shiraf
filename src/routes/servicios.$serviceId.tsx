@@ -6,6 +6,7 @@ import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { imageUrl } from "@/lib/cloudinary";
 import { formatMoney, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/servicios/$serviceId")({
@@ -160,7 +161,7 @@ function ServiceDetail() {
         <div className="surface-olive grain relative hidden overflow-hidden lg:col-span-5 lg:col-start-8 lg:block">
           {s.image_url && (
             <img
-              src={s.image_url}
+              src={imageUrl(s.image_url, "hero") ?? undefined}
               alt={`Tratamiento de ${s.name} en Shiraf`}
               className="absolute inset-0 h-full w-full object-cover"
             />

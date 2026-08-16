@@ -11,6 +11,9 @@ services:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?falta VITE_SUPABASE_URL en .env}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?falta VITE_SUPABASE_PUBLISHABLE_KEY en .env}
         VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID:-}
+        # Cloudinary: el cloud name se hornea en el bundle para poder armar las
+        # URLs de las imágenes. Es público, aparece en cada foto servida.
+        VITE_CLOUDINARY_CLOUD_NAME: ${VITE_CLOUDINARY_CLOUD_NAME:?falta VITE_CLOUDINARY_CLOUD_NAME en .env}
     image: shiraf-app:latest
     container_name: shiraf-app
     restart: unless-stopped
@@ -31,6 +34,14 @@ services:
       # hornean en el bundle que baja el navegador. Acá entra por runtime al
       # proceso del servidor y no sale de ahí.
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?falta SUPABASE_SERVICE_ROLE_KEY en .env}
+
+      # Cloudinary del lado servidor: firma las subidas y los borrados. El
+      # api secret NUNCA como build arg ni con prefijo VITE_ — eso lo dejaría
+      # horneado en el bundle que baja el navegador, y con él se puede borrar
+      # cualquier imagen de la cuenta.
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?falta CLOUDINARY_CLOUD_NAME en .env}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?falta CLOUDINARY_API_KEY en .env}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?falta CLOUDINARY_API_SECRET en .env}
 
     # Publicado sólo en loopback: en el VPS ya tenés un reverse proxy para los
     # otros dos sitios, así que este contenedor no debe quedar expuesto directo

@@ -8,6 +8,7 @@ import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { imageUrl } from "@/lib/cloudinary";
 import { formatMoney } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/")({
@@ -290,8 +291,8 @@ function Home() {
                 <p className="mt-7 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
                   Tratamientos faciales, corporales y aparatología pensados uno por uno. Elegí tu
                   servicio, el día, el horario y la profesional que te acompaña. Trabajamos con
-                  cosmética profesional de línea dermatológica y una evaluación previa antes de
-                  cada sesión. Nada de protocolos genéricos.
+                  cosmética profesional de línea dermatológica y una evaluación previa antes de cada
+                  sesión. Nada de protocolos genéricos.
                 </p>
               </div>
               <Link
@@ -370,7 +371,7 @@ function Home() {
                   {active.image_url && (
                     <>
                       <img
-                        src={active.image_url}
+                        src={imageUrl(active.image_url, "hero") ?? undefined}
                         alt=""
                         className="absolute inset-0 h-full w-full object-cover"
                       />

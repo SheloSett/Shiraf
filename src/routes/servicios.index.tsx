@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Reveal } from "@/components/reveal";
 import { supabase } from "@/integrations/supabase/client";
+import { imageUrl } from "@/lib/cloudinary";
 import { formatMoney } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
@@ -208,7 +209,7 @@ function ServicesPage() {
                       <div className="relative aspect-[4/3] overflow-hidden bg-primary">
                         {s.image_url ? (
                           <img
-                            src={s.image_url}
+                            src={imageUrl(s.image_url, "card") ?? undefined}
                             alt=""
                             loading="lazy"
                             className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
