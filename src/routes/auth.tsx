@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -36,6 +37,8 @@ function AuthPage() {
   const [phone, setPhone] = useState("");
   /** Mail a confirmar. Si está seteado, el registro quedó a la espera. */
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  /** Mail al que se mandó el enlace de recuperación, si se pidió uno. */
+  const [recoverySent, setRecoverySent] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -53,6 +56,27 @@ function AuthPage() {
       return;
     }
     navigate({ to: "/mi-cuenta" });
+  }
+
+  /**
+   * Manda el mail con el enlace para elegir una contraseña nueva.
+   *
+   * Siempre dice "listo", exista o no la cuenta. Si respondiera distinto según
+   * el caso, cualquiera podría averiguar qué mails están registrados en el
+   * centro probando de a uno — y acá saber que alguien es clienta ya es
+   * información sobre su salud.
+   */
+  async function requestRecovery() {
+    if (!email.trim()) {
+      toast.error("Escribí tu mail arriba y volvé a tocar el enlace.");
+      return;
+    }
+    setLoading(true);
+    await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/recuperar`,
+    });
+    setLoading(false);
+    setRecoverySent(email.trim());
   }
 
   async function signUp(e: React.FormEvent) {
@@ -125,7 +149,19 @@ function AuthPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Contraseña</Label>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <Label htmlFor="password">Contraseña</Label>
+                    {/* type=button: dentro de un <form>, un botón sin type
+                        envía el formulario e intentaría iniciar sesión. */}
+                    <button
+                      type="button"
+                      onClick={requestRecovery}
+                      disabled={loading}
+                      className="text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                    >
+                      Olvidé mi contraseña
+                    </button>
+                  </div>
                   <Input
                     id="password"
                     type="password"
@@ -134,6 +170,17 @@ function AuthPage() {
                     onChange={(e) => setPassword(e.target.value)}
                   />
                 </div>
+
+                {recoverySent && (
+                  <div className="rounded-sm border border-gold/50 bg-gold/10 p-4">
+                    <p className="text-xs leading-relaxed text-foreground">
+                      Si <span className="font-medium">{recoverySent}</span> tiene una cuenta, le
+                      llega un enlace para elegir una contraseña nueva. Dura una hora y sirve una
+                      sola vez. Revisá también el correo no deseado.
+                    </p>
+                  </div>
+                )}
+
                 <Button type="submit" className="w-full" disabled={loading}>
                   Ingresar
                 </Button>
@@ -197,7 +244,9 @@ function AuthPage() {
                       id="password2"
                       type="password"
                       required
-                      minLength={6}
+                      // Era 6 acá y 8 en el alta de empleadas, sin que nadie lo
+                      // hubiera decidido. Unificado en MIN_PASSWORD_LENGTH.
+                      minLength={MIN_PASSWORD_LENGTH}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />

@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ContactoRouteImport } from './routes/contacto'
 import { Route as ProfesionalesRouteImport } from './routes/profesionales'
+import { Route as RecuperarRouteImport } from './routes/recuperar'
 import { Route as ServiciosRouteImport } from './routes/servicios'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated/mi-cuenta'
@@ -52,6 +53,11 @@ const ContactoRoute = ContactoRouteImport.update({
 const ProfesionalesRoute = ProfesionalesRouteImport.update({
   id: '/profesionales',
   path: '/profesionales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecuperarRoute = RecuperarRouteImport.update({
+  id: '/recuperar',
+  path: '/recuperar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ServiciosRoute = ServiciosRouteImport.update({
@@ -143,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
+  '/recuperar': typeof RecuperarRoute
   '/servicios': typeof ServiciosRouteWithChildren
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
+  '/recuperar': typeof RecuperarRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/reservar': typeof AuthenticatedReservarRoute
   '/servicios/$serviceId': typeof ServiciosServiceIdRoute
@@ -185,6 +193,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
+  '/recuperar': typeof RecuperarRoute
   '/servicios': typeof ServiciosRouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/contacto'
     | '/profesionales'
+    | '/recuperar'
     | '/servicios'
     | '/admin'
     | '/mi-cuenta'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/contacto'
     | '/profesionales'
+    | '/recuperar'
     | '/mi-cuenta'
     | '/reservar'
     | '/servicios/$serviceId'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/contacto'
     | '/profesionales'
+    | '/recuperar'
     | '/servicios'
     | '/_authenticated/admin'
     | '/_authenticated/mi-cuenta'
@@ -272,6 +284,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ContactoRoute: typeof ContactoRoute
   ProfesionalesRoute: typeof ProfesionalesRoute
+  RecuperarRoute: typeof RecuperarRoute
   ServiciosRoute: typeof ServiciosRouteWithChildren
 }
 
@@ -310,6 +323,13 @@ declare module '@tanstack/react-router' {
       path: '/profesionales'
       fullPath: '/profesionales'
       preLoaderRoute: typeof ProfesionalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recuperar': {
+      id: '/recuperar'
+      path: '/recuperar'
+      fullPath: '/recuperar'
+      preLoaderRoute: typeof RecuperarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/servicios': {
@@ -484,6 +504,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ContactoRoute: ContactoRoute,
   ProfesionalesRoute: ProfesionalesRoute,
+  RecuperarRoute: RecuperarRoute,
   ServiciosRoute: ServiciosRouteWithChildren,
 }
 export const routeTree = rootRouteImport

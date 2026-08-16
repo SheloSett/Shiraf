@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarDays, History, User } from "lucide-react";
+import { CalendarDays, History, KeyRound, User } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
+import { passwordProblem } from "@/lib/password";
 
 export const Route = createFileRoute("/_authenticated/mi-cuenta")({
   head: () => ({
@@ -38,6 +39,23 @@ function AccountPage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordAgain, setNewPasswordAgain] = useState("");
+
+  const changePassword = useMutation({
+    mutationFn: async () => {
+      const problem = passwordProblem(newPassword, newPasswordAgain);
+      if (problem) throw new Error(problem);
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setNewPassword("");
+      setNewPasswordAgain("");
+      toast.success("Contraseña actualizada.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const profile = useQuery({
     queryKey: ["my-profile"],
@@ -226,6 +244,62 @@ function AccountPage() {
               <Button onClick={() => saveProfile.mutate()} disabled={saveProfile.isPending}>
                 Guardar cambios
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cambio de contraseña. Vive acá y no en el panel porque lo necesitan
+            los dos lados: la clienta que quiere cambiarla, y la empleada que
+            entró con la que le puso la dueña —en texto plano, porque tenía que
+            poder dictársela— y hasta ahora no tenía forma de reemplazarla. */}
+        <div className="mt-14 flex items-center gap-3">
+          <KeyRound className="h-5 w-5 text-gold" />
+          <h2 className="font-display text-2xl text-foreground">Contraseña</h2>
+        </div>
+        <Card className="mt-5 border-border/80 shadow-soft">
+          <CardContent className="grid gap-4 p-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-pass">Contraseña nueva</Label>
+              <Input
+                id="new-pass"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-pass-2">Repetila</Label>
+              <Input
+                id="new-pass-2"
+                type="password"
+                autoComplete="new-password"
+                value={newPasswordAgain}
+                onChange={(e) => setNewPasswordAgain(e.target.value)}
+              />
+            </div>
+
+            {newPassword.length > 0 && passwordProblem(newPassword, newPasswordAgain) && (
+              <p className="text-xs text-destructive sm:col-span-2">
+                {passwordProblem(newPassword, newPasswordAgain)}
+              </p>
+            )}
+
+            <div className="sm:col-span-2">
+              <Button
+                onClick={() => changePassword.mutate()}
+                disabled={
+                  changePassword.isPending ||
+                  newPasswordAgain.length === 0 ||
+                  passwordProblem(newPassword, newPasswordAgain) !== null
+                }
+              >
+                {changePassword.isPending ? "Cambiando…" : "Cambiar contraseña"}
+              </Button>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                Al cambiarla seguís conectada acá, pero vas a tener que usar la nueva la próxima vez
+                que ingreses.
+              </p>
             </div>
           </CardContent>
         </Card>

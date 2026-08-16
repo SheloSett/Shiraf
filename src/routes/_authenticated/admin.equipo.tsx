@@ -358,8 +358,8 @@ function AdminTeam() {
               )}
               <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
                 <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Se muestra en texto plano a propósito: tenés que poder copiarla para dársela. Que la
-                cambie ella todavía no se puede — falta la pantalla de cambio de contraseña.
+                Se muestra en texto plano a propósito: tenés que poder copiarla para dársela.
+                Después ella la cambia desde Mi cuenta.
               </p>
             </div>
 
