@@ -16,6 +16,15 @@ dist-ssr
 .nitro
 *.local
 
+# Artefacto del preset `vercel` de Nitro (Build Output API v3). Se genera solo
+# al construir con NITRO_PRESET=vercel; Vercel lo produce en su propio runner.
+.vercel
+
+# Vista previa local de los mails. Se genera desde supabase/emails/*.html para
+# poder mirarlos en el navegador; vive en public/ sólo porque es la carpeta que
+# el dev server sirve tal cual. No tiene por qué publicarse con el sitio.
+public/preview-mails/
+
 # Secretos. El .env estuvo trackeado hasta ahora: las claves que tenía son
 # publishable (públicas por diseño, viajan igual en el bundle del navegador),
 # así que no hubo fuga ni hay nada que rotar. Se saca del repo de forma

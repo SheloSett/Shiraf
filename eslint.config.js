@@ -6,7 +6,26 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", ".output", ".vinxi"] },
+  // Artefactos de build. Van todos los que produce el proyecto y no sólo
+  // algunos: `.vercel` faltaba y, apenas se construyó con el preset de Vercel,
+  // ESLint se puso a lintear los bundles generados — 68.091 errores de prettier
+  // sobre código que nadie escribió, que tapaban los 7 avisos reales del código
+  // fuente.
+  //
+  // La lista espeja la del .gitignore a propósito: si algo no va al repo porque
+  // se regenera, tampoco tiene sentido lintearlo.
+  {
+    ignores: [
+      "dist",
+      "dist-ssr",
+      ".output",
+      ".vinxi",
+      ".vercel",
+      ".nitro",
+      ".tanstack",
+      ".wrangler",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
