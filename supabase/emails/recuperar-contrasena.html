@@ -1,0 +1,275 @@
+<!--
+  Shiraf — mail de recuperación de contraseña.
+
+  Se pega en Supabase → Authentication → Emails → Reset Password.
+  Ver supabase/emails/README.md para el paso a paso y las advertencias.
+
+  POR QUÉ ESTÁ ESCRITO ASÍ Y NO COMO EL RESTO DEL SITIO:
+
+  · Tablas y no flex/grid. Outlook renderiza con el motor de Word y no soporta
+    ninguna de las dos; las tablas son lo único que se ve igual en todos lados.
+  · Estilos inline y no clases. Gmail borra el <style> del <head> en varias de
+    sus vistas, y sin inline el mail llega sin ningún formato.
+  · Georgia en vez de Bodoni Moda. Las tipografías web casi no cargan en los
+    clientes de correo, y cuando no cargan el reemplazo lo elige el programa —
+    normalmente Times. Georgia ya está instalada en Windows, Mac y Android, y
+    al ser serif de contraste alto es lo más parecido a Bodoni que se puede
+    garantizar.
+  · Colores en hex y no en oklch. La paleta del sitio está en oklch (ver
+    src/styles.css) y ningún cliente de correo la entiende; estos son los
+    mismos colores convertidos.
+  · 600px de ancho: el estándar que entra sin scroll horizontal en la vista de
+    lectura de Outlook y en un celular.
+-->
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title>Recuperá tu contraseña — Shiraf</title>
+  </head>
+  <body
+    style="margin: 0; padding: 0; background-color: #f7f6f0; -webkit-font-smoothing: antialiased"
+  >
+    <!-- Preheader: el resumen que se lee en la bandeja, al lado del asunto.
+         Oculto en el cuerpo. Sin esto, el cliente muestra el primer texto que
+         encuentra, que suele ser "Si no pediste este cambio…" y asusta. -->
+    <div
+      style="
+        display: none;
+        max-height: 0;
+        overflow: hidden;
+        mso-hide: all;
+        font-size: 1px;
+        line-height: 1px;
+        color: #f7f6f0;
+      "
+    >
+      Elegí una contraseña nueva para tu cuenta de Shiraf. El enlace vale por una hora.
+    </div>
+
+    <table
+      role="presentation"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      width="100%"
+      style="background-color: #f7f6f0"
+    >
+      <tr>
+        <td align="center" style="padding: 32px 16px">
+          <table
+            role="presentation"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            width="600"
+            style="width: 600px; max-width: 100%; border-collapse: collapse"
+          >
+            <!-- Cabecera oliva, igual que la barra del sitio -->
+            <tr>
+              <td
+                align="center"
+                style="
+                  background-color: #38472c;
+                  padding: 28px 24px;
+                  border-radius: 2px 2px 0 0;
+                "
+              >
+                <span
+                  style="
+                    font-family: Georgia, 'Times New Roman', serif;
+                    font-size: 20px;
+                    letter-spacing: 5px;
+                    color: #f8f5ec;
+                  "
+                  >SHIRAF</span
+                >
+                <div
+                  style="
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 10px;
+                    letter-spacing: 2px;
+                    text-transform: uppercase;
+                    color: rgba(248, 245, 236, 0.55);
+                    padding-top: 8px;
+                  "
+                >
+                  Centro de estética
+                </div>
+              </td>
+            </tr>
+
+            <!-- Cuerpo -->
+            <tr>
+              <td
+                style="
+                  background-color: #fcfcf9;
+                  padding: 40px 40px 32px;
+                  border-left: 1px solid #dddbd1;
+                  border-right: 1px solid #dddbd1;
+                "
+              >
+                <h1
+                  style="
+                    margin: 0;
+                    font-family: Georgia, 'Times New Roman', serif;
+                    font-size: 30px;
+                    line-height: 1.25;
+                    font-weight: 400;
+                    color: #252b1f;
+                  "
+                >
+                  Recuperá tu contraseña
+                </h1>
+
+                <!-- Filete dorado: el mismo recurso que separa las secciones
+                     del sitio. Va como tabla porque un <hr> con color no se ve
+                     igual en Outlook. -->
+                <table
+                  role="presentation"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="margin: 20px 0 0"
+                >
+                  <tr>
+                    <td
+                      style="
+                        width: 56px;
+                        height: 2px;
+                        background-color: #d2a956;
+                        font-size: 0;
+                        line-height: 0;
+                      "
+                    >
+                      &nbsp;
+                    </td>
+                  </tr>
+                </table>
+
+                <p
+                  style="
+                    margin: 24px 0 0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 15px;
+                    line-height: 1.7;
+                    color: #676b5e;
+                  "
+                >
+                  Pediste volver a entrar a tu cuenta. Tocá el botón y elegí una contraseña nueva.
+                </p>
+
+                <!-- Botón. Va dentro de una tabla y con padding en la celda:
+                     un <a> con padding se rompe en Outlook. -->
+                <table
+                  role="presentation"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="margin: 32px 0 0"
+                >
+                  <tr>
+                    <td
+                      align="center"
+                      bgcolor="#d2a956"
+                      style="border-radius: 2px; background-color: #d2a956"
+                    >
+                      <a
+                        href="{{ .ConfirmationURL }}"
+                        target="_blank"
+                        style="
+                          display: inline-block;
+                          padding: 15px 34px;
+                          font-family: Helvetica, Arial, sans-serif;
+                          font-size: 14px;
+                          font-weight: bold;
+                          letter-spacing: 0.5px;
+                          color: #2a2a19;
+                          text-decoration: none;
+                          border-radius: 2px;
+                        "
+                        >Elegir contraseña nueva</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+
+                <p
+                  style="
+                    margin: 28px 0 0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 13px;
+                    line-height: 1.7;
+                    color: #676b5e;
+                  "
+                >
+                  El enlace vale por una hora y se puede usar una sola vez.
+                </p>
+
+                <p
+                  style="
+                    margin: 20px 0 0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 13px;
+                    line-height: 1.7;
+                    color: #676b5e;
+                  "
+                >
+                  <strong style="color: #252b1f">Si no lo pediste, ignorá este mail.</strong> Tu
+                  contraseña sigue siendo la de siempre y no hace falta que hagas nada.
+                </p>
+
+                <!-- Alternativa al botón: hay clientes que no dejan tocarlo, y
+                     gente que desconfía de un botón sin ver a dónde va. -->
+                <p
+                  style="
+                    margin: 28px 0 0;
+                    padding-top: 20px;
+                    border-top: 1px solid #dddbd1;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 12px;
+                    line-height: 1.7;
+                    color: #676b5e;
+                  "
+                >
+                  ¿No funciona el botón? Copiá y pegá esta dirección en tu navegador:<br />
+                  <span style="color: #38472c; word-break: break-all">{{ .ConfirmationURL }}</span>
+                </p>
+              </td>
+            </tr>
+
+            <!-- Pie -->
+            <tr>
+              <td
+                style="
+                  background-color: #eae8de;
+                  padding: 24px 40px 28px;
+                  border: 1px solid #dddbd1;
+                  border-top: 0;
+                  border-radius: 0 0 2px 2px;
+                "
+              >
+                <p
+                  style="
+                    margin: 0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 12px;
+                    line-height: 1.8;
+                    color: #676b5e;
+                  "
+                >
+                  <strong style="color: #252b1f">Shiraf</strong> · Vuelta de Obligado 2443, Oficina
+                  302, Buenos Aires<br />
+                  +54 9 11 5418-9624 · Lunes a viernes de 9:00 a 18:00
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -1,0 +1,234 @@
+<!--
+  Shiraf — mail de confirmación de cuenta.
+
+  Se pega en Supabase → Authentication → Emails → Confirm signup.
+  Es el PRIMER mail que recibe una clienta, así que es el que más define si el
+  centro le parece serio. Ver supabase/emails/README.md.
+
+  Las decisiones de maquetado (tablas, estilos inline, Georgia, hex) están
+  explicadas en recuperar-contrasena.html y valen igual acá.
+-->
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title>Confirmá tu cuenta — Shiraf</title>
+  </head>
+  <body
+    style="margin: 0; padding: 0; background-color: #f7f6f0; -webkit-font-smoothing: antialiased"
+  >
+    <div
+      style="
+        display: none;
+        max-height: 0;
+        overflow: hidden;
+        mso-hide: all;
+        font-size: 1px;
+        line-height: 1px;
+        color: #f7f6f0;
+      "
+    >
+      Confirmá tu mail y empezá a reservar turnos en Shiraf.
+    </div>
+
+    <table
+      role="presentation"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      width="100%"
+      style="background-color: #f7f6f0"
+    >
+      <tr>
+        <td align="center" style="padding: 32px 16px">
+          <table
+            role="presentation"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            width="600"
+            style="width: 600px; max-width: 100%; border-collapse: collapse"
+          >
+            <tr>
+              <td
+                align="center"
+                style="background-color: #38472c; padding: 28px 24px; border-radius: 2px 2px 0 0"
+              >
+                <span
+                  style="
+                    font-family: Georgia, 'Times New Roman', serif;
+                    font-size: 20px;
+                    letter-spacing: 5px;
+                    color: #f8f5ec;
+                  "
+                  >SHIRAF</span
+                >
+                <div
+                  style="
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 10px;
+                    letter-spacing: 2px;
+                    text-transform: uppercase;
+                    color: rgba(248, 245, 236, 0.55);
+                    padding-top: 8px;
+                  "
+                >
+                  Centro de estética
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  background-color: #fcfcf9;
+                  padding: 40px 40px 32px;
+                  border-left: 1px solid #dddbd1;
+                  border-right: 1px solid #dddbd1;
+                "
+              >
+                <h1
+                  style="
+                    margin: 0;
+                    font-family: Georgia, 'Times New Roman', serif;
+                    font-size: 30px;
+                    line-height: 1.25;
+                    font-weight: 400;
+                    color: #252b1f;
+                  "
+                >
+                  Bienvenida a Shiraf
+                </h1>
+
+                <table
+                  role="presentation"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="margin: 20px 0 0"
+                >
+                  <tr>
+                    <td
+                      style="
+                        width: 56px;
+                        height: 2px;
+                        background-color: #d2a956;
+                        font-size: 0;
+                        line-height: 0;
+                      "
+                    >
+                      &nbsp;
+                    </td>
+                  </tr>
+                </table>
+
+                <p
+                  style="
+                    margin: 24px 0 0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 15px;
+                    line-height: 1.7;
+                    color: #676b5e;
+                  "
+                >
+                  Creaste tu cuenta. Confirmá tu mail y vas a poder reservar turnos, elegir con qué
+                  profesional atenderte y llevar el historial de tus tratamientos.
+                </p>
+
+                <table
+                  role="presentation"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="margin: 32px 0 0"
+                >
+                  <tr>
+                    <td
+                      align="center"
+                      bgcolor="#d2a956"
+                      style="border-radius: 2px; background-color: #d2a956"
+                    >
+                      <a
+                        href="{{ .ConfirmationURL }}"
+                        target="_blank"
+                        style="
+                          display: inline-block;
+                          padding: 15px 34px;
+                          font-family: Helvetica, Arial, sans-serif;
+                          font-size: 14px;
+                          font-weight: bold;
+                          letter-spacing: 0.5px;
+                          color: #2a2a19;
+                          text-decoration: none;
+                          border-radius: 2px;
+                        "
+                        >Confirmar mi cuenta</a
+                      >
+                    </td>
+                  </tr>
+                </table>
+
+                <p
+                  style="
+                    margin: 28px 0 0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 13px;
+                    line-height: 1.7;
+                    color: #676b5e;
+                  "
+                >
+                  <strong style="color: #252b1f">Si no creaste ninguna cuenta, ignorá este mail.</strong>
+                  No se va a activar nada sin que toques el botón.
+                </p>
+
+                <p
+                  style="
+                    margin: 28px 0 0;
+                    padding-top: 20px;
+                    border-top: 1px solid #dddbd1;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 12px;
+                    line-height: 1.7;
+                    color: #676b5e;
+                  "
+                >
+                  ¿No funciona el botón? Copiá y pegá esta dirección en tu navegador:<br />
+                  <span style="color: #38472c; word-break: break-all">{{ .ConfirmationURL }}</span>
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  background-color: #eae8de;
+                  padding: 24px 40px 28px;
+                  border: 1px solid #dddbd1;
+                  border-top: 0;
+                  border-radius: 0 0 2px 2px;
+                "
+              >
+                <p
+                  style="
+                    margin: 0;
+                    font-family: Helvetica, Arial, sans-serif;
+                    font-size: 12px;
+                    line-height: 1.8;
+                    color: #676b5e;
+                  "
+                >
+                  <strong style="color: #252b1f">Shiraf</strong> · Vuelta de Obligado 2443, Oficina
+                  302, Buenos Aires<br />
+                  +54 9 11 5418-9624 · Lunes a viernes de 9:00 a 18:00
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
