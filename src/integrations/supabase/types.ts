@@ -433,6 +433,15 @@ export type Database = {
         };
         Returns: boolean;
       };
+      // Migración 20260816000000: renombrado atómico de categorías.
+      rename_service_category: {
+        Args: { _id: string; _to: string };
+        Returns: undefined;
+      };
+      rename_product_category: {
+        Args: { _id: string; _to: string };
+        Returns: undefined;
+      };
       professional_busy_slots: {
         Args: {
           _from: string;

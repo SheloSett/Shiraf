@@ -68,6 +68,12 @@ function AdminProfessionals() {
   const [draftSchedules, setDraftSchedules] = useState<DraftSchedule[]>([]);
 
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
+  /** Baja temporal a confirmar. Sólo se pide confirmación si tiene turnos futuros. */
+  const [deactivating, setDeactivating] = useState<{
+    id: string;
+    name: string;
+    count: number;
+  } | null>(null);
 
   const team = useQuery({
     queryKey: ["admin-professionals"],
@@ -84,7 +90,16 @@ function AdminProfessionals() {
   });
 
   const services = useQuery({
-    queryKey: ["admin-services"],
+    // Clave propia y no ["admin-services"] a secas, que es la que usa la
+    // pantalla de Servicios con un select mucho más grande. Compartiéndola,
+    // react-query servía a las dos lo que hubiera cacheado la primera: al
+    // entrar a Servicios viniendo de acá, la tabla mostraba precio, duración y
+    // publicado vacíos hasta que refetcheaba.
+    //
+    // El prefijo se mantiene a propósito: invalidar ["admin-services"] desde
+    // Servicios sigue alcanzando a esta lista, que es lo que se quiere cuando
+    // se crea o se borra un tratamiento.
+    queryKey: ["admin-services", "picker"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("services")
@@ -96,7 +111,44 @@ function AdminProfessionals() {
     },
   });
 
+  /**
+   * Turnos futuros sin realizar, por profesional.
+   *
+   * Desactivar o borrar a alguien no toca sus turnos ya reservados: quedan
+   * agendados con una profesional que ya no atiende, y nadie se entera hasta
+   * que la clienta se presenta. Esto no lo impide —a veces es exactamente lo
+   * que se quiere, porque renunció— pero lo pone a la vista para poder
+   * reasignarlos antes.
+   *
+   * Ojo: leer turnos ajenos exige el permiso `appointments`. Sin él la RLS
+   * devuelve vacío y el aviso no aparece. Es una limitación conocida y no un
+   * bug: quien gestiona el equipo sin ver la agenda no tiene con qué avisar.
+   */
+  const upcoming = useQuery({
+    queryKey: ["professionals-upcoming"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("professional_id")
+        .in("status", ["pending", "confirmed"])
+        .gte("starts_at", new Date().toISOString());
+      if (error) throw error;
+
+      const counts = new Map<string, number>();
+      for (const row of data ?? []) {
+        if (!row.professional_id) continue;
+        counts.set(row.professional_id, (counts.get(row.professional_id) ?? 0) + 1);
+      }
+      return counts;
+    },
+  });
+
+  function upcomingFor(professionalId: string): number {
+    return upcoming.data?.get(professionalId) ?? 0;
+  }
+
   async function refresh() {
+    await queryClient.invalidateQueries({ queryKey: ["professionals-upcoming"] });
     await queryClient.invalidateQueries({ queryKey: ["admin-professionals"] });
     // Las páginas públicas y el formulario de reserva leen los mismos datos.
     await queryClient.invalidateQueries({ queryKey: ["professionals"] });
@@ -335,7 +387,17 @@ function AdminProfessionals() {
                   <Switch
                     className="mr-2"
                     checked={p.is_active}
-                    onCheckedChange={(value) => toggleActive.mutate({ id: p.id, value })}
+                    onCheckedChange={(value) => {
+                      // Activar nunca pregunta; desactivar sólo si deja turnos
+                      // colgados. Un interruptor que abre un diálogo cada vez
+                      // deja de sentirse un interruptor.
+                      const pending = upcomingFor(p.id);
+                      if (!value && pending > 0) {
+                        setDeactivating({ id: p.id, name: p.full_name, count: pending });
+                        return;
+                      }
+                      toggleActive.mutate({ id: p.id, value });
+                    }}
                     aria-label={`${p.is_active ? "Desactivar" : "Activar"} a ${p.full_name}`}
                   />
                   <Button
@@ -621,6 +683,13 @@ function AdminProfessionals() {
               ¿Eliminar a {deleting?.name}?
             </AlertDialogTitle>
             <AlertDialogDescription>
+              {deleting && upcomingFor(deleting.id) > 0 && (
+                <span className="mb-3 block font-medium text-foreground">
+                  Tiene {upcomingFor(deleting.id)}{" "}
+                  {upcomingFor(deleting.id) === 1 ? "turno futuro" : "turnos futuros"} sin realizar.
+                  Van a quedar sin profesional asignada y las clientas no se enteran.
+                </span>
+              )}
               Se borran también sus tratamientos asignados y sus horarios. Los turnos ya reservados
               con ella no se pierden, pero quedan sin profesional asignada. Si sólo querés que deje
               de aparecer en el sitio, usá el interruptor de activa.
@@ -633,6 +702,39 @@ function AdminProfessionals() {
               disabled={remove.isPending}
             >
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Baja temporal con turnos colgando. Sólo aparece si los hay: si no, el
+          interruptor actúa directo. */}
+      <AlertDialog open={!!deactivating} onOpenChange={(next) => !next && setDeactivating(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-2xl">
+              {deactivating?.name} tiene turnos agendados
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Le quedan {deactivating?.count}{" "}
+              {deactivating?.count === 1 ? "turno futuro" : "turnos futuros"} sin realizar. Si la
+              desactivás, deja de aparecer en el sitio y no se le pueden sacar turnos nuevos, pero
+              esos siguen en pie y la clienta no recibe ningún aviso.
+              <span className="mt-3 block">
+                Conviene reasignarlos o cancelarlos desde Turnos antes de seguir.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Mejor no</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deactivating) toggleActive.mutate({ id: deactivating.id, value: false });
+                setDeactivating(null);
+              }}
+              disabled={toggleActive.isPending}
+            >
+              Desactivar igual
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

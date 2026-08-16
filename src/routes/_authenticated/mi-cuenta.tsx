@@ -89,11 +89,17 @@ function AccountPage() {
   const appointments = useQuery({
     queryKey: ["my-appointments"],
     queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser();
       const { data, error } = await supabase
         .from("appointments")
         .select(
           "id, starts_at, status, duration_minutes, client_notes, services(name, price, category), professionals(full_name)",
         )
+        // El filtro es explícito y no se delega en la RLS. La policy dice
+        // "los propios O los de todas si tenés el permiso de turnos", así que
+        // sin este .eq() la dueña o una secretaria abrían SU cuenta y veían
+        // ahí los turnos de todas las clientas, mezclados con los suyos.
+        .eq("client_id", auth.user!.id)
         .order("starts_at", { ascending: false });
       if (error) throw error;
       return data;

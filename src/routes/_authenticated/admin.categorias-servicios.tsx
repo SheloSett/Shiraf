@@ -62,17 +62,14 @@ function AdminServiceCategories() {
   });
 
   const rename = useMutation({
-    mutationFn: async ({ id, from, to }: { id: string; from: string; to: string }) => {
-      const { error } = await supabase.from("service_categories").update({ name: to }).eq("id", id);
+    // Una sola llamada a la base en vez de dos UPDATE sueltos. Antes se
+    // renombraba la categoría y después se arrastraba el nombre a los
+    // tratamientos; si lo segundo fallaba, quedaban apuntando a un nombre que ya
+    // no existía en la lista. La función mete las dos escrituras en la misma
+    // transacción: o pasan las dos o no pasa ninguna.
+    mutationFn: async ({ id, to }: { id: string; from: string; to: string }) => {
+      const { error } = await supabase.rpc("rename_service_category", { _id: id, _to: to });
       if (error) throw error;
-
-      // Igual que en productos: services.category guarda el nombre, así que hay
-      // que arrastrar el cambio. Acá además se ve en el sitio público.
-      const { error: servicesError } = await supabase
-        .from("services")
-        .update({ category: to })
-        .eq("category", from);
-      if (servicesError) throw servicesError;
     },
     onSuccess: async () => {
       await refresh();

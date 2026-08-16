@@ -86,28 +86,21 @@ campos vacíos, dejan de salir todos los mails.
 - [ ] **Bloqueos de agenda:** vacaciones, feriados, francos. Hoy solo hay horario
       semanal fijo, sin excepciones por fecha: un 25 de diciembre es reservable.
 
-## Tanda 3 — los 5 bugs medianos, ninguno hecho
+## ✅ Tanda 3 — los 5 bugs medianos, hechos (16/8/2026)
 
-Verificados en el código el 15/8/2026. Independientes entre sí, ninguno depende
-de datos que falten.
-
-- [ ] **Borrar un servicio no borra su foto.** `removeServiceImage` sólo se
-      llama al reemplazarla, no en la mutación `remove` de
-      [`admin.servicios.tsx`](src/routes/_authenticated/admin.servicios.tsx).
-      Con Cloudinary esto pesa más que antes: el plan gratuito tiene cuota, y
-      cada foto huérfana la consume para siempre. Son dos líneas.
-- [ ] **Colisión de `["admin-services"]`.** Servicios y Profesionales usan la
-      misma clave de react-query con `select` distintos; al navegar de una a
-      otra, la tabla de servicios muestra precio y duración vacíos hasta que
-      refetchea.
-- [ ] **Renombrar categoría no es atómico:** dos UPDATE sueltos. Si el segundo
-      falla, la categoría queda renombrada y los servicios apuntando al nombre
-      viejo.
-- [ ] **Desactivar una profesional no avisa de sus turnos futuros.** Quedan
-      agendados con alguien que ya no atiende.
-- [ ] **`mi-cuenta` no filtra por `client_id`.** Se apoya sólo en la RLS, así
-      que a un admin le lista los turnos de todas las clientas en su propia
-      cuenta.
+- [x] Borrar un servicio ahora borra su foto. Y cerrar el formulario sin
+      guardar también borra la que se haya subido para la vista previa, que era
+      la otra fuente de huérfanas.
+- [x] Colisión de `["admin-services"]` resuelta: Profesionales usa
+      `["admin-services", "picker"]`, que mantiene el prefijo para que la
+      invalidación la siga alcanzando.
+- [x] Renombrado de categoría atómico, en `rename_service_category` y
+      `rename_product_category` (migración `20260816000000`). El permiso se
+      chequea explícitamente: en un UPDATE la RLS filtra filas en vez de dar
+      error, así que sin eso la operación "salía bien" sin hacer nada.
+- [x] Desactivar o borrar una profesional avisa cuántos turnos futuros deja
+      colgados. Activar no pregunta nada.
+- [x] `mi-cuenta` filtra por `client_id` y ya no se apoya sólo en la RLS.
 
 ## Chicas
 

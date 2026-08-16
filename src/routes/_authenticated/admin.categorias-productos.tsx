@@ -61,17 +61,14 @@ function AdminProductCategories() {
   });
 
   const rename = useMutation({
-    mutationFn: async ({ id, from, to }: { id: string; from: string; to: string }) => {
-      const { error } = await supabase.from("product_categories").update({ name: to }).eq("id", id);
+    // Una sola llamada a la base en vez de dos UPDATE sueltos. Antes se
+    // renombraba la categoría y después se arrastraba el nombre a los
+    // productos; si lo segundo fallaba, quedaban apuntando a un nombre que ya
+    // no existía en la lista. La función mete las dos escrituras en la misma
+    // transacción: o pasan las dos o no pasa ninguna.
+    mutationFn: async ({ id, to }: { id: string; from: string; to: string }) => {
+      const { error } = await supabase.rpc("rename_product_category", { _id: id, _to: to });
       if (error) throw error;
-
-      // products.category guarda el nombre, no el id: sin esto los productos
-      // quedarían apuntando a una categoría que ya no existe.
-      const { error: productsError } = await supabase
-        .from("products")
-        .update({ category: to })
-        .eq("category", from);
-      if (productsError) throw productsError;
     },
     onSuccess: async () => {
       await refresh();

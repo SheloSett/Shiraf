@@ -84,6 +84,24 @@ function AdminServices() {
     setOriginalImage("");
   }
 
+  /**
+   * Cerrar sin guardar.
+   *
+   * La foto se sube apenas se elige, antes de tocar "Guardar": es lo que
+   * permite ver la vista previa. Si después se cierra el diálogo, esa foto ya
+   * está arriba y no la referencia nadie — huérfana, consumiendo cuota.
+   *
+   * Va aparte de closeForm() y no adentro porque save.onSuccess también cierra
+   * el formulario, y ahí la foto SÍ se está usando: borrarla dejaría al
+   * tratamiento recién guardado apuntando a un archivo que ya no existe.
+   */
+  function cancelForm() {
+    if (form.image_url && form.image_url !== originalImage) {
+      void removeServiceImage(form.image_url);
+    }
+    closeForm();
+  }
+
   function openCreate() {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
@@ -211,8 +229,21 @@ function AdminServices() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      // La URL se lee ANTES de borrar: después la fila ya no está y la foto
+      // quedaría sin forma de encontrarse.
+      const imageUrl = services.data?.find((s) => s.id === id)?.image_url ?? null;
+
       const { error } = await supabase.from("services").delete().eq("id", id);
       if (error) throw error;
+
+      // Y se borra DESPUÉS de que la baja salió bien: si el borrado del
+      // tratamiento fallara —pasa, porque appointments.service_id es ON DELETE
+      // RESTRICT— habríamos tirado la foto de un tratamiento que sigue vivo.
+      //
+      // Antes esto no se hacía y el archivo quedaba huérfano para siempre. Con
+      // Supabase Storage era 1 GB gratis y molestaba poco; ahora consume cuota
+      // de Cloudinary, que en el plan gratuito es finita.
+      await removeServiceImage(imageUrl);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-services"] });
@@ -256,7 +287,9 @@ function AdminServices() {
           <p className="text-eyebrow text-muted-foreground">Catálogo</p>
           <h1 className="mt-3 font-display text-4xl text-foreground">Servicios</h1>
         </div>
-        <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : closeForm())}>
+        {/* cancelForm y no closeForm: cerrar sin guardar tiene que limpiar la
+            foto que se haya subido para la vista previa. */}
+        <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : cancelForm())}>
           <DialogTrigger asChild>
             <Button onClick={openCreate}>
               <Plus className="mr-2 h-4 w-4" /> Nuevo servicio
