@@ -1,5 +1,58 @@
 # Pendientes de Shiraf
 
+## 🟡 Dos reglas de la agenda que tiene que decidir el centro (17/8/2026)
+
+Los horarios ya se **encadenan**: cada turno arranca cuando termina el anterior y
+el paso lo da la duración del tratamiento. Una profesional de 12 a 16 con
+sesiones de 45 ofrece `12:00 · 12:45 · 13:30 · 14:15 · 15:00`.
+
+Faltan definir dos cosas. Las dos son **una constante** arriba de
+[`src/lib/shiraf.ts`](src/lib/shiraf.ts), con el comentario que explica cada lado.
+
+### 1. `ALLOW_OVERTIME` — ¿el último turno puede pasarse de la hora de salida?
+
+Hoy en **`false`**. Con la profesional de 12 a 16 y sesiones de 45, las 15:45
+**no** se ofrecen porque terminarían 16:30.
+
+- [ ] Preguntarle al centro: _"si la salida es a las 16, ¿la podemos hacer quedar
+      hasta las 16:30?"_
+
+Está en `false` y no en `true` —que es la lista que se pidió— por dónde duele
+equivocarse. En `false` se ofrece un turno de menos y el panel lo puede cargar
+igual a mano. En `true` una clienta reserva sola, por el sitio, un horario que
+deja a la profesional trabajando después de su hora, y eso ya no se deshace.
+
+Ojo con un efecto que no es obvio: como los horarios se recalculan, el desborde
+puede ser grande. Si le tomaron un masaje de 45 y queda libre desde las 12:45,
+una depilación de 90 encadena 12:45 y 14:15, y la siguiente arrancaría 15:45
+para terminar **17:15** — una hora y cuarto tarde. La regla no distingue "un
+ratito" de "una hora y cuarto".
+
+### 2. `SLOT_BUFFER_MINUTES` — ¿cuántos minutos entre una clienta y la siguiente?
+
+Hoy en **`0`**: los turnos van pegados y la que entra 12:45 se cruza en la puerta
+con la que sale.
+
+- [ ] Preguntarle al centro cuánto tarda limpiar y preparar la cabina.
+
+Con `15`, esa misma agenda pasa a `12:00 · 13:00 · 14:00 · 15:00`: entra una
+clienta menos por tarde, pero los horarios quedan redondos y fáciles de dictar
+por teléfono. Queda en `0` porque es lo que la app venía haciendo; subirlo sin
+que nadie lo pida le borra turnos a la agenda.
+
+### 3. Recalcular vs. grilla fija — decidido, pero revisable
+
+Quedó en **recalcular**. Si un masaje de 45 ocupa 12:00–12:45, una depilación de
+90 se ofrece desde las **12:45**, no desde las 13:30.
+
+La alternativa era la grilla fija: horarios siempre iguales contados desde que
+abre la profesional, borrando el que esté pisado. Más predecible, pero deja 45
+minutos muertos que nadie puede usar.
+
+- [ ] Confirmarlo con el centro cuando se vean las otras dos.
+
+---
+
 ## ✅ Cloudinary — hecho y andando (15/8/2026)
 
 Subida firmada desde el servidor, entrega con transformaciones por URL.
@@ -35,12 +88,12 @@ casilla — no a las clientas.
 Supabase **bloquea la edición de las plantillas** hasta que haya SMTP propio. El
 cartel está en Authentication → Emails → Templates:
 
-> *Set up custom SMTP to edit templates. Emails will be sent using the default
-> templates.*
+> _Set up custom SMTP to edit templates. Emails will be sent using the default
+> templates._
 
 O sea que el formato del mail y el remitente vienen juntos, no se pueden separar.
 Hoy a la clienta le llega un mail **en inglés**, de `noreply@mail.app.supabase.io`,
-con un pie que dice *"powered by Supabase"*.
+con un pie que dice _"powered by Supabase"_.
 
 Y hay un motivo que no es de imagen: el envío de fábrica está limitado a unos
 pocos mails por hora y la documentación de Supabase dice que no es para
@@ -83,10 +136,9 @@ campos vacíos, dejan de salir todos los mails.
       ya se pueden cargar, pero la pantalla de Clientes lista `profiles`, así
       que alguien que vino tres veces sin registrarse no figura en ningún lado.
       Falta decidir si esa pantalla debe mostrarlas y cómo.
-- [ ] **Vincular una invitada con su cuenta.** Si más adelante se registra sola,
-      sus turnos viejos quedan sueltos. `guest_phone` está indexado justamente
-      para poder buscarla y reasignarle el historial, pero la acción no existe
-      todavía.
+- [x] ~~**Vincular una invitada con su cuenta.**~~ Hecho (migración
+      `20260816020000`): por mail se vincula sola al confirmarse la cuenta, y por
+      teléfono a mano desde la lista de turnos.
 - [ ] **Bloqueos de agenda:** vacaciones, feriados, francos. Hoy solo hay horario
       semanal fijo, sin excepciones por fecha: un 25 de diciembre es reservable.
 
