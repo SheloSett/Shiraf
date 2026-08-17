@@ -36,19 +36,35 @@ function AdminAppointments() {
       const { data, error } = await supabase
         .from("appointments")
         .select(
-          "id, starts_at, status, duration_minutes, client_notes, client_id, services(name, price), professionals(full_name)",
+          "id, starts_at, status, duration_minutes, client_notes, client_id, guest_name, guest_phone, services(name, price), professionals(full_name)",
         )
         .eq("status", filter)
         .order("starts_at");
       if (error) throw error;
 
-      const clientIds = [...new Set((data ?? []).map((a) => a.client_id))];
+      // client_id es nulo en los turnos que el centro carga a nombre de alguien
+      // sin cuenta, así que hay que filtrarlos antes de buscar sus fichas.
+      const clientIds = [
+        ...new Set((data ?? []).map((a) => a.client_id).filter((id): id is string => !!id)),
+      ];
       const clients = clientIds.length
         ? (await supabase.from("profiles").select("id, full_name, phone").in("id", clientIds)).data
         : [];
       const byId = new Map((clients ?? []).map((c) => [c.id, c]));
 
-      return (data ?? []).map((a) => ({ ...a, client: byId.get(a.client_id) ?? null }));
+      return (data ?? []).map((a) => {
+        const profile = a.client_id ? (byId.get(a.client_id) ?? null) : null;
+        return {
+          ...a,
+          // Una sola forma para los dos casos, así la tabla no tiene que saber
+          // si el turno es de una clienta con cuenta o de una invitada.
+          person: {
+            name: profile?.full_name ?? a.guest_name ?? "Sin nombre",
+            phone: profile?.phone ?? a.guest_phone ?? null,
+            isGuest: !a.client_id,
+          },
+        };
+      });
     },
   });
 
@@ -113,8 +129,17 @@ function AdminAppointments() {
               <TableRow key={a.id}>
                 <TableCell className="whitespace-nowrap">{formatDateTime(a.starts_at)}</TableCell>
                 <TableCell>
-                  <span className="block">{a.client?.full_name ?? "—"}</span>
-                  <span className="text-xs text-muted-foreground">{a.client?.phone}</span>
+                  <span className="flex items-center gap-2">
+                    {a.person.name}
+                    {/* Marcar la invitada evita que se la busque en Clientes y
+                        no aparezca: no tiene ficha porque no tiene cuenta. */}
+                    {a.person.isGuest && (
+                      <Badge variant="outline" className="font-normal text-[10px]">
+                        sin cuenta
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{a.person.phone}</span>
                   {a.client_notes && (
                     <span className="mt-1 block max-w-52 text-xs italic text-muted-foreground">
                       “{a.client_notes}”

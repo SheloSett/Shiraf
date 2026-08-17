@@ -55,8 +55,21 @@ export function NewAppointmentDialog({
 }) {
   const queryClient = useQueryClient();
 
+  /**
+   * De quién es el turno.
+   *
+   * "registrada" busca entre las que ya tienen cuenta; "nueva" anota nombre y
+   * teléfono sin crear ninguna. Por teléfono se consigue eso y poco más: pedir
+   * un mail obligatorio para poder darla de alta habría dejado afuera justo el
+   * caso más común, que es quien llama por primera vez.
+   */
+  const [who, setWho] = useState<"registrada" | "nueva">("registrada");
+
   const [clientId, setClientId] = useState<string | undefined>();
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [guestName, setGuestName] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
   const [serviceId, setServiceId] = useState<string | undefined>();
   const [professionalId, setProfessionalId] = useState<string | undefined>();
   const [dateKey, setDateKey] = useState<string>(() => toDateKey(new Date()));
@@ -64,7 +77,11 @@ export function NewAppointmentDialog({
   const [notes, setNotes] = useState("");
 
   function reset() {
+    setWho("registrada");
     setClientId(undefined);
+    setGuestName("");
+    setGuestPhone("");
+    setGuestEmail("");
     setServiceId(undefined);
     setProfessionalId(undefined);
     setDateKey(toDateKey(new Date()));
@@ -198,7 +215,16 @@ export function NewAppointmentDialog({
       // los del catálogo; se manda la duración igual para no romper el tipo
       // generado, que la tiene como obligatoria.
       const { error } = await supabase.from("appointments").insert({
-        client_id: clientId!,
+        // Una cosa o la otra, nunca las dos: el trigger descarta los datos de
+        // invitada si viene client_id, pero mandar sólo lo que corresponde deja
+        // la intención clara desde acá.
+        ...(who === "registrada"
+          ? { client_id: clientId! }
+          : {
+              guest_name: guestName.trim(),
+              guest_phone: guestPhone.trim() || null,
+              guest_email: guestEmail.trim() || null,
+            }),
         service_id: serviceId!,
         professional_id: professionalId!,
         starts_at: startsAt!.toISOString(),
@@ -231,7 +257,8 @@ export function NewAppointmentDialog({
     },
   });
 
-  const ready = !!clientId && !!serviceId && !!professionalId && !!startsAt;
+  const whoReady = who === "registrada" ? !!clientId : guestName.trim().length > 0;
+  const ready = whoReady && !!serviceId && !!professionalId && !!startsAt;
 
   return (
     <Dialog
@@ -250,70 +277,128 @@ export function NewAppointmentDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* ── Clienta ────────────────────────────────────────────────── */}
+          {/* ── De quién es el turno ───────────────────────────────────── */}
           <div className="space-y-2">
             <Label>Clienta</Label>
-            <Popover open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
-              <PopoverTrigger asChild>
+            <div className="grid grid-cols-2 gap-2">
+              {(["registrada", "nueva"] as const).map((option) => (
                 <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={clientPickerOpen}
-                  className="w-full justify-between font-normal"
+                  key={option}
+                  type="button"
+                  variant={who === option ? "default" : "outline"}
+                  className="font-normal"
+                  onClick={() => setWho(option)}
                 >
-                  {client ? (
-                    <span className="truncate">
-                      {client.full_name ?? "Sin nombre"}
-                      {client.phone && (
-                        <span className="text-muted-foreground"> · {client.phone}</span>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">Buscar clienta…</span>
-                  )}
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  {option === "registrada" ? "Ya tiene cuenta" : "Es nueva"}
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Nombre o teléfono…" />
-                  <CommandList>
-                    <CommandEmpty>
-                      <span className="block px-2 py-3 text-xs leading-relaxed">
-                        No aparece ninguna. Sólo se pueden cargar turnos a nombre de clientas que ya
-                        tengan cuenta en el sitio.
-                      </span>
-                    </CommandEmpty>
-                    <CommandGroup>
-                      {clients.data?.map((c) => (
-                        <CommandItem
-                          key={c.id}
-                          // `value` es lo que filtra cmdk: sin el teléfono acá,
-                          // buscar por número no encontraría nada.
-                          value={`${c.full_name ?? "sin nombre"} ${c.phone ?? ""}`}
-                          onSelect={() => {
-                            setClientId(c.id);
-                            setClientPickerOpen(false);
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              clientId === c.id ? "opacity-100" : "opacity-0",
-                            )}
-                          />
-                          <span className="truncate">
-                            {c.full_name ?? "Sin nombre"}
-                            {c.phone && <span className="text-muted-foreground"> · {c.phone}</span>}
-                          </span>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+              ))}
+            </div>
           </div>
+
+          {who === "registrada" ? (
+            <div className="space-y-2">
+              <Popover open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={clientPickerOpen}
+                    className="w-full justify-between font-normal"
+                  >
+                    {client ? (
+                      <span className="truncate">
+                        {client.full_name ?? "Sin nombre"}
+                        {client.phone && (
+                          <span className="text-muted-foreground"> · {client.phone}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Buscar clienta…</span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Nombre o teléfono…" />
+                    <CommandList>
+                      <CommandEmpty>
+                        <span className="block px-2 py-3 text-xs leading-relaxed">
+                          No aparece ninguna. Si es la primera vez que viene, usá{" "}
+                          <span className="font-medium">Es nueva</span>.
+                        </span>
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {clients.data?.map((c) => (
+                          <CommandItem
+                            key={c.id}
+                            // `value` es lo que filtra cmdk: sin el teléfono acá,
+                            // buscar por número no encontraría nada.
+                            value={`${c.full_name ?? "sin nombre"} ${c.phone ?? ""}`}
+                            onSelect={() => {
+                              setClientId(c.id);
+                              setClientPickerOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                clientId === c.id ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                            <span className="truncate">
+                              {c.full_name ?? "Sin nombre"}
+                              {c.phone && (
+                                <span className="text-muted-foreground"> · {c.phone}</span>
+                              )}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+          ) : (
+            /* Clienta sin cuenta. No se le crea usuario: por teléfono se
+               consigue un nombre y un celular, y con eso alcanza para que el
+               turno exista en la agenda. */
+            <div className="space-y-3 rounded-sm border border-border bg-secondary/30 p-3">
+              <div className="space-y-2">
+                <Label htmlFor="na-guest-name">Nombre y apellido</Label>
+                <Input
+                  id="na-guest-name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="Como te lo dictó por teléfono"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="na-guest-phone">Teléfono</Label>
+                  <Input
+                    id="na-guest-phone"
+                    value={guestPhone}
+                    onChange={(e) => setGuestPhone(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="na-guest-email">Mail (opcional)</Label>
+                  <Input
+                    id="na-guest-email"
+                    type="email"
+                    value={guestEmail}
+                    onChange={(e) => setGuestEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                No se le crea una cuenta. Si más adelante se registra sola en el sitio, el teléfono
+                sirve para reconocerla y vincularle este turno.
+              </p>
+            </div>
+          )}
 
           {/* ── Tratamiento ────────────────────────────────────────────── */}
           <div className="space-y-2">

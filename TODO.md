@@ -79,10 +79,14 @@ campos vacíos, dejan de salir todos los mails.
       la métrica del negocio en este rubro. Hay que decidir: ¿mail o WhatsApp?
       ¿y quién dispara el cron, `pg_cron` en Supabase o el VPS? Si va por mail,
       depende del SMTP de arriba.
-- [ ] **Cargar turnos de clientas sin cuenta.** Hoy el panel solo deja elegir
-      entre quienes ya se registraron, porque `appointments.client_id` apunta a
-      `auth.users`. El turno telefónico de alguien nuevo no entra. Necesita un
-      `createServerFn` con la Admin API, igual que el alta de empleadas.
+- [ ] **Las invitadas no aparecen en Clientes.** Los turnos de gente sin cuenta
+      ya se pueden cargar, pero la pantalla de Clientes lista `profiles`, así
+      que alguien que vino tres veces sin registrarse no figura en ningún lado.
+      Falta decidir si esa pantalla debe mostrarlas y cómo.
+- [ ] **Vincular una invitada con su cuenta.** Si más adelante se registra sola,
+      sus turnos viejos quedan sueltos. `guest_phone` está indexado justamente
+      para poder buscarla y reasignarle el historial, pero la acción no existe
+      todavía.
 - [ ] **Bloqueos de agenda:** vacaciones, feriados, francos. Hoy solo hay horario
       semanal fijo, sin excepciones por fecha: un 25 de diciembre es reservable.
 

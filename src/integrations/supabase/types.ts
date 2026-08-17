@@ -11,10 +11,15 @@ export type Database = {
       appointments: {
         Row: {
           admin_notes: string | null;
-          client_id: string;
+          // Migración 20260816010000: nullable, para los turnos que carga el
+          // centro a nombre de alguien que todavía no tiene cuenta.
+          client_id: string | null;
           client_notes: string | null;
           created_at: string;
           duration_minutes: number;
+          guest_name: string | null;
+          guest_phone: string | null;
+          guest_email: string | null;
           id: string;
           // La agrega la migración 20260813040000: congela el precio del
           // catálogo al momento de reservar. La completa un trigger, por eso en
@@ -28,10 +33,13 @@ export type Database = {
         };
         Insert: {
           admin_notes?: string | null;
-          client_id: string;
+          client_id?: string | null;
           client_notes?: string | null;
           created_at?: string;
           duration_minutes?: number;
+          guest_name?: string | null;
+          guest_phone?: string | null;
+          guest_email?: string | null;
           id?: string;
           price?: number;
           professional_id?: string | null;
@@ -42,10 +50,13 @@ export type Database = {
         };
         Update: {
           admin_notes?: string | null;
-          client_id?: string;
+          client_id?: string | null;
           client_notes?: string | null;
           created_at?: string;
           duration_minutes?: number;
+          guest_name?: string | null;
+          guest_phone?: string | null;
+          guest_email?: string | null;
           id?: string;
           price?: number;
           professional_id?: string | null;
