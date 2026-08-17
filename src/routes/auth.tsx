@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Logo, LogoWordmark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
+import { isTeamAccount } from "@/lib/roles";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -30,6 +32,7 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,22 +43,41 @@ function AuthPage() {
   /** Mail al que se mandó el enlace de recuperación, si se pidió uno. */
   const [recoverySent, setRecoverySent] = useState<string | null>(null);
 
+  /**
+   * A dónde va cada quien después de ingresar.
+   *
+   * Antes todas terminaban en /mi-cuenta. Para la dueña y las empleadas eso era
+   * la pantalla equivocada: entraban con la cuenta del centro y aterrizaban en
+   * el espacio de clienta, sin nada suyo adentro y sin ninguna puerta visible al
+   * panel. Había que saberse la URL /admin de memoria.
+   */
+  async function goToMyPlace(userId: string) {
+    const team = await isTeamAccount(queryClient, userId);
+    navigate({ to: team ? "/admin" : "/mi-cuenta" });
+  }
+
+  // Ya venía con sesión abierta: no la dejamos en el formulario de ingreso, la
+  // mandamos a donde le corresponde. La lógica va escrita adentro del efecto y
+  // no llamando a goToMyPlace para no tener que declararla como dependencia:
+  // es una función nueva en cada render y el efecto se volvería a disparar.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/mi-cuenta" });
+    void supabase.auth.getSession().then(async ({ data }) => {
+      if (!data.session) return;
+      const team = await isTeamAccount(queryClient, data.session.user.id);
+      navigate({ to: team ? "/admin" : "/mi-cuenta" });
     });
-  }, [navigate]);
+  }, [navigate, queryClient]);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
       toast.error(error.message);
       return;
     }
-    navigate({ to: "/mi-cuenta" });
+    await goToMyPlace(data.user.id);
   }
 
   /**

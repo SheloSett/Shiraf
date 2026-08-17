@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check } from "lucide-react";
@@ -11,6 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { buildSlots, formatMoney, formatTime, toDateKey } from "@/lib/shiraf";
+import { isTeamAccount } from "@/lib/roles";
 
 // Claves opcionales, no claves obligatorias con valor `undefined`: con
 // `exactOptionalPropertyTypes` activado esa diferencia hace que el router exija
@@ -23,6 +24,22 @@ export const Route = createFileRoute("/_authenticated/reservar")({
     if (typeof search["service"] === "string") parsed.service = search["service"];
     if (typeof search["professional"] === "string") parsed.professional = search["professional"];
     return parsed;
+  },
+  /**
+   * El centro no se reserva turnos a sí mismo desde el sitio público.
+   *
+   * Si la dueña o una empleada reservan acá, el turno entra como si fuera de una
+   * clienta: ocupa un horario real, aparece en la agenda a nombre de ellas y
+   * cuenta como una reserva más. Para bloquear un horario o cargar el turno de
+   * alguien va "Nuevo turno" en el panel, que es la herramienta correcta.
+   *
+   * El desvío es al panel y no un cartel de error porque no hicieron nada mal:
+   * simplemente ese formulario no es el suyo.
+   */
+  beforeLoad: async ({ context }) => {
+    if (await isTeamAccount(context.queryClient, context.user.id)) {
+      throw redirect({ to: "/admin" });
+    }
   },
   head: () => ({
     meta: [

@@ -1,15 +1,19 @@
-import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
   ClipboardList,
+  LogOut,
   Package,
   ShieldCheck,
   Sparkles,
+  UserCog,
   Users,
   UserSquare,
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 import { useAccess } from "@/hooks/useAccess";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
 
@@ -103,6 +107,18 @@ const nav = [
 
 function AdminLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // Mismo cierre de sesión que el header del sitio: se vacía la caché de
+  // react-query ANTES de desloguear, para que la próxima persona que entre en
+  // esta misma computadora no vea por un instante los datos de la anterior.
+  async function signOut() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  }
 
   // Antes acá vivía una consulta propia `["is-admin"]` que sólo miraba si el
   // usuario tenía el rol admin. Se reemplaza por useAccess, que además trae los
@@ -131,7 +147,10 @@ function AdminLayout() {
   // renderizan dentro de este <Outlet />: en un solo lugar no hay forma de
   // olvidarse de ponerlo en una pantalla nueva.
   const required = requiredAccessFor(location.pathname);
-  const allowed = required === "admin" ? isAdmin : can(required);
+  // "panel" no es un permiso: es lo que puede abrir cualquiera del equipo sin
+  // que le hayan tildado nada, como su propia contraseña.
+  const allowed =
+    required === "admin" ? isAdmin : required === "panel" ? canEnterPanel : can(required);
 
   if (loading) {
     return <p className="p-10 text-sm text-muted-foreground">Verificando permisos…</p>;
@@ -153,7 +172,7 @@ function AdminLayout() {
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <aside className="surface-olive lg:w-60 lg:shrink-0">
+      <aside className="surface-olive flex flex-col lg:w-60 lg:shrink-0">
         <div className="flex items-center gap-3 p-6">
           <Logo className="h-9 w-9" />
           <span className="font-display text-lg tracking-[0.25em] text-primary-foreground">
@@ -207,12 +226,39 @@ function AdminLayout() {
             );
           })}
         </nav>
-        <div className="hidden px-3 pb-6 lg:block">
+        {/* Pie de la barra. Antes acá sólo había "Volver al sitio" y estaba
+            oculto en mobile (`hidden lg:block`), lo que dejaba al panel sin
+            ninguna salida en el celular.
+
+            "Mi cuenta" y "Cerrar sesión" viven acá y no en el menú de arriba
+            porque no son secciones del negocio: son de la persona. Y tienen que
+            estar, porque las cuentas del centro ya no entran a /mi-cuenta —
+            antes se cerraba sesión desde el header del sitio público. */}
+        <div className="mt-auto flex items-center gap-1 overflow-x-auto border-t border-primary-foreground/10 px-3 py-3 lg:block lg:py-4">
+          <Link
+            to="/admin/cuenta"
+            className={`flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
+              location.pathname.startsWith("/admin/cuenta")
+                ? "bg-primary-foreground/15 text-primary-foreground"
+                : "text-primary-foreground/65 hover:text-primary-foreground"
+            }`}
+          >
+            <UserCog className="h-4 w-4" />
+            Mi cuenta
+          </Link>
+          <button
+            type="button"
+            onClick={signOut}
+            className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-primary-foreground/65 transition-colors hover:text-primary-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Cerrar sesión
+          </button>
           <Link
             to="/"
-            className="block rounded-sm px-3 py-2 text-xs text-primary-foreground/50 hover:text-primary-foreground"
+            className="mt-1 block rounded-sm px-3 py-2 text-xs text-primary-foreground/50 hover:text-primary-foreground"
           >
-            ← Volver al sitio
+            ← Ver el sitio
           </Link>
         </div>
       </aside>

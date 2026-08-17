@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CalendarDays, History, KeyRound, User } from "lucide-react";
@@ -14,8 +14,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
 import { passwordProblem } from "@/lib/password";
+import { isTeamAccount } from "@/lib/roles";
 
 export const Route = createFileRoute("/_authenticated/mi-cuenta")({
+  /**
+   * Las cuentas del centro no pasan por acá: van derecho al panel.
+   *
+   * Esta pantalla es de clienta —próximos turnos, historial, reservar—. La
+   * dueña y las empleadas no son clientas: su cuenta existe para trabajar, y
+   * dejarlas acá las hacía aterrizar en una página vacía ("No tenés turnos
+   * pendientes") sin ninguna señal de que el panel existía.
+   *
+   * Lo que sí necesitaban de acá —cambiar la contraseña que les dictaron— se
+   * mudó a /admin/cuenta.
+   */
+  beforeLoad: async ({ context }) => {
+    if (await isTeamAccount(context.queryClient, context.user.id)) {
+      throw redirect({ to: "/admin" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Mi cuenta y turnos — Shiraf" },
@@ -254,10 +271,9 @@ function AccountPage() {
           </CardContent>
         </Card>
 
-        {/* Cambio de contraseña. Vive acá y no en el panel porque lo necesitan
-            los dos lados: la clienta que quiere cambiarla, y la empleada que
-            entró con la que le puso la dueña —en texto plano, porque tenía que
-            poder dictársela— y hasta ahora no tenía forma de reemplazarla. */}
+        {/* Cambio de contraseña de la clienta. La versión del equipo vive en
+            /admin/cuenta: esta pantalla ya no la ven, porque una cuenta del
+            centro se desvía al panel antes de llegar acá. */}
         <div className="mt-14 flex items-center gap-3">
           <KeyRound className="h-5 w-5 text-gold" />
           <h2 className="font-display text-2xl text-foreground">Contraseña</h2>

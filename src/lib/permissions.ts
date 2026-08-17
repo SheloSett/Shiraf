@@ -125,8 +125,18 @@ export function isUiOnly(permission: { enforcement: string }): boolean {
   return permission.enforcement === "ui";
 }
 
-/** Lo que hace falta para abrir una sección: un permiso, o ser la dueña. */
-export type AccessRequirement = Permission | "admin";
+/**
+ * Lo que hace falta para abrir una sección.
+ *
+ * Además de los siete permisos hay dos niveles que no son permisos:
+ *
+ *   "admin"  la dueña y nadie más. Es lo que no se delega.
+ *   "panel"  cualquiera que trabaje en el centro, sin pedirle ninguna casilla.
+ *            Sólo para lo que es de la persona y no del negocio: su propia
+ *            contraseña. Una empleada a la que todavía no le tildaron nada
+ *            igual tiene que poder cambiar la que le dictaron.
+ */
+export type AccessRequirement = Permission | "admin" | "panel";
 
 /**
  * Qué exige cada sección del panel.
@@ -150,6 +160,8 @@ const ADMIN_ROUTES = [
   // no aparecen en el sitio. Ver migración 20260814000000.
   { path: "/admin/categorias-productos", access: "stock" },
   { path: "/admin/equipo", access: "admin" },
+  // Su contraseña, no el negocio: no depende de ninguna casilla.
+  { path: "/admin/cuenta", access: "panel" },
 ] as const satisfies readonly { path: string; access: AccessRequirement }[];
 
 export function requiredAccessFor(pathname: string): AccessRequirement {

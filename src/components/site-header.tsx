@@ -29,7 +29,10 @@ const onOliveGhost =
   "hidden text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground sm:inline-flex";
 
 export function SiteHeader() {
-  const { user, isAdmin } = useAuth();
+  // isTeam en lugar de isAdmin: el panel dejó de ser de una sola persona, y con
+  // isAdmin una empleada navegaba el sitio sin ninguna puerta de entrada al
+  // panel — el motivo por el que este header se cambió.
+  const { user, isTeam } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -70,20 +73,26 @@ export function SiteHeader() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className={onOliveOutline}>
-                  Mi cuenta
+                  {isTeam ? "Panel" : "Mi cuenta"}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem asChild>
-                  <Link to="/mi-cuenta">Mi perfil y turnos</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/reservar">Reservar turno</Link>
-                </DropdownMenuItem>
-                {isAdmin && (
+                {/* Dos menús distintos, no uno con cosas escondidas: la cuenta
+                    del centro no reserva turnos ni tiene historial de clienta.
+                    Ofrecérselo la mandaba a pantallas que ahora la rebotan. */}
+                {isTeam ? (
                   <DropdownMenuItem asChild>
-                    <Link to="/admin">Panel de administración</Link>
+                    <Link to="/admin">Ir al panel</Link>
                   </DropdownMenuItem>
+                ) : (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link to="/mi-cuenta">Mi perfil y turnos</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/reservar">Reservar turno</Link>
+                    </DropdownMenuItem>
+                  </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut}>Cerrar sesión</DropdownMenuItem>
@@ -95,14 +104,26 @@ export function SiteHeader() {
             </Button>
           )}
 
-          {/* El botón por defecto es oliva sobre oliva: acá manda el dorado. */}
-          <Button
-            asChild
-            size="sm"
-            className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
-          >
-            <Link to="/reservar">Reservar turno</Link>
-          </Button>
+          {/* El botón por defecto es oliva sobre oliva: acá manda el dorado.
+              A la gente del centro se le muestra el panel en su lugar: ese
+              formulario no es el suyo y /reservar la desvía igual. */}
+          {isTeam ? (
+            <Button
+              asChild
+              size="sm"
+              className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
+            >
+              <Link to="/admin">Ir al panel</Link>
+            </Button>
+          ) : (
+            <Button
+              asChild
+              size="sm"
+              className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
+            >
+              <Link to="/reservar">Reservar turno</Link>
+            </Button>
+          )}
 
           <Sheet>
             <SheetTrigger asChild>
@@ -125,12 +146,13 @@ export function SiteHeader() {
                 <div className="my-2 h-px bg-border" />
                 {user ? (
                   <>
-                    <Link to="/mi-cuenta" className="text-base">
-                      Mi perfil y turnos
-                    </Link>
-                    {isAdmin && (
+                    {isTeam ? (
                       <Link to="/admin" className="text-base">
-                        Panel de administración
+                        Ir al panel
+                      </Link>
+                    ) : (
+                      <Link to="/mi-cuenta" className="text-base">
+                        Mi perfil y turnos
                       </Link>
                     )}
                     <button onClick={signOut} className="text-left text-base text-muted-foreground">
