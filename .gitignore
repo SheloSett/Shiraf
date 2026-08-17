@@ -14,12 +14,10 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
-.vercel
-*.local
-
 # Artefacto del preset `vercel` de Nitro (Build Output API v3). Se genera solo
 # al construir con NITRO_PRESET=vercel; Vercel lo produce en su propio runner.
 .vercel
+*.local
 
 # Vista previa local de los mails. Se genera desde supabase/emails/*.html para
 # poder mirarlos en el navegador; vive en public/ sólo porque es la carpeta que
