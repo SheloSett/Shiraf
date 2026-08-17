@@ -494,24 +494,44 @@ export function NewAppointmentDialog({
 
               <div className="space-y-2">
                 <Label>Hora</Label>
-                <p className="text-xs text-muted-foreground">
-                  {daySchedules.length > 0 ? (
-                    <>
-                      {WEEKDAYS[date?.getDay() ?? 0]}:{" "}
-                      {daySchedules
-                        .map((s) => `${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`)
-                        .join(", ")}
-                    </>
-                  ) : (
-                    <>Esta profesional no atiende ese día.</>
-                  )}
-                </p>
+                {/* Los tres estados se dicen distinto a propósito. Antes esto
+                    era `daySchedules.length > 0 ? horarios : "no atiende ese
+                    día"`, y como daySchedules queda vacío también cuando la
+                    consulta falla, un error de la base se leía como una
+                    respuesta tranquila sobre la agenda. Fue justo lo que pasó:
+                    faltaba professional_busy_slots en la base, la consulta
+                    reventaba, y la pantalla decía que la profesional no
+                    trabajaba los lunes. */}
+                {availability.isError ? (
+                  <p className="rounded-sm border border-destructive/50 bg-destructive/10 p-2.5 text-xs leading-relaxed text-foreground">
+                    No se pudieron consultar los horarios. No es que la profesional no atienda: la
+                    base devolvió un error.
+                    <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
+                      {(availability.error as Error).message}
+                    </span>
+                  </p>
+                ) : availability.isPending ? (
+                  <p className="text-xs text-muted-foreground">Buscando horarios…</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {daySchedules.length > 0 ? (
+                      <>
+                        {WEEKDAYS[date?.getDay() ?? 0]}:{" "}
+                        {daySchedules
+                          .map((s) => `${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`)
+                          .join(", ")}
+                      </>
+                    ) : (
+                      <>Esta profesional no atiende ese día.</>
+                    )}
+                  </p>
+                )}
 
                 {/* Los horarios que quedan libres, y nada más. Antes esto era un
                     adorno al lado de un <input type="time"> libre; ahora es la
                     forma normal de elegir. Cada uno arranca donde termina el
                     anterior, así que la lista ya viene sin huecos muertos. */}
-                {suggested.length > 0 ? (
+                {availability.isError || availability.isPending ? null : suggested.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {suggested.map((iso) => {
                       const label = toTimeInput(iso);

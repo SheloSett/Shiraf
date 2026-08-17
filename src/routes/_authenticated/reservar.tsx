@@ -277,7 +277,18 @@ function BookingPage() {
                 {availability.isLoading && (
                   <p className="text-sm text-muted-foreground">Buscando disponibilidad…</p>
                 )}
-                {!availability.isLoading && slots.length === 0 && (
+                {/* El error va antes que el "no hay horarios" y dice otra cosa.
+                    Sin esto, cuando la consulta fallaba `slots` quedaba vacío y
+                    la clienta leía "no hay horarios ese día, probá otra fecha":
+                    se iba convencida de que el centro estaba lleno, y probando
+                    otras fechas le pasaba lo mismo. */}
+                {availability.isError && (
+                  <p className="rounded-sm border border-destructive/50 bg-destructive/10 p-3 text-sm leading-relaxed text-foreground">
+                    No pudimos consultar los horarios en este momento. Volvé a intentar en un rato o
+                    escribinos y te lo reservamos nosotras.
+                  </p>
+                )}
+                {!availability.isLoading && !availability.isError && slots.length === 0 && (
                   <p className="text-sm text-muted-foreground">
                     No hay horarios disponibles ese día. Probá con otra fecha.
                   </p>
