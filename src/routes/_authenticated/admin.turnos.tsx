@@ -15,6 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
+import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
 
@@ -29,6 +30,8 @@ function AdminAppointments() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Status>("pending");
   const [creating, setCreating] = useState(false);
+  /** Invitada que se está vinculando a una cuenta, o null. */
+  const [linking, setLinking] = useState<GuestToLink | null>(null);
 
   const appointments = useQuery({
     queryKey: ["admin-appointments", filter],
@@ -102,6 +105,8 @@ function AdminAppointments() {
         onCreated={(status) => setFilter(status)}
       />
 
+      <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
+
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Status)} className="mt-8">
         <TabsList>
           {FILTERS.map((f) => (
@@ -134,9 +139,24 @@ function AdminAppointments() {
                     {/* Marcar la invitada evita que se la busque en Clientes y
                         no aparezca: no tiene ficha porque no tiene cuenta. */}
                     {a.person.isGuest && (
-                      <Badge variant="outline" className="font-normal text-[10px]">
-                        sin cuenta
-                      </Badge>
+                      <>
+                        <Badge variant="outline" className="font-normal text-[10px]">
+                          sin cuenta
+                        </Badge>
+                        {/* Sólo con teléfono: es el dato con el que se buscan
+                            los demás turnos de la misma persona. */}
+                        {a.person.phone && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLinking({ name: a.person.name, phone: a.person.phone })
+                            }
+                            className="text-[10px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                          >
+                            vincular
+                          </button>
+                        )}
+                      </>
                     )}
                   </span>
                   <span className="text-xs text-muted-foreground">{a.person.phone}</span>

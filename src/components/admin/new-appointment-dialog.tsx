@@ -393,9 +393,16 @@ export function NewAppointmentDialog({
                   />
                 </div>
               </div>
+              {/* Este texto decía que el teléfono servía para vincularle el
+                  turno cuando se registrara. Prometía de más: el teléfono no lo
+                  verifica nadie, así que por ahí la vinculación es a mano y la
+                  confirma quien atiende. Automática, sólo por mail — que
+                  Supabase confirma con un enlace. */}
               <p className="text-xs leading-relaxed text-muted-foreground">
-                No se le crea una cuenta. Si más adelante se registra sola en el sitio, el teléfono
-                sirve para reconocerla y vincularle este turno.
+                No se le crea una cuenta.{" "}
+                {guestEmail.trim()
+                  ? "Como dejaste su mail, el día que se registre con esa casilla sus turnos van a aparecer solos en su historial."
+                  : "Si te da el mail, el día que se registre con esa casilla sus turnos aparecen solos en su historial. Sin mail se vinculan igual, pero a mano desde la lista de turnos."}
               </p>
             </div>
           )}

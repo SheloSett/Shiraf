@@ -444,6 +444,12 @@ export type Database = {
         };
         Returns: boolean;
       };
+      // Migración 20260816020000: pasar los turnos de invitada al historial de
+      // la clienta cuando se registra. Devuelve cuántos quedaron vinculados.
+      link_guest_appointments: {
+        Args: { _phone: string; _client_id: string };
+        Returns: number;
+      };
       // Migración 20260816000000: renombrado atómico de categorías.
       rename_service_category: {
         Args: { _id: string; _to: string };
