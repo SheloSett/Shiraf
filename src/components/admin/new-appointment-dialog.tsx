@@ -76,6 +76,22 @@ export function NewAppointmentDialog({
   const [time, setTime] = useState<string>("");
   const [notes, setNotes] = useState("");
 
+  /**
+   * Escribir la hora a mano en vez de elegirla de la lista.
+   *
+   * Arranca apagado. Antes el campo libre era lo único que había y el reloj del
+   * navegador ofrecía las 22, las 4 de la mañana y cualquier cosa: nada de eso
+   * es un horario en el que el centro atienda, y estaba a un dedazo de
+   * distancia.
+   *
+   * Queda igual detrás de este botón porque es el motivo por el que el campo
+   * libre existía: el trigger validate_appointment exime a propósito a quien
+   * gestiona turnos del control de agenda, para que una profesional que se
+   * queda más tarde por una clienta se pueda registrar. Sacarlo del todo
+   * dejaría ese turno sin ninguna forma de cargarse.
+   */
+  const [manualTime, setManualTime] = useState(false);
+
   function reset() {
     setWho("registrada");
     setClientId(undefined);
@@ -86,6 +102,7 @@ export function NewAppointmentDialog({
     setProfessionalId(undefined);
     setDateKey(toDateKey(new Date()));
     setTime("");
+    setManualTime(false);
     setNotes("");
   }
 
@@ -462,31 +479,21 @@ export function NewAppointmentDialog({
           {/* ── Día y hora ─────────────────────────────────────────────── */}
           {professionalId && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="na-date">Día</Label>
-                  <Input
-                    id="na-date"
-                    type="date"
-                    value={dateKey}
-                    onChange={(e) => {
-                      setDateKey(e.target.value);
-                      setTime("");
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="na-time">Hora</Label>
-                  <Input
-                    id="na-time"
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="na-date">Día</Label>
+                <Input
+                  id="na-date"
+                  type="date"
+                  value={dateKey}
+                  onChange={(e) => {
+                    setDateKey(e.target.value);
+                    setTime("");
+                  }}
+                />
               </div>
 
               <div className="space-y-2">
+                <Label>Hora</Label>
                 <p className="text-xs text-muted-foreground">
                   {daySchedules.length > 0 ? (
                     <>
@@ -500,7 +507,11 @@ export function NewAppointmentDialog({
                   )}
                 </p>
 
-                {suggested.length > 0 && (
+                {/* Los horarios que quedan libres, y nada más. Antes esto era un
+                    adorno al lado de un <input type="time"> libre; ahora es la
+                    forma normal de elegir. Cada uno arranca donde termina el
+                    anterior, así que la lista ya viene sin huecos muertos. */}
+                {suggested.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {suggested.map((iso) => {
                       const label = toTimeInput(iso);
@@ -511,23 +522,71 @@ export function NewAppointmentDialog({
                           size="sm"
                           variant={time === label ? "default" : "outline"}
                           className="h-8"
-                          onClick={() => setTime(label)}
+                          onClick={() => {
+                            setTime(label);
+                            setManualTime(false);
+                          }}
                         >
                           {label}
                         </Button>
                       );
                     })}
                   </div>
+                ) : (
+                  /* Sin horarios no alcanza con no mostrar nada: hay que decir
+                     por qué, porque la salida es distinta en cada caso. Si no
+                     atiende ese día se cambia el día; si está lleno, se carga
+                     fuera de horario o se busca otra profesional. */
+                  <p className="rounded-sm border border-border bg-secondary/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
+                    {daySchedules.length === 0
+                      ? "No hay horarios para ofrecer: esta profesional no atiende ese día. Probá otro día, otra profesional, o cargalo fuera de horario."
+                      : "No queda lugar ese día: los horarios están tomados o ya pasaron."}
+                  </p>
                 )}
 
-                {/* Aviso, no bloqueo: el trigger exime al admin del control de
-                    agenda a propósito. La superposición sí la frena la base. */}
-                {startsAt && outsideSchedule && (
-                  <p className="flex items-start gap-2 rounded-sm border border-gold/50 bg-gold/10 p-2.5 text-xs text-foreground">
-                    <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
-                    Ese horario queda fuera de la agenda habitual de la profesional. Se puede cargar
-                    igual.
-                  </p>
+                {/* La puerta de atrás, explícita y con nombre. El campo libre no
+                    desaparece —es lo que permite registrar el turno de la
+                    clienta a la que la profesional le hace un lugar— pero deja
+                    de estar a un dedazo de distancia. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !manualTime;
+                    setManualTime(next);
+                    // Al cerrarlo se borra la hora escrita a mano, salvo que
+                    // coincida con una de la lista. Si no, quedaba un 22:00
+                    // invisible y el botón de cargar seguía habilitado.
+                    if (!next && !suggested.some((iso) => toTimeInput(iso) === time)) setTime("");
+                  }}
+                  className="text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                >
+                  {manualTime ? "Volver a los horarios de la lista" : "Cargar fuera de horario"}
+                </button>
+
+                {manualTime && (
+                  <div className="space-y-2 rounded-sm border border-border bg-secondary/30 p-3">
+                    <Label htmlFor="na-time">Hora a mano</Label>
+                    <Input
+                      id="na-time"
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                    />
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Para cuando la profesional le hace un lugar a alguien fuera de su horario. Dos
+                      turnos encimados los sigue rechazando la base.
+                    </p>
+
+                    {/* Aviso, no bloqueo: el trigger exime al admin del control
+                        de agenda a propósito. */}
+                    {startsAt && outsideSchedule && (
+                      <p className="flex items-start gap-2 rounded-sm border border-gold/50 bg-gold/10 p-2.5 text-xs text-foreground">
+                        <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
+                        Ese horario queda fuera de la agenda habitual de la profesional. Se puede
+                        cargar igual.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </>

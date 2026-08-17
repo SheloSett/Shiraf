@@ -1,7 +1,9 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   CalendarDays,
+  ChevronDown,
   ClipboardList,
   LogOut,
   Package,
@@ -140,6 +142,10 @@ function AdminLayout() {
   //   });
   const { isAdmin, canEnterPanel, can, loading } = useAccess();
 
+  // Secciones que la persona abrió o cerró a mano con la flechita. Lo que no
+  // esté acá se decide solo: la sección abierta muestra sus subsecciones.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
   const visibleNav = nav.filter((item) => (item.adminOnly ? isAdmin : can(item.permission)));
 
@@ -172,7 +178,16 @@ function AdminLayout() {
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <aside className="surface-olive flex flex-col lg:w-60 lg:shrink-0">
+      {/* La barra se queda quieta: en escritorio se pega arriba y mide una
+          pantalla, con su propio scroll si el menú no entra. Antes era
+          `lg:w-60 lg:shrink-0` a secas y, al ser una columna más del flex,
+          se estiraba hasta la altura del documento: en pantallas largas
+          (como "Mi cuenta") el pie del menú quedaba al fondo de la página y
+          había que scrollear todo para llegar a "Cerrar sesión".
+
+          className vieja:
+          "surface-olive flex flex-col lg:w-60 lg:shrink-0" */}
+      <aside className="surface-olive flex flex-col lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:shrink-0 lg:overflow-y-auto">
         <div className="flex items-center gap-3 p-6">
           <Logo className="h-9 w-9" />
           <span className="font-display text-lg tracking-[0.25em] text-primary-foreground">
