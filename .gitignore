@@ -14,6 +14,7 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
+.vercel
 *.local
 
 # Artefacto del preset `vercel` de Nitro (Build Output API v3). Se genera solo
