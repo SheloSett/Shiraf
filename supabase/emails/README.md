@@ -27,7 +27,7 @@ justo lo que enseñan a mirar para detectar una estafa. Y como el dominio no es
 nuestro, tampoco hay SPF ni DKIM propios: hay chances concretas de que caiga en
 correo no deseado.
 
-Para que el mail salga de `hola@shiraf.com` hace falta **SMTP propio**:
+Para que el mail salga de una dirección de Shiraf hace falta **SMTP propio**:
 Authentication → Emails → SMTP Settings. Cualquier proveedor sirve — Resend,
 Brevo, SendGrid, Amazon SES.
 
@@ -38,8 +38,16 @@ registrándose, los mails simplemente dejan de salir. Antes de abrir el centro
 esto hay que resolverlo igual, así que conviene hacerlo de una vez.
 
 Al configurarlo hay que verificar el dominio en el proveedor (agregar unos
-registros DNS de SPF y DKIM donde esté comprado `shiraf.com`). Es lo que hace
+registros DNS de SPF y DKIM donde esté comprado `shiraf.com.ar`). Es lo que hace
 que Gmail confíe.
+
+Ojo con el remitente: la casilla del centro es `shirafbeautyandspa@gmail.com`,
+que **no** sirve como remitente verificado en Resend o Brevo — Gmail no deja que
+otro proveedor firme por sus dominios. Hay que crear una dirección sobre
+`shiraf.com.ar` (por ejemplo `hola@shiraf.com.ar`) y usar el Gmail como
+`reply-to`, o mandar directamente por el SMTP de Google con una contraseña de
+aplicación (`smtp.gmail.com:465`), que evita comprar mail pero tiene un tope de
+unos 500 envíos por día y muestra un "vía gmail.com".
 
 ---
 
@@ -49,7 +57,7 @@ que Gmail confíe.
 direcciones a las que vuelven los enlaces, o rebotan:
 
 - `http://localhost:8081/recuperar` (desarrollo)
-- la de producción cuando exista
+- `https://shiraf.com.ar/recuperar` (producción, cuando el dominio esté apuntando)
 
 **Probar de verdad.** Los clientes de correo renderizan muy distinto entre sí.
 Conviene mandarse el mail a una cuenta de Gmail y a una de Outlook antes de

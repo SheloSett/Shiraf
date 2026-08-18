@@ -123,7 +123,26 @@ function ServiceDetail() {
 
           <Reveal delay={80}>
             <p className="text-eyebrow mt-10 text-gold">{s.category}</p>
-            <h1 className="display-section mt-5 text-foreground">{s.name}</h1>
+            {/* Dos renglones reservados, entre o no en uno.
+
+                La foto de la derecha no tiene alto propio: la sección es una
+                grilla con items-stretch, así que la fila mide lo que mide esta
+                columna y la imagen se estira hasta ahí. Como lo único que varía
+                entre un tratamiento y otro es si el nombre entra en un renglón
+                ("Peeling químico") o en dos ("Radiofrecuencia facial"), esa
+                línea de diferencia era toda la diferencia de tamaño entre las
+                fotos.
+
+                Reservando el alto acá salen todas iguales solas, a cualquier
+                ancho de pantalla — que es lo que no daría clavarle un alto fijo
+                en píxeles a la imagen: en una ventana angosta los títulos
+                wrapean más, el texto pasaría a ser más alto que la foto y
+                volvería el hueco debajo. La unidad `lh` es el alto de renglón
+                de este mismo h1, así que sigue a la tipografía si cambia.
+
+                Un nombre de tres renglones volvería a desalinearse; con estos
+                seis no pasa, y si aparece se sube el 2 a 3. */}
+            <h1 className="display-section mt-5 min-h-[2lh] text-foreground">{s.name}</h1>
           </Reveal>
 
           <Reveal delay={160}>
@@ -158,7 +177,14 @@ function ServiceDetail() {
             donde entra la foto del tratamiento cuando la tengas. */}
         {/* La foto del tratamiento. Sin foto queda el campo oliva con grano,
             que era el marcador de posición desde el principio. */}
-        <div className="surface-olive grain relative hidden overflow-hidden lg:col-span-5 lg:col-start-8 lg:block">
+        {/* Columnas 8 a 11, con la 12 libre.
+
+            A diferencia del hero del home, acá la foto NO sangra hasta el borde
+            de la pantalla. Pegada al borde y con este ancho quedaba como una
+            tira contra el margen; suelta, el margen derecho de una columna es
+            el espejo del que ya tiene el texto sobre la izquierda, y la imagen
+            se apoya en la grilla en vez de escaparse de ella. */}
+        <div className="surface-olive grain relative hidden overflow-hidden lg:col-span-4 lg:col-start-8 lg:block">
           {s.image_url && (
             <img
               src={imageUrl(s.image_url, "hero") ?? undefined}
@@ -169,7 +195,11 @@ function ServiceDetail() {
         </div>
       </section>
 
-      <OrganicRule className="mt-20 lg:mt-28" />
+      {/* Pegada al borde inferior de la foto, igual que en el home: con margen
+          la línea quedaba flotando en una franja de crema vacía, sin tocar ni
+          el hero ni lo que sigue. En mobile la foto está oculta, así que ahí sí
+          hace falta aire entre el botón y el filete. */}
+      <OrganicRule className="mt-20 lg:mt-0" />
 
       {/* Quién lo realiza. Los horarios que se muestran son los de atención de
           cada profesional — datos públicos de professional_schedules — no la
@@ -256,7 +286,8 @@ function ServiceDetail() {
         </div>
       </section>
 
-      <SiteFooter />
+      {/* La sección de acá arriba es oliva, así que el footer va pegado. */}
+      <SiteFooter flush />
     </div>
   );
 }

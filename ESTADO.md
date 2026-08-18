@@ -213,8 +213,9 @@ Si el contenedor no arranca en el primer intento, el sospechoso es
 - **Una clienta puede auto-confirmarse el turno** o cambiarle la fecha por API.
   La policy `clients update own appointments` deja modificar cualquier columna
   del turno propio. Se arregla restringiendo qué campos puede tocar.
-- **Datos de contacto:** ya están los reales en `src/lib/contact.ts`, pero
-  `email` e `instagram` siguen siendo los de ejemplo.
+- ~~**Datos de contacto:** `email` e `instagram` de ejemplo.~~ Hechos el
+  18/8/2026: en `src/lib/contact.ts` están el mail, las dos redes
+  (`@shiraf_beauty` en Instagram y TikTok) y el dominio `shiraf.com.ar`.
 - **El favicon sigue siendo el de Lovable.** El logo pesa 254 KB para mostrarse
   a 44px; conviene exportar una versión chica en WebP.
 

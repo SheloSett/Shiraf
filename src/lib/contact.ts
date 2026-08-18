@@ -5,16 +5,24 @@
  * divergido: el cuerpo mostraba "+54 9 11 5555-5555" y el footer
  * "+54 11 5555-5555".
  *
- * ⚠️ `email` e `instagram` siguen siendo los de ejemplo del generador; hay que
- * reemplazarlos antes de publicar.
+ * Todos son los reales del centro (18/8/2026).
  */
 export const CONTACT = {
   /** Sólo dígitos con código de país, sin +, espacios ni guiones: lo exige wa.me. */
   whatsappNumber: "5491154189624",
   phoneDisplay: "+54 9 11 5418-9624",
-  email: "hola@shiraf.com",
-  instagram: "@shiraf.estetica",
-  instagramUrl: "https://instagram.com/shiraf.estetica",
+  /**
+   * Casilla real del centro. Es un Gmail, no una dirección del dominio propio:
+   * importa para el SMTP de Supabase, que necesita un remitente verificable.
+   */
+  email: "shirafbeautyandspa@gmail.com",
+  /** Mismo usuario en las dos redes. */
+  instagram: "@shiraf_beauty",
+  instagramUrl: "https://instagram.com/shiraf_beauty",
+  tiktok: "@shiraf_beauty",
+  tiktokUrl: "https://tiktok.com/@shiraf_beauty",
+  /** Dominio del centro; de acá sale la URL de producción y el remitente. */
+  siteUrl: "https://shiraf.com.ar",
   address: "Vuelta de Obligado 2443, Oficina 302",
   city: "Buenos Aires",
   /** La búsqueda va sin la oficina: Google ubica la puerta de calle. */
