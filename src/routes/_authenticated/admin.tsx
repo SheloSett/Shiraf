@@ -1,7 +1,8 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  CalendarCheck,
   CalendarDays,
   ChevronDown,
   ClipboardList,
@@ -39,17 +40,29 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminLayout,
 });
 
-// Cada sección declara qué permiso la habilita, para que una empleada sólo vea
-// en el menú lo que realmente puede abrir. `adminOnly` es para lo que no se
-// delega: repartir accesos.
+// Cada sección declara qué hace falta para abrirla, con el mismo vocabulario
+// que requiredAccessFor: los siete permisos más "admin" (lo que no se delega),
+// "panel" y "own_agenda". Antes esto era `permission` + un booleano `adminOnly`
+// que obligaba a poner un permiso de mentira al lado —"appointments // ignorado:
+// manda adminOnly"—, y no tenía dónde entrar un tercer nivel.
+//
+// "Mi agenda" va primera a propósito: para una profesional es su única sección,
+// así que es también su pantalla de entrada al panel.
 const nav = [
+  {
+    to: "/admin/mi-agenda",
+    label: "Mi agenda",
+    icon: CalendarCheck,
+    exact: false,
+    access: "own_agenda",
+    children: [],
+  },
   {
     to: "/admin",
     label: "Calendario",
     icon: CalendarDays,
     exact: true,
-    permission: "appointments",
-    adminOnly: false,
+    access: "appointments",
     children: [],
   },
   {
@@ -57,8 +70,7 @@ const nav = [
     label: "Turnos",
     icon: ClipboardList,
     exact: false,
-    permission: "appointments",
-    adminOnly: false,
+    access: "appointments",
     children: [],
   },
   {
@@ -66,8 +78,7 @@ const nav = [
     label: "Servicios",
     icon: Sparkles,
     exact: false,
-    permission: "catalog",
-    adminOnly: false,
+    access: "catalog",
     children: [{ to: "/admin/categorias-servicios", label: "Categorías" }],
   },
   {
@@ -75,8 +86,7 @@ const nav = [
     label: "Profesionales",
     icon: UserSquare,
     exact: false,
-    permission: "team",
-    adminOnly: false,
+    access: "team",
     children: [],
   },
   {
@@ -84,8 +94,7 @@ const nav = [
     label: "Clientes",
     icon: Users,
     exact: false,
-    permission: "clients_contact",
-    adminOnly: false,
+    access: "clients_contact",
     children: [],
   },
   {
@@ -93,8 +102,7 @@ const nav = [
     label: "Productos",
     icon: Package,
     exact: false,
-    permission: "stock",
-    adminOnly: false,
+    access: "stock",
     children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
   },
   {
@@ -102,8 +110,7 @@ const nav = [
     label: "Equipo",
     icon: ShieldCheck,
     exact: false,
-    permission: "appointments", // ignorado: manda adminOnly
-    adminOnly: true,
+    access: "admin",
     children: [],
   },
 ] as const;
@@ -141,7 +148,7 @@ function AdminLayout() {
   //       return (data ?? []).some((r) => r.role === "admin");
   //     },
   //   });
-  const { isAdmin, canEnterPanel, can, loading } = useAccess();
+  const { canEnterPanel, can, allows, loading } = useAccess();
 
   // Secciones que la persona abrió o cerró a mano con la flechita. Lo que no
   // esté acá se decide solo: la sección abierta muestra sus subsecciones.
@@ -152,16 +159,27 @@ function AdminLayout() {
   const pendingCount = usePendingAppointments(can("appointments"));
 
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
-  const visibleNav = nav.filter((item) => (item.adminOnly ? isAdmin : can(item.permission)));
+  const visibleNav = nav.filter((item) => allows(item.access));
 
   // Guard de la sección abierta. Va acá y no en cada ruta hija porque todas
   // renderizan dentro de este <Outlet />: en un solo lugar no hay forma de
   // olvidarse de ponerlo en una pantalla nueva.
   const required = requiredAccessFor(location.pathname);
-  // "panel" no es un permiso: es lo que puede abrir cualquiera del equipo sin
-  // que le hayan tildado nada, como su propia contraseña.
-  const allowed =
-    required === "admin" ? isAdmin : required === "panel" ? canEnterPanel : can(required);
+  const allowed = allows(required);
+
+  // /admin es el calendario, que pide "Gestionar turnos". Quien entra al panel
+  // sin ese acceso —una profesional que sólo tiene su agenda, o una empleada de
+  // stock— aterrizaba en "No tenés acceso a esta sección" apenas se logueaba,
+  // como si algo estuviera roto. Se la manda a su primera sección.
+  //
+  // Sólo desde /admin pelado: si escribió una URL a mano, la respuesta tiene que
+  // ser el cartel que explica qué le falta, no una redirección silenciosa.
+  const landing = visibleNav[0]?.to;
+  useEffect(() => {
+    if (!loading && !allowed && location.pathname === "/admin" && landing) {
+      navigate({ to: landing, replace: true });
+    }
+  }, [loading, allowed, location.pathname, landing, navigate]);
 
   if (loading) {
     return <p className="p-10 text-sm text-muted-foreground">Verificando permisos…</p>;

@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { linkProfessionalAccount } from "@/lib/team";
 import { createEmployee, deleteEmployee } from "@/lib/team.functions";
 import {
   impliedBy,
@@ -41,6 +42,58 @@ export const Route = createFileRoute("/_authenticated/admin/equipo")({
   component: AdminTeam,
 });
 
+type Ficha = {
+  id: string;
+  full_name: string;
+  specialty: string | null;
+  user_id: string | null;
+  is_active: boolean;
+};
+
+/**
+ * El selector de ficha de profesional.
+ *
+ * Sólo ofrece las fichas libres más la que ya tenga esta cuenta: una atada a
+ * otra persona no aparece en la lista, porque elegirla sería sacársela sin
+ * decirlo. Para mudar una ficha hay que soltarla primero de quien la tiene.
+ *
+ * Es un `select` nativo y no el de la librería por lo mismo que en Servicios y
+ * en Profesionales: son pocas opciones, y en el celular el nativo abre la rueda
+ * del sistema, que se usa mejor que cualquier lista dibujada a mano.
+ */
+function ProfessionalSelect({
+  id,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  options: Ficha[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+    >
+      <option value="">No atiende turnos</option>
+      {options.map((ficha) => (
+        <option key={ficha.id} value={ficha.id}>
+          {ficha.full_name}
+          {ficha.specialty ? ` — ${ficha.specialty}` : ""}
+          {ficha.is_active ? "" : " (ficha inactiva)"}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function AdminTeam() {
   const queryClient = useQueryClient();
   const { isAdmin, loading } = useAccess();
@@ -52,6 +105,7 @@ function AdminTeam() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [draftProfessional, setDraftProfessional] = useState("");
   const [draftPermissions, setDraftPermissions] = useState<Set<Permission>>(new Set());
 
   function closeForm() {
@@ -60,6 +114,7 @@ function AdminTeam() {
     setPassword("");
     setFullName("");
     setPhone("");
+    setDraftProfessional("");
     setDraftPermissions(new Set());
   }
 
@@ -101,12 +156,43 @@ function AdminTeam() {
     },
   });
 
+  // Las fichas de profesional, para poder atarle una a una cuenta. La ficha es
+  // lo que el sitio muestra —nombre, especialidad, qué tratamientos hace— y la
+  // cuenta es con lo que entra; hasta la migración 20260818020000 eran dos cosas
+  // sueltas y por eso una profesional no tenía forma de ver sus propios turnos.
+  const professionals = useQuery({
+    queryKey: ["admin-team-professionals"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("professionals")
+        .select("id, full_name, specialty, user_id, is_active")
+        .order("full_name");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const link = useMutation({
+    mutationFn: async ({ userId, professionalId }: { userId: string; professionalId: string }) =>
+      await linkProfessionalAccount(userId, professionalId),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-team-professionals"] });
+      toast.success(
+        variables.professionalId
+          ? "Ficha vinculada: ya ve su agenda al entrar al panel."
+          : "Ficha desvinculada.",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const create = useMutation({
     mutationFn: async () => {
       // Server function: crear una cuenta necesita la service role, que no puede
       // acercarse al navegador. El rol de la dueña se vuelve a verificar del
       // lado servidor, no alcanza con que esta pantalla esté visible.
-      return await createEmployee({
+      const created = await createEmployee({
         data: {
           email: email.trim(),
           password,
@@ -115,11 +201,35 @@ function AdminTeam() {
           permissions: [...draftPermissions],
         },
       });
+
+      // El vínculo con la ficha va después y desde el navegador: es un UPDATE
+      // común sobre `professionals` que la dueña ya puede hacer con su propia
+      // sesión. Meterlo adentro de la server function obligaría a hacerlo con la
+      // service role —la clave que bypasea toda la RLS— para algo que no la
+      // necesita.
+      //
+      // Si falla, la cuenta igual quedó creada y sirve: no se deshace nada, se
+      // avisa, y la ficha se ata después desde la tarjeta.
+      if (draftProfessional) {
+        try {
+          await linkProfessionalAccount(created.id, draftProfessional);
+        } catch (error) {
+          return { ...created, linkError: error instanceof Error ? error.message : "" };
+        }
+      }
+      return { ...created, linkError: null as string | null };
     },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-team-professionals"] });
       closeForm();
-      toast.success(`${result.fullName} ya puede entrar con ${result.email}.`);
+      if (result.linkError) {
+        toast.warning(
+          `Se creó la cuenta de ${result.fullName}, pero la ficha de profesional no se pudo vincular. Atala desde su tarjeta. (${result.linkError})`,
+        );
+      } else {
+        toast.success(`${result.fullName} ya puede entrar con ${result.email}.`);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -194,6 +304,12 @@ function AdminTeam() {
   ].filter((item): item is string => Boolean(item));
 
   const ready = missing.length === 0;
+
+  const fichas: Ficha[] = professionals.data ?? [];
+  /** La ficha atada a esta cuenta, si tiene alguna. */
+  const fichaOf = (userId: string) => fichas.find((f) => f.user_id === userId) ?? null;
+  /** Las que puede elegir: las libres, más la suya. */
+  const fichasFor = (userId: string) => fichas.filter((f) => !f.user_id || f.user_id === userId);
 
   return (
     <div>
@@ -282,6 +398,32 @@ function AdminTeam() {
                   );
                 })}
               </div>
+
+              {/* La ficha va separada de las casillas a propósito: no es un
+                  acceso más que se reparte, es decir QUIÉN ES esta persona en
+                  el centro. Y no le suma nada del negocio — con la ficha atada
+                  ve sus propios turnos y nada más. */}
+              <div className="mt-5 border-t border-border pt-5">
+                <Label htmlFor={`ficha-${member.id}`} className="text-sm">
+                  Ficha de profesional
+                </Label>
+                <div className="mt-2 max-w-sm">
+                  <ProfessionalSelect
+                    id={`ficha-${member.id}`}
+                    value={fichaOf(member.id)?.id ?? ""}
+                    options={fichasFor(member.id)}
+                    disabled={link.isPending || professionals.isLoading}
+                    onChange={(professionalId) =>
+                      link.mutate({ userId: member.id, professionalId })
+                    }
+                  />
+                </div>
+                <p className="mt-2 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                  {fichaOf(member.id)
+                    ? "Al entrar al panel ve “Mi agenda”: sus próximos turnos con el tratamiento, el día, la hora y la clienta."
+                    : "Si atiende turnos, elegí su ficha y va a ver su propia agenda al entrar. No le suma ningún otro acceso."}
+                </p>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -360,6 +502,21 @@ function AdminTeam() {
                 <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 Se muestra en texto plano a propósito: tenés que poder copiarla para dársela.
                 Después ella la cambia desde Mi cuenta.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="e-ficha">Ficha de profesional</Label>
+              <ProfessionalSelect
+                id="e-ficha"
+                value={draftProfessional}
+                options={fichas.filter((f) => !f.user_id)}
+                onChange={setDraftProfessional}
+              />
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Si atiende turnos, atala a su ficha: al entrar al panel va a ver “Mi agenda” con sus
+                propios turnos. Es lo único que gana con esto — el resto son las casillas de abajo.
+                La ficha se puede atar o soltar después.
               </p>
             </div>
 

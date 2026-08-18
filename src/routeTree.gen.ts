@@ -27,6 +27,7 @@ import { Route as AuthenticatedAdminCategoriasServiciosRouteImport } from './rou
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
 import { Route as AuthenticatedAdminCuentaRouteImport } from './routes/_authenticated/admin.cuenta'
 import { Route as AuthenticatedAdminEquipoRouteImport } from './routes/_authenticated/admin.equipo'
+import { Route as AuthenticatedAdminMiAgendaRouteImport } from './routes/_authenticated/admin.mi-agenda'
 import { Route as AuthenticatedAdminProductosRouteImport } from './routes/_authenticated/admin.productos'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
 import { Route as AuthenticatedAdminServiciosRouteImport } from './routes/_authenticated/admin.servicios'
@@ -126,6 +127,12 @@ const AuthenticatedAdminEquipoRoute =
     path: '/equipo',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminMiAgendaRoute =
+  AuthenticatedAdminMiAgendaRouteImport.update({
+    id: '/mi-agenda',
+    path: '/mi-agenda',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminProductosRoute =
   AuthenticatedAdminProductosRouteImport.update({
     id: '/productos',
@@ -168,6 +175,7 @@ export interface FileRoutesByFullPath {
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/equipo': typeof AuthenticatedAdminEquipoRoute
+  '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
@@ -189,6 +197,7 @@ export interface FileRoutesByTo {
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/equipo': typeof AuthenticatedAdminEquipoRoute
+  '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
@@ -214,6 +223,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/_authenticated/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/_authenticated/admin/equipo': typeof AuthenticatedAdminEquipoRoute
+  '/_authenticated/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/_authenticated/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/_authenticated/admin/servicios': typeof AuthenticatedAdminServiciosRoute
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/admin/clientes'
     | '/admin/cuenta'
     | '/admin/equipo'
+    | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
     | '/admin/servicios'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/admin/clientes'
     | '/admin/cuenta'
     | '/admin/equipo'
+    | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
     | '/admin/servicios'
@@ -284,6 +296,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/clientes'
     | '/_authenticated/admin/cuenta'
     | '/_authenticated/admin/equipo'
+    | '/_authenticated/admin/mi-agenda'
     | '/_authenticated/admin/productos'
     | '/_authenticated/admin/profesionales'
     | '/_authenticated/admin/servicios'
@@ -429,6 +442,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminEquipoRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/mi-agenda': {
+      id: '/_authenticated/admin/mi-agenda'
+      path: '/mi-agenda'
+      fullPath: '/admin/mi-agenda'
+      preLoaderRoute: typeof AuthenticatedAdminMiAgendaRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/productos': {
       id: '/_authenticated/admin/productos'
       path: '/productos'
@@ -466,6 +486,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
   AuthenticatedAdminCuentaRoute: typeof AuthenticatedAdminCuentaRoute
   AuthenticatedAdminEquipoRoute: typeof AuthenticatedAdminEquipoRoute
+  AuthenticatedAdminMiAgendaRoute: typeof AuthenticatedAdminMiAgendaRoute
   AuthenticatedAdminProductosRoute: typeof AuthenticatedAdminProductosRoute
   AuthenticatedAdminProfesionalesRoute: typeof AuthenticatedAdminProfesionalesRoute
   AuthenticatedAdminServiciosRoute: typeof AuthenticatedAdminServiciosRoute
@@ -481,6 +502,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
   AuthenticatedAdminCuentaRoute: AuthenticatedAdminCuentaRoute,
   AuthenticatedAdminEquipoRoute: AuthenticatedAdminEquipoRoute,
+  AuthenticatedAdminMiAgendaRoute: AuthenticatedAdminMiAgendaRoute,
   AuthenticatedAdminProductosRoute: AuthenticatedAdminProductosRoute,
   AuthenticatedAdminProfesionalesRoute: AuthenticatedAdminProfesionalesRoute,
   AuthenticatedAdminServiciosRoute: AuthenticatedAdminServiciosRoute,

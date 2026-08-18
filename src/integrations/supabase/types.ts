@@ -26,6 +26,10 @@ export type Database = {
           // Insert va opcional.
           price: number;
           professional_id: string | null;
+          // Migración 20260818030000: cuándo salió el recordatorio del día
+          // antes. NULL = todavía no se mandó. Lo escribe la tarea de
+          // recordatorios con la service role.
+          reminded_at: string | null;
           service_id: string;
           starts_at: string;
           status: Database["public"]["Enums"]["appointment_status"];
@@ -43,6 +47,7 @@ export type Database = {
           id?: string;
           price?: number;
           professional_id?: string | null;
+          reminded_at?: string | null;
           service_id: string;
           starts_at: string;
           status?: Database["public"]["Enums"]["appointment_status"];
@@ -60,6 +65,7 @@ export type Database = {
           id?: string;
           price?: number;
           professional_id?: string | null;
+          reminded_at?: string | null;
           service_id?: string;
           starts_at?: string;
           status?: Database["public"]["Enums"]["appointment_status"];
@@ -291,6 +297,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      // service_media la agrega la migración 20260818010000.
+      service_media: {
+        Row: {
+          created_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["media_kind"];
+          position: number;
+          service_id: string;
+          url: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          kind: Database["public"]["Enums"]["media_kind"];
+          position?: number;
+          service_id: string;
+          url: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          kind?: Database["public"]["Enums"]["media_kind"];
+          position?: number;
+          service_id?: string;
+          url?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "service_media_service_id_fkey";
+            columns: ["service_id"];
+            isOneToOne: false;
+            referencedRelation: "services";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       services: {
         Row: {
           category: string;
@@ -298,6 +340,10 @@ export type Database = {
           description: string | null;
           duration_minutes: number;
           id: string;
+          /**
+           * Portada. La mantiene el trigger trg_sync_service_cover a partir de
+           * service_media (migración 20260818010000): NO se escribe a mano.
+           */
           image_url: string | null;
           is_published: boolean;
           name: string;
@@ -477,11 +523,39 @@ export type Database = {
           member_id: string;
         }[];
       };
+      // Las dos siguientes las agrega la migración 20260818020000, la de la
+      // agenda propia de cada profesional.
+      //
+      // my_agenda no recibe a quién mirar a propósito: el alcance lo fija
+      // auth.uid() adentro de la función. Si tomara un id, cualquiera podría
+      // pedir la agenda de cualquiera.
+      my_agenda: {
+        Args: { _days?: number };
+        Returns: {
+          appointment_id: string;
+          appointment_start: string;
+          appointment_minutes: number;
+          appointment_state: Database["public"]["Enums"]["appointment_status"];
+          service_name: string;
+          client_name: string | null;
+          client_phone: string | null;
+          clinical_notes: string | null;
+          booking_note: string | null;
+          client_is_guest: boolean;
+        }[];
+      };
+      // Devuelve NULL si quien pregunta no es una profesional vinculada y activa.
+      my_professional_id: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
     };
     Enums: {
       // 'staff' lo agrega la migración 20260813060000.
       app_role: "admin" | "professional" | "client" | "staff";
       appointment_status: "pending" | "confirmed" | "completed" | "cancelled";
+      // media_kind la crea la migración 20260818010000.
+      media_kind: "image" | "video";
       // app_permission la crea la migración 20260813070000.
       app_permission:
         | "appointments"

@@ -2,11 +2,62 @@
 
 ## 📍 Dónde quedé — 18/8/2026
 
-**La segunda PC quedó lista, sin nada bloqueante.** Rama bajada, `.env` completo
-—las 11 variables, Supabase y Cloudinary—, dev server en `http://localhost:8080/`,
-todas las migraciones corridas y el panel probado a mano.
+### 🔴 LO PRIMERO EN LA OTRA PC: completar el `.env`
 
-Lo que queda es probar el resto del panel y commitear lo del día.
+**Las 14 migraciones están corridas.** No hay nada que aplicar en la base.
+
+Pero el `.env` **no viaja por el repo**, y esta tanda sumó cuatro variables
+nuevas que antes no existían. Sin ellas el sitio levanta igual, así que el error
+no aparece hasta que alguien confirma un turno y el mail no sale. Copiarlas de
+[`.env.example`](.env.example) y completarlas:
+
+| Variable | Para qué | Si falta |
+| --- | --- | --- |
+| `RESEND_API_KEY` | mandar los mails de turno | el panel avisa "por mail no salió" |
+| `MAIL_FROM` | el remitente, de un dominio verificado en Resend | ídem |
+| `MAIL_REPLY_TO` | a dónde contesta la clienta | contesta a `MAIL_FROM` |
+| `REMINDERS_SECRET` | la llave de `POST /api/recordatorios` | el endpoint responde 401 a todo |
+
+⚠️ **El Gmail del centro no sirve como `MAIL_FROM`**: Google no deja que otro
+proveedor firme por sus dominios y Resend rechaza el envío. Va en
+`MAIL_REPLY_TO`. Todo el detalle en
+[`supabase/emails/README.md`](supabase/emails/README.md).
+
+### 🟡 Lo que falta probar en pantalla (nada de esto se probó todavía)
+
+Las tres funcionalidades del 18/8 están escritas, compilan y tienen la migración
+corrida, pero **ninguna se usó contra la base**. Es lo primero que conviene
+hacer:
+
+- [ ] **Mi agenda** (ver más abajo). Vincular una ficha, entrar con esa cuenta y
+      que aparezcan los turnos.
+- [ ] **Galería de tratamientos.** Subir varias fotos y un video a un
+      tratamiento, reordenarlas, y ver que la portada del catálogo sea la
+      primera imagen.
+- [ ] **Avisos por mail.** Confirmar un turno y ver si llega. Necesita el `.env`
+      de arriba. El recordatorio además necesita la tarea programada.
+
+### ✅ Agenda de la profesional — migración corrida (18/8/2026)
+
+`20260818020000_professional_agenda.sql` ya está aplicada.
+
+**Falta el paso a mano, una sola vez por profesional.** Hay dos caminos, según
+de dónde vengas:
+
+- **No tiene cuenta todavía** → **Profesionales**, en su tarjeta, botón
+  **"Darle acceso"**: pide sólo mail y contraseña —el nombre sale de la ficha—,
+  crea la cuenta y la ata en un solo paso.
+- **Ya tiene cuenta** (o querés vincularte la tuya) → **Equipo**, en su tarjeta,
+  elegir la **ficha de profesional** en el desplegable.
+
+Sin ese paso no se rompe nada: simplemente no le aparece la sección.
+
+Sin probar todavía en pantalla.
+
+---
+
+**Fuera de eso, la segunda PC está lista.** Rama bajada, `.env` completo —las 11
+variables, Supabase y Cloudinary—, dev server en `http://localhost:8080/`.
 
 ### ✅ 1. Migración de `team_member_ids` — corrida (18/8/2026)
 
@@ -38,7 +89,9 @@ dos turnos encimados con la misma profesional).
 
 Pendiente de probarlo a mano en cuanto esté el `.env`.
 
-**Todas las migraciones están aplicadas.** Se probaron una por una:
+**No falta ninguna: las 14 están corridas** (las tres del 18/8, confirmadas por
+la dueña esa misma tarde). Lo que falta ahora es probarlas en pantalla, no
+aplicarlas.
 
 | Migración                                     | Estado                               |
 | --------------------------------------------- | ------------------------------------ |
@@ -53,12 +106,16 @@ Pendiente de probarlo a mano en cuanto esté el `.env`.
 | `20260816000000` rename_category_atomic       | ✅                                   |
 | `20260816010000` / `20260816020000` invitadas | ✅ (`guest_*`, `normalize_phone`)    |
 | `20260818000000` team_member_ids              | ✅ (corrida el 18/8)                 |
+| `20260818010000` service_media                | ✅ (corrida el 18/8)                 |
+| `20260818020000` professional_agenda          | ✅ (corrida el 18/8)                 |
+| `20260818030000` appointment_reminders        | ✅ (corrida el 18/8)                 |
 
 ### ✅ 4. Todo pusheado
 
-`panel-solo-para-el-equipo` está en `origin` con upstream, árbol limpio, y ya
-incluye el contador de turnos pendientes y el menú plegable. `origin/main` está
-al día también.
+`panel-solo-para-el-equipo` está en `origin` con upstream y árbol limpio. Al
+18/8 a la noche incluye todo lo de esa fecha: el equipo separado de las clientas,
+los datos de contacto reales, el cierre del home, la galería de tratamientos, los
+avisos por mail y la agenda de la profesional. `origin/main` está al día también.
 
 **El merge a `main` sería fast-forward** (la rama tiene los 8 commits de `main`
 más los suyos, y `main` no tiene ninguno que la rama no tenga):
@@ -83,6 +140,37 @@ queda nada pendiente de aplicar en la base.
   congelado _(el `prevent_double_booking` es de acá)_
 - **Tanda 2** — el panel carga turnos + recuperar y cambiar contraseña
 - **Tanda 3** — los 5 bugs medianos (detalle más abajo)
+
+### 🟢 Panel de la profesional — hecho y con la migración corrida (18/8)
+
+Cada profesional entra al panel y ve **"Mi agenda"**: sus próximos turnos con el
+tratamiento, el día, la hora, la clienta, su teléfono y sus notas clínicas. Sólo
+lectura — no confirma, no cancela, no mueve nada.
+
+**La pieza que faltaba** era el vínculo: `professionals.user_id` existía desde la
+primera migración y nunca se había escrito, así que la ficha de la profesional y
+la cuenta con la que entra eran dos cosas sueltas. Ahora se atan desde Equipo.
+
+Tres decisiones que conviene no perder de vista:
+
+- **No es un permiso.** No hay casilla que tildar: se gana atando la ficha y se
+  pierde desactivándola. Por eso es el único nivel de acceso que la dueña no
+  pasa automáticamente — si ella también atiende, hay que vincularle su ficha.
+- **El teléfono y las notas clínicas los ve** (decisión del centro, 18/8). Las
+  notas son las que evitan aplicar algo contraindicado. Sólo de **sus** clientas
+  y sólo de los turnos que tiene por delante: `my_agenda()` no sabe devolver otra
+  cosa.
+- **Vincular la ficha lo puede hacer sólo la dueña**, por trigger en la base.
+  Sin ese candado, cualquiera con "Gestionar profesionales" podía apuntarse una
+  ficha ajena y quedarse leyendo los teléfonos y las notas de esas clientas.
+
+Lo que queda para cuando el centro lo pida:
+
+- [ ] ¿Puede **confirmar** sus propios turnos? Hoy no. Eso necesita una policy de
+      UPDATE sobre `appointments`, y conviene pensarla entonces: confirmar es
+      responderle a una clienta, y hoy esa respuesta la da el centro.
+- [ ] ¿Ve lo que **ya hizo**? Hoy la lista es sólo para adelante. Un historial
+      propio es otra pantalla, no un filtro más.
 
 ### 🟠 Hecho el 18/8, TODAVÍA SIN COMMITEAR
 

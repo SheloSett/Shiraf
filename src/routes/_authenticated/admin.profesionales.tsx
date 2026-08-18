@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarCheck, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,9 +21,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { useAccess } from "@/hooks/useAccess";
 import { WEEKDAYS } from "@/lib/shiraf";
+import { linkProfessionalAccount } from "@/lib/team";
+import { createEmployee } from "@/lib/team.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/profesionales")({
   component: AdminProfessionals,
@@ -56,6 +65,14 @@ const DEFAULT_SCHEDULE: DraftSchedule = { weekday: 1, start_time: "09:00", end_t
 
 function AdminProfessionals() {
   const queryClient = useQueryClient();
+  // Crear la cuenta y atarla a la ficha es cosa de la dueña: el alta de gente no
+  // se delega, y el trigger de `professionals.user_id` tampoco lo permitiría.
+  const { isAdmin } = useAccess();
+
+  /** Ficha a la que se le está creando la cuenta, o null. */
+  const [granting, setGranting] = useState<{ id: string; name: string } | null>(null);
+  const [grantEmail, setGrantEmail] = useState("");
+  const [grantPassword, setGrantPassword] = useState("");
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -81,7 +98,7 @@ function AdminProfessionals() {
       const { data, error } = await supabase
         .from("professionals")
         .select(
-          "id, full_name, specialty, bio, is_active, professional_services(id, service_id, services(id, name)), professional_schedules(id, weekday, start_time, end_time)",
+          "id, full_name, specialty, bio, is_active, user_id, professional_services(id, service_id, services(id, name)), professional_schedules(id, weekday, start_time, end_time)",
         )
         .order("full_name");
       if (error) throw error;
@@ -296,6 +313,61 @@ function AdminProfessionals() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /**
+   * Le crea la cuenta a una profesional y se la ata a su ficha, en un solo paso.
+   *
+   * Antes esto eran dos pantallas: cargar la ficha acá y después ir a Equipo a
+   * crear a la misma persona de nuevo —escribiendo el nombre por segunda vez—
+   * para recién ahí vincularla. El nombre ya lo sabemos: sale de la ficha.
+   *
+   * La cuenta se crea SIN ningún acceso tildado. Con eso ve su agenda y nada
+   * más, que es exactamente lo que se quiso. Si además atiende el teléfono o
+   * carga turnos, las casillas se tildan después en Equipo — pero eso es una
+   * decisión aparte y no tiene por qué colarse en el alta.
+   */
+  const grantAccess = useMutation({
+    mutationFn: async () => {
+      if (!granting) throw new Error("No hay ninguna profesional seleccionada.");
+
+      const created = await createEmployee({
+        data: {
+          email: grantEmail.trim(),
+          password: grantPassword,
+          fullName: granting.name,
+          permissions: [],
+        },
+      });
+
+      // Si el vínculo falla, la cuenta ya existe y sirve: no se deshace nada.
+      // Se avisa distinto para que se pueda atar a mano desde Equipo en vez de
+      // quedar una cuenta huérfana sin que nadie se entere.
+      try {
+        await linkProfessionalAccount(created.id, granting.id);
+      } catch (error) {
+        return {
+          ...created,
+          linkError: error instanceof Error ? error.message : "",
+        };
+      }
+      return { ...created, linkError: null as string | null };
+    },
+    onSuccess: async (result) => {
+      await refresh();
+      // Equipo lista las mismas cuentas y las mismas fichas.
+      await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-team-professionals"] });
+      closeGrant();
+      if (result.linkError) {
+        toast.warning(
+          `Se creó la cuenta de ${result.fullName}, pero no se pudo atar a su ficha. Hacelo desde Equipo. (${result.linkError})`,
+        );
+      } else {
+        toast.success(`${result.fullName} ya entra con ${result.email} y ve su agenda.`);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const toggleActive = useMutation({
     mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
       const { error } = await supabase
@@ -314,6 +386,12 @@ function AdminProfessionals() {
     setForm(EMPTY_FORM);
     setDraftServices(new Set());
     setDraftSchedules([]);
+  }
+
+  function closeGrant() {
+    setGranting(null);
+    setGrantEmail("");
+    setGrantPassword("");
   }
 
   function openCreate() {
@@ -356,6 +434,9 @@ function AdminProfessionals() {
       prev.map((schedule, i) => (i === index ? { ...schedule, ...patch } : schedule)),
     );
   }
+
+  /** El largo mínimo lo pide Supabase; el mail lo valida el zod del servidor. */
+  const grantReady = grantEmail.trim().length > 0 && grantPassword.length >= 8;
 
   return (
     <div>
@@ -461,6 +542,30 @@ function AdminProfessionals() {
                   </ul>
                 </div>
               </div>
+
+              {/* El acceso al panel, en la misma tarjeta donde está el resto de
+                  sus datos. Antes había que ir a Equipo y volver a cargar a la
+                  misma persona desde cero para poder vincularla. */}
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+                {p.user_id ? (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <CalendarCheck className="h-3.5 w-3.5 shrink-0 text-gold" />
+                    Entra al panel y ve su agenda
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Sin acceso al panel</p>
+                )}
+
+                {isAdmin && !p.user_id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setGranting({ id: p.id, name: p.full_name })}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" /> Darle acceso
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -469,6 +574,70 @@ function AdminProfessionals() {
           <p className="text-sm text-muted-foreground">Todavía no hay profesionales cargadas.</p>
         )}
       </div>
+
+      {/* ── Darle acceso al panel ──────────────────────────────────────────
+          Pide sólo el mail y la contraseña: el nombre sale de la ficha, que es
+          justamente lo que se venía escribiendo dos veces. */}
+      <Dialog open={!!granting} onOpenChange={(next) => !next && closeGrant()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">
+              Darle acceso a {granting?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Se crea su cuenta y queda atada a esta ficha. Al entrar ve “Mi agenda”: sus próximos
+              turnos con el tratamiento, el día, la hora y la clienta. Ningún otro acceso — si
+              además tiene que cargar turnos o tocar el catálogo, eso se tilda en Equipo.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="gr-email">Mail</Label>
+              <Input
+                id="gr-email"
+                type="email"
+                autoComplete="off"
+                value={grantEmail}
+                onChange={(e) => setGrantEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="gr-password">Contraseña inicial</Label>
+              <Input
+                id="gr-password"
+                type="text"
+                autoComplete="off"
+                placeholder="Mínimo 8 caracteres"
+                value={grantPassword}
+                onChange={(e) => setGrantPassword(e.target.value)}
+                aria-invalid={grantPassword.length > 0 && grantPassword.length < 8}
+              />
+              {grantPassword.length > 0 && grantPassword.length < 8 && (
+                <p className="text-xs text-destructive">
+                  Le faltan {8 - grantPassword.length}{" "}
+                  {8 - grantPassword.length === 1 ? "caracter" : "caracteres"}: el mínimo es 8.
+                </p>
+              )}
+              <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Se muestra en texto plano a propósito: tenés que poder copiarla para dársela.
+                Después ella la cambia desde Mi cuenta.
+              </p>
+            </div>
+
+            <Button
+              className="w-full"
+              size="lg"
+              disabled={!grantReady || grantAccess.isPending}
+              onClick={() => grantAccess.mutate()}
+            >
+              {grantAccess.isPending ? "Creando…" : "Crear la cuenta"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Un solo diálogo para alta y edición: datos, tratamientos y horarios. */}
       <Dialog open={formOpen} onOpenChange={(next) => (next ? setFormOpen(true) : closeForm())}>
