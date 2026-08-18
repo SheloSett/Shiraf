@@ -1,5 +1,94 @@
 # Pendientes de Shiraf
 
+## 📍 Dónde quedé — 17/8/2026, 17:00
+
+Para seguir en la otra PC, leer esto primero. Las dos cosas de arriba son
+bloqueantes: una para la base, otra para poder bajar el código.
+
+### 🔴 1. Falta correr UNA migración en la base
+
+**[`supabase/migrations/20260813020000_prevent_double_booking.sql`](supabase/migrations/20260813020000_prevent_double_booking.sql)**
+— pegarla en el SQL Editor de Supabase.
+
+Es la que quedó afuera cuando se corrieron las de la Tanda 1. Trae dos cosas:
+
+1. `professional_busy_slots()` — la función que dice qué horarios están tomados.
+   Sin ella, **la pantalla de turnos no muestra ningún horario**: la consulta
+   falla y el panel informa "esta profesional no atiende ese día", aunque los
+   horarios estén cargados y bien. Pasa igual en el sitio público, donde la
+   clienta lee "no hay horarios disponibles" y se va creyendo que está lleno.
+2. `trg_check_appointment_overlap` — el trigger que rechaza dos turnos encimados
+   con la misma profesional. **Sin esto la base acepta doble reserva.** Dos
+   clientas pueden tener a Camila a las 15:00 del mismo día y nada lo frena.
+
+Verificado contra la base el 17/8: `professional_busy_slots` devuelve `PGRST202`
+(no existe), llamándola con los parámetros correctos. Como el archivo entra en
+una sola transacción, si falta la función falta también el trigger.
+
+**Todo el resto de las migraciones SÍ está aplicado.** Se probaron una por una:
+
+| Migración                                     | Estado                               |
+| --------------------------------------------- | ------------------------------------ |
+| `20260813000000` product_categories           | ✅                                   |
+| `20260813010000` service_categories           | ✅                                   |
+| `20260813020000` prevent_double_booking       | ❌ **falta**                         |
+| `20260813030000` service_images_bucket        | ✅ (bucket `servicios`)              |
+| `20260813040000` appointment_rules            | ✅ (`appointments.price`)            |
+| `20260813060000` add_staff_role               | ✅ (enum `staff`)                    |
+| `20260813070000` permissions                  | ✅ (`user_permissions`)              |
+| `20260814010000` split_sensitive_columns      | ✅ (`client_notes`, `product_costs`) |
+| `20260816000000` rename_category_atomic       | ✅                                   |
+| `20260816010000` / `20260816020000` invitadas | ✅ (`guest_*`, `normalize_phone`)    |
+
+### 🔴 2. Nada está pusheado — sin esto no hay qué bajar
+
+- La rama de trabajo es **`panel-solo-para-el-equipo`** y **no tiene upstream**.
+- Tiene **6 commits sin pushear**.
+- `main` está **2 commits adelante** de `origin/main`.
+- Y hay **trabajo sin commitear** en el árbol (ver abajo).
+
+```
+git add -A
+git commit -m "wip: contador de turnos pendientes y menú plegable"
+git push -u origin panel-solo-para-el-equipo
+```
+
+⚠️ Antes de pushear `main`, acordarse de que Lovable sincroniza esa rama.
+
+### 🟠 3. Trabajo a medio hacer en el árbol (sin commitear)
+
+Contador de turnos pendientes + menú lateral plegable:
+
+- `src/hooks/usePendingAppointments.ts` — **archivo nuevo, sin trackear**
+- `src/routes/_authenticated/admin.turnos.tsx` — badge en la pestaña "Pendiente"
+- `src/routes/_authenticated/admin.tsx` — barra sticky y secciones plegables
+
+`npm run lint` da **1 error de formato** en `admin.tsx` (prettier, línea ~234).
+Se arregla con `npx prettier --write src/routes/_authenticated/admin.tsx`.
+
+### ✅ Las tandas: ninguna quedó a medias
+
+Las cuatro se entregaron completas en código. El único agujero fue de
+aplicación, no de desarrollo: la migración del punto 1 nunca se corrió.
+
+- **Tanda 0** — higiene: `.gitattributes`, `.env` fuera del repo
+- **Tanda 1** — reglas de turnos: validación, alcance por clienta, precio
+  congelado _(el `prevent_double_booking` es de acá — es lo que falta correr)_
+- **Tanda 2** — el panel carga turnos + recuperar y cambiar contraseña
+- **Tanda 3** — los 5 bugs medianos (detalle más abajo)
+
+### ✅ Hecho hoy, ya commiteado en la rama
+
+- La cuenta del centro entra al panel y no a la tienda; `/mi-cuenta` y
+  `/reservar` la desvían. Se agregó `/admin/cuenta` (contraseña + accesos) y
+  "Cerrar sesión" adentro del panel.
+- Los turnos se **encadenan** en vez de caer en una grilla de 30 minutos.
+- En "Nuevo turno" la hora **se elige de una lista**; el campo libre quedó detrás
+  de "Cargar fuera de horario".
+- Un error al pedir los horarios ya no se lee como "no hay turnos".
+
+---
+
 ## 🟡 Dos reglas de la agenda que tiene que decidir el centro (17/8/2026)
 
 Los horarios ya se **encadenan**: cada turno arranca cuando termina el anterior y
