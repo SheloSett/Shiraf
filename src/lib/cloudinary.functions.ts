@@ -89,10 +89,15 @@ async function canManageCatalog(userId: string): Promise<boolean> {
 }
 
 /**
- * Devuelve una firma de un solo uso para subir una foto.
+ * Devuelve una firma de un solo uso para subir una foto o un video.
  *
  * `folder` lo fija el servidor y no lo manda el cliente: si viajara desde el
  * navegador, alguien podría escribir en cualquier carpeta de la cuenta.
+ *
+ * Sirve para los dos tipos sin cambiar nada: lo que se firma es `folder` y
+ * `timestamp`, y ninguno de los dos depende de si lo que sube es imagen o
+ * video. Lo que cambia es el endpoint al que se postea, y eso lo elige quien
+ * sube (ver uploadServiceMedia en storage.ts).
  */
 export const signImageUpload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -113,13 +118,27 @@ export const signImageUpload = createServerFn({ method: "POST" })
   });
 
 /**
- * Borra una foto de Cloudinary.
+ * Borra una foto o un video de Cloudinary.
  *
  * Va por el servidor porque destroy exige firma, y la firma exige el secreto.
+ *
+ * `resourceType` NO es opcional por un motivo concreto: el endpoint de destroy
+ * es distinto para imagen y para video, y el de imagen contra un video devuelve
+ * 200 con `{"result":"not found"}`. O sea que borrar un video con el endpoint
+ * equivocado parece funcionar y deja el archivo ocupando la cuenta para
+ * siempre. Quien llama sabe el tipo —está guardado en service_media.kind—, así
+ * que lo manda y no se adivina acá.
  */
 export const deleteImage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) => z.object({ publicId: z.string().min(1) }).parse(data))
+  .validator((data: unknown) =>
+    z
+      .object({
+        publicId: z.string().min(1),
+        resourceType: z.enum(["image", "video"]),
+      })
+      .parse(data),
+  )
   .handler(async ({ data, context }) => {
     if (!(await canManageCatalog(context.userId))) {
       throw new Error("No tenés permiso para borrar fotos de tratamientos.");
@@ -142,10 +161,10 @@ export const deleteImage = createServerFn({ method: "POST" })
       signature,
     });
 
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`, {
-      method: "POST",
-      body,
-    });
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/${data.resourceType}/destroy`,
+      { method: "POST", body },
+    );
 
     if (!response.ok) {
       throw new Error(`Cloudinary rechazó el borrado (${response.status}).`);

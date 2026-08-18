@@ -49,6 +49,40 @@ export const IMAGE_PRESETS = {
 export type ImagePreset = keyof typeof IMAGE_PRESETS;
 
 /**
+ * Presets de video.
+ *
+ * `f_auto` acá elige el contenedor (mp4 o webm) según el navegador, igual que
+ * con las imágenes elige AVIF o WebP. `q_auto` mira el contenido para decidir
+ * la compresión, que en video es lo que más pesa en el resultado.
+ *
+ * No hay recorte: un video de tratamiento se filma como se filma y recortarlo a
+ * un cuadrado le corta las manos a la profesional. Se sirve con el alto que
+ * traiga y la galería lo acomoda.
+ */
+export const VIDEO_PRESETS = {
+  /** El de la galería de la ficha. */
+  card: "f_auto,q_auto,w_800",
+  /** A pantalla completa. */
+  hero: "f_auto,q_auto,w_1600",
+} as const;
+
+export type VideoPreset = keyof typeof VIDEO_PRESETS;
+
+/** Los dos tipos de asset que sirve Cloudinary, y el marcador de cada uno. */
+const MARKERS = ["/image/upload/", "/video/upload/"] as const;
+
+/** Encuentra cuál de los dos marcadores tiene la URL, y dónde. */
+function splitAtMarker(url: string): { before: string; after: string } | null {
+  for (const marker of MARKERS) {
+    const at = url.indexOf(marker);
+    if (at !== -1) {
+      return { before: url.slice(0, at + marker.length), after: url.slice(at + marker.length) };
+    }
+  }
+  return null;
+}
+
+/**
  * Devuelve la URL de la imagen en el tamaño pedido.
  *
  * Tolera que la URL no sea de Cloudinary y la devuelve intacta. Eso no es
@@ -59,13 +93,42 @@ export type ImagePreset = keyof typeof IMAGE_PRESETS;
 export function imageUrl(url: string | null | undefined, preset: ImagePreset): string | null {
   if (!url) return null;
 
-  const marker = "/image/upload/";
-  const at = url.indexOf(marker);
-  if (at === -1) return url; // no es de Cloudinary: se sirve tal cual
+  const parts = splitAtMarker(url);
+  if (!parts) return url; // no es de Cloudinary: se sirve tal cual
 
-  const before = url.slice(0, at + marker.length);
-  const after = url.slice(at + marker.length);
-  return `${before}${IMAGE_PRESETS[preset]}/${after}`;
+  return `${parts.before}${IMAGE_PRESETS[preset]}/${parts.after}`;
+}
+
+/** El video, servido en el tamaño pedido. Misma tolerancia que imageUrl(). */
+export function videoUrl(url: string | null | undefined, preset: VideoPreset): string | null {
+  if (!url) return null;
+
+  const parts = splitAtMarker(url);
+  if (!parts) return url;
+
+  return `${parts.before}${VIDEO_PRESETS[preset]}/${parts.after}`;
+}
+
+/**
+ * Un fotograma del video, como imagen fija.
+ *
+ * Sirve para dos cosas: el `poster` del <video>, que es lo que se ve antes de
+ * que la persona le dé play, y la miniatura del video en la tira de la galería.
+ * Sin esto el primero es un rectángulo negro y la segunda tendría que cargar el
+ * video entero para mostrar un cuadradito.
+ *
+ * `so_0` es el segundo del que se saca el cuadro, y la extensión cambiada a
+ * .jpg es lo que le dice a Cloudinary que entregue imagen y no video: los dos
+ * son parte de la misma URL, no hay una API aparte.
+ */
+export function videoPosterUrl(url: string | null | undefined, preset: ImagePreset): string | null {
+  if (!url) return null;
+
+  const parts = splitAtMarker(url);
+  if (!parts) return null; // sin Cloudinary no hay de dónde sacar el cuadro
+
+  const stillFrame = parts.after.replace(/\.[^./]+$/, ".jpg");
+  return `${parts.before}so_0,${IMAGE_PRESETS[preset]}/${stillFrame}`;
 }
 
 /**
@@ -79,11 +142,10 @@ export function imageUrl(url: string | null | undefined, preset: ImagePreset): s
 export function publicIdFromUrl(url: string | null | undefined): string | null {
   if (!url) return null;
 
-  const marker = "/image/upload/";
-  const at = url.indexOf(marker);
-  if (at === -1) return null;
+  const parts = splitAtMarker(url);
+  if (!parts) return null;
 
-  let path = url.slice(at + marker.length);
+  let path = parts.after;
 
   // Si quedó alguna transformación en la URL, descartarla: es el segmento
   // anterior a la versión y contiene comas o guiones bajos de parámetros.

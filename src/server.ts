@@ -7,6 +7,51 @@ type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
+/**
+ * El endpoint que dispara los recordatorios del día siguiente.
+ *
+ * Va acá, interceptado antes de TanStack, y no como una server function, porque
+ * quien lo llama es un cron: no tiene sesión, no manda un JWT y no puede pasar
+ * por requireSupabaseAuth. Se identifica con un secreto en el header.
+ *
+ * POST y no GET a propósito. Un GET lo dispara cualquier cosa que ande mirando
+ * URLs —un prefetch del navegador, un escáner, el preview de un enlace pegado en
+ * un chat— y esto le manda mails a clientas reales. Que haga falta un POST no es
+ * seguridad (el secreto es la seguridad), es evitar que se ejecute por accidente.
+ *
+ * Cómo programarlo está en supabase/emails/README.md.
+ */
+const REMINDERS_PATH = "/api/recordatorios";
+
+async function handleReminders(request: Request): Promise<Response> {
+  const { isAuthorizedReminderRequest, runDailyReminders } = await import("./lib/reminders.server");
+
+  if (request.method !== "POST") {
+    return json({ error: "Usá POST." }, 405);
+  }
+
+  if (!isAuthorizedReminderRequest(request)) {
+    // Sin detalle de por qué falló: decir "falta configurar el secreto" le
+    // cuenta a quien está probando la puerta que la puerta existe y no tiene
+    // llave puesta.
+    return json({ error: "No autorizado." }, 401);
+  }
+
+  try {
+    return json(await runDailyReminders(), 200);
+  } catch (error) {
+    console.error("[recordatorios]", error);
+    return json({ error: error instanceof Error ? error.message : "Falló la corrida." }, 500);
+  }
+}
+
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
@@ -47,6 +92,11 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      // Antes de TanStack: esta ruta no es una página ni una server function.
+      if (new URL(request.url).pathname === REMINDERS_PATH) {
+        return await handleReminders(request);
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

@@ -67,3 +67,105 @@ darlo por bueno: Outlook usa el motor de Word y es el que más rompe.
 Georgia en vez de Bodoni, colores en hex): está explicado en el comentario de
 arriba de `recuperar-contrasena.html`. En resumen, es lo único que se ve igual
 en todos los clientes de correo.
+
+---
+
+# Avisos de turnos
+
+Aparte de los mails de auth de acá arriba, la app manda cuatro avisos propios.
+El texto de los cuatro está en `src/lib/notifications.ts`, en un solo lugar y
+compartido entre los dos canales: si hay que cambiar cómo se le habla a la
+clienta, se cambia ahí y cambia en WhatsApp y en el mail a la vez.
+
+| Aviso | Va a | Lo dispara | Canales |
+| --- | --- | --- | --- |
+| Turno confirmado | La clienta | El centro, al confirmar en el panel | Mail + WhatsApp |
+| Turno cancelado | La clienta | El centro, al cancelar en el panel | Mail + WhatsApp |
+| Turno nuevo pendiente | El centro | La clienta, al reservar en el sitio | Mail |
+| Recordatorio | La clienta | La tarea programada, el día antes | Mail |
+
+"Marcar realizado" no avisa nada a propósito: es una anotación interna que pasa
+después de que la clienta ya estuvo en el centro.
+
+## WhatsApp: por qué no sale solo
+
+El aviso no se manda: se **abre WhatsApp con el mensaje ya escrito** y alguien
+del centro aprieta enviar. Aparece como un botón "Avisar" en el toast que
+confirma el cambio, y como un botón en cada fila de la lista de turnos para
+reenviarlo después.
+
+Mandarlo solo exige la WhatsApp Business Cloud API de Meta: verificación del
+negocio, un número dedicado a la API —que deja de poder usarse normalmente desde
+el celular—, plantillas aprobadas de a una por Meta y costo por conversación.
+Son semanas de trámite antes de escribir una línea de código. Mientras tanto,
+esto sale del número real del centro y no cuesta nada.
+
+El botón no aparece cuando el turno no tiene teléfono cargado. Los números se
+normalizan a `549 + área + número` en `toWhatsappNumber()`; el 9 es el que más se
+olvida y sin él el enlace abre un chat con un número que no existe.
+
+## Mail: configurar Resend
+
+1. Crear la cuenta en [resend.com](https://resend.com) y agregar el dominio
+   `shiraf.com.ar`.
+2. Cargar los registros DNS que Resend indica (SPF y DKIM) donde esté comprado
+   el dominio. Es lo que hace que Gmail confíe.
+3. Crear una API key y ponerla en `RESEND_API_KEY`.
+4. Completar `MAIL_FROM` con una dirección de ese dominio, por ejemplo
+   `Shiraf <turnos@shiraf.com.ar>`.
+
+**El Gmail del centro no sirve como remitente.** Google no deja que otro
+proveedor firme por sus dominios, así que Resend rechaza el envío. Va de
+`MAIL_REPLY_TO`, para que la respuesta de la clienta caiga en la casilla que
+alguien mira de verdad.
+
+Sin `RESEND_API_KEY` o sin `MAIL_FROM` no se rompe nada: el turno cambia de
+estado igual y el panel avisa "Por mail no salió: …". Es para poder trabajar sin
+el correo resuelto, no para dejarlo así.
+
+Las clientas sin cuenta pueden no tener mail (`guest_email` es opcional). Para
+esas, WhatsApp es el único canal, y el panel lo dice cuando pasa.
+
+## Recordatorios: programar la tarea
+
+El recordatorio es el único aviso que no lo dispara una persona, así que
+necesita algo que lo llame. El endpoint es:
+
+    POST /api/recordatorios
+    Authorization: Bearer $REMINDERS_SECRET
+
+Le manda el aviso a quien tenga un turno **confirmado mañana** y todavía no lo
+haya recibido. Correrlo dos veces el mismo día no le escribe a nadie de nuevo:
+la marca queda en `appointments.reminded_at`.
+
+Responde un resumen en JSON: `{ day, found, sent, skipped }`. `skipped` trae el
+motivo de cada uno que no salió — casi siempre, una invitada sin mail cargado.
+
+Conviene correrlo **una vez por día a la mañana**. Con pg_cron, desde el SQL
+editor de Supabase (ojo: pg_cron programa en UTC, así que las 10 de Buenos Aires
+son las 13):
+
+```sql
+select cron.schedule(
+  'recordatorios-shiraf',
+  '0 13 * * *',
+  $$
+  select net.http_post(
+    url     := 'https://shiraf.com.ar/api/recordatorios',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer EL-VALOR-DE-REMINDERS-SECRET',
+      'Content-Type',  'application/json'
+    )
+  );
+  $$
+);
+```
+
+Requiere las extensiones `pg_cron` y `pg_net` activadas en Database →
+Extensions. Si preferís no meter el secreto en la base, el equivalente en el
+cron del servidor donde corre el docker-compose:
+
+    0 10 * * *  curl -fsS -X POST https://shiraf.com.ar/api/recordatorios -H "Authorization: Bearer $REMINDERS_SECRET"
+
+Para probarlo sin esperar al día siguiente: confirmá un turno para mañana y
+llamá al endpoint a mano con curl.

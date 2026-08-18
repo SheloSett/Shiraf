@@ -37,7 +37,8 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { formatMoney } from "@/lib/shiraf";
 import { imageUrl } from "@/lib/cloudinary";
-import { removeServiceImage, uploadServiceImage } from "@/lib/storage";
+import { removeServiceMedia, uploadServiceMedia } from "@/lib/storage";
+import { ServiceMediaEditor, type MediaItem } from "@/components/admin/service-media-editor";
 
 export const Route = createFileRoute("/_authenticated/admin/servicios")({
   component: AdminServices,
@@ -49,8 +50,15 @@ type ServiceForm = {
   description: string;
   duration_minutes: number;
   price: number;
-  /** URL pública en Storage, o "" si el tratamiento no tiene foto. */
-  image_url: string;
+  /**
+   * La galería, en orden. La primera imagen es la portada.
+   *
+   * `services.image_url` NO se toca desde acá: lo mantiene el trigger
+   * trg_sync_service_cover a partir de esta lista (migración 20260818010000).
+   * Escribirlo a mano además del trigger es la forma de que los dos terminen
+   * diciendo cosas distintas.
+   */
+  media: MediaItem[];
 };
 
 const EMPTY_FORM: ServiceForm = {
@@ -59,7 +67,7 @@ const EMPTY_FORM: ServiceForm = {
   description: "",
   duration_minutes: 60,
   price: 0,
-  image_url: "",
+  media: [],
 };
 
 function AdminServices() {
@@ -67,8 +75,14 @@ function AdminServices() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<ServiceForm>({ ...EMPTY_FORM });
   const [uploading, setUploading] = useState(false);
-  /** URL que había al abrir el diálogo: sirve para borrarla si se reemplaza. */
-  const [originalImage, setOriginalImage] = useState<string>("");
+  /**
+   * La galería tal como estaba al abrir el diálogo.
+   *
+   * Sirve para dos cosas al guardar: saber qué filas de service_media hay que
+   * borrar (las que estaban y ya no están) y qué archivos de Cloudinary hay que
+   * tirar después, una vez que el guardado salió bien.
+   */
+  const [originalMedia, setOriginalMedia] = useState<MediaItem[]>([]);
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   /** id del tratamiento en edición; null = alta nueva. */
@@ -81,23 +95,27 @@ function AdminServices() {
     setAddingCategory(false);
     setNewCategory("");
     setForm({ ...EMPTY_FORM });
-    setOriginalImage("");
+    setOriginalMedia([]);
   }
 
   /**
    * Cerrar sin guardar.
    *
-   * La foto se sube apenas se elige, antes de tocar "Guardar": es lo que
-   * permite ver la vista previa. Si después se cierra el diálogo, esa foto ya
-   * está arriba y no la referencia nadie — huérfana, consumiendo cuota.
+   * Los archivos se suben apenas se eligen, antes de tocar "Guardar": es lo que
+   * permite ver la vista previa. Si después se cierra el diálogo, esos archivos
+   * ya están arriba y no los referencia nadie — huérfanos, consumiendo cuota.
+   *
+   * Se borran los que NO tienen id: ese es exactamente el conjunto de los que
+   * se subieron en esta sesión del formulario y todavía no tienen fila en
+   * service_media. Los que ya tenían id siguen guardados y no se tocan, aunque
+   * la persona los haya sacado de la lista: como no guardó, no los sacó.
    *
    * Va aparte de closeForm() y no adentro porque save.onSuccess también cierra
-   * el formulario, y ahí la foto SÍ se está usando: borrarla dejaría al
-   * tratamiento recién guardado apuntando a un archivo que ya no existe.
+   * el formulario, y ahí los archivos SÍ se están usando.
    */
   function cancelForm() {
-    if (form.image_url && form.image_url !== originalImage) {
-      void removeServiceImage(form.image_url);
+    for (const item of form.media) {
+      if (!item.id) void removeServiceMedia(item.url, item.kind);
     }
     closeForm();
   }
@@ -105,7 +123,7 @@ function AdminServices() {
   function openCreate() {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
-    setOriginalImage("");
+    setOriginalMedia([]);
     setOpen(true);
   }
 
@@ -116,8 +134,15 @@ function AdminServices() {
     description: string | null;
     duration_minutes: number;
     price: number;
-    image_url: string | null;
+    service_media: { id: string; url: string; kind: "image" | "video"; position: number }[];
   }) {
+    // La consulta ya ordena por position, pero el orden de un embed de
+    // PostgREST no está garantizado si alguien le agrega un select: ordenar acá
+    // cuesta nada y hace que la portada no dependa de eso.
+    const media: MediaItem[] = [...s.service_media]
+      .sort((a, b) => a.position - b.position)
+      .map(({ id, url, kind }) => ({ id, url, kind }));
+
     setEditingId(s.id);
     setForm({
       name: s.name,
@@ -125,20 +150,34 @@ function AdminServices() {
       description: s.description ?? "",
       duration_minutes: s.duration_minutes,
       price: Number(s.price),
-      image_url: s.image_url ?? "",
+      media,
     });
-    setOriginalImage(s.image_url ?? "");
+    setOriginalMedia(media);
     setOpen(true);
   }
 
-  async function pickImage(file: File | undefined) {
-    if (!file) return;
+  /**
+   * Sube los archivos elegidos y los agrega al final de la galería.
+   *
+   * De a uno y no en paralelo: son archivos grandes —un video puede ser de 100
+   * MB— y mandarlos todos juntos por una conexión de casa hace que se peleen
+   * entre ellos y tarden más que en fila. Además, si el tercero falla, los dos
+   * primeros ya quedaron cargados y a la vista.
+   */
+  async function pickFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      const url = await uploadServiceImage(file);
-      setForm((prev) => ({ ...prev, image_url: url }));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "No se pudo subir la imagen.");
+      for (const file of Array.from(files)) {
+        try {
+          const item = await uploadServiceMedia(file);
+          setForm((prev) => ({ ...prev, media: [...prev.media, item] }));
+        } catch (e) {
+          toast.error(
+            `${file.name}: ${e instanceof Error ? e.message : "no se pudo subir."}`.trim(),
+          );
+        }
+      }
     } finally {
       setUploading(false);
     }
@@ -182,7 +221,12 @@ function AdminServices() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("services")
-        .select("id, name, category, description, duration_minutes, price, is_published, image_url")
+        // image_url sigue viniendo para la miniatura de la tabla: es la portada
+        // que mantiene el trigger, y evita tener que buscarla entre el embed en
+        // cada fila. service_media es para el formulario.
+        .select(
+          "id, name, category, description, duration_minutes, price, is_published, image_url, service_media(id, url, kind, position)",
+        )
         .order("category")
         .order("name");
       if (error) throw error;
@@ -192,29 +236,84 @@ function AdminServices() {
 
   const save = useMutation({
     mutationFn: async () => {
+      // Sin image_url: la portada la escribe trg_sync_service_cover a partir de
+      // service_media. Mandarla desde acá la pisaría con un valor viejo hasta
+      // que el trigger la vuelva a calcular.
       const payload = {
         name: form.name.trim(),
         category: form.category.trim() || "Sin categoría",
         description: form.description.trim() || null,
         duration_minutes: Number(form.duration_minutes),
         price: Number(form.price),
-        image_url: form.image_url || null,
       };
 
+      let serviceId = editingId;
       if (editingId) {
         const { error } = await supabase.from("services").update(payload).eq("id", editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        // .select().single() para quedarse con el id: las filas de la galería
+        // lo necesitan y en un alta todavía no existe.
+        const { data, error } = await supabase
           .from("services")
-          .insert({ ...payload, is_published: true });
+          .insert({ ...payload, is_published: true })
+          .select("id")
+          .single();
+        if (error) throw error;
+        serviceId = data.id;
+      }
+
+      // ── Reconciliar la galería ──────────────────────────────────────────
+      // El formulario tiene la lista como quedó; la base tiene la de antes. Se
+      // resuelve en tres pasos y no borrando todo y reinsertando: eso le
+      // cambiaría el id a filas que no se tocaron y dispararía el trigger de
+      // portada una vez por elemento.
+      const keptIds = new Set(form.media.filter((m) => m.id).map((m) => m.id));
+      const removed = originalMedia.filter((m) => m.id && !keptIds.has(m.id));
+
+      if (removed.length > 0) {
+        const { error } = await supabase
+          .from("service_media")
+          .delete()
+          .in(
+            "id",
+            removed.map((m) => m.id!),
+          );
         if (error) throw error;
       }
 
-      // La foto vieja se borra recién cuando el guardado salió bien: si fallara,
-      // el tratamiento seguiría apuntando a un archivo que ya no existe.
-      if (originalImage && originalImage !== form.image_url) {
-        await removeServiceImage(originalImage);
+      // Dónde estaba cada una antes, para no mandar UPDATEs que no cambian nada.
+      const previousPosition = new Map(originalMedia.map((m, index) => [m.id, index]));
+
+      const toInsert: {
+        service_id: string;
+        url: string;
+        kind: "image" | "video";
+        position: number;
+      }[] = [];
+
+      for (const [position, item] of form.media.entries()) {
+        if (!item.id) {
+          toInsert.push({ service_id: serviceId!, url: item.url, kind: item.kind, position });
+        } else if (previousPosition.get(item.id) !== position) {
+          const { error } = await supabase
+            .from("service_media")
+            .update({ position })
+            .eq("id", item.id);
+          if (error) throw error;
+        }
+      }
+
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from("service_media").insert(toInsert);
+        if (error) throw error;
+      }
+
+      // Los archivos de Cloudinary recién ahora, con todo lo demás guardado: si
+      // algo de arriba fallara, la galería seguiría apuntando a archivos que ya
+      // no existirían.
+      for (const item of removed) {
+        await removeServiceMedia(item.url, item.kind);
       }
     },
     onSuccess: async () => {
@@ -229,9 +328,10 @@ function AdminServices() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      // La URL se lee ANTES de borrar: después la fila ya no está y la foto
-      // quedaría sin forma de encontrarse.
-      const imageUrl = services.data?.find((s) => s.id === id)?.image_url ?? null;
+      // Las URLs se leen ANTES de borrar: después las filas ya no están —
+      // service_media cae por CASCADE — y los archivos quedarían sin forma de
+      // encontrarse.
+      const media = services.data?.find((s) => s.id === id)?.service_media ?? [];
 
       const { error } = await supabase.from("services").delete().eq("id", id);
       if (error) throw error;
@@ -242,8 +342,11 @@ function AdminServices() {
       //
       // Antes esto no se hacía y el archivo quedaba huérfano para siempre. Con
       // Supabase Storage era 1 GB gratis y molestaba poco; ahora consume cuota
-      // de Cloudinary, que en el plan gratuito es finita.
-      await removeServiceImage(imageUrl);
+      // de Cloudinary, que en el plan gratuito es finita — y un video pesa
+      // mucho más que una foto, así que un huérfano cuesta bastante más.
+      for (const item of media) {
+        await removeServiceMedia(item.url, item.kind);
+      }
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-services"] });
@@ -395,64 +498,38 @@ function AdminServices() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="image">Foto</Label>
+              <div className="space-y-3">
+                <Label htmlFor="media">Fotos y videos</Label>
 
-                {form.image_url ? (
-                  <div className="flex items-start gap-4">
-                    <img
-                      src={imageUrl(form.image_url, "card") ?? undefined}
-                      alt="Vista previa del tratamiento"
-                      className="h-28 w-24 shrink-0 rounded-sm object-cover"
-                    />
-                    <div className="space-y-2">
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Se muestra en la ficha del tratamiento y en el panel del inicio.
-                      </p>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={uploading}
-                          onClick={() => document.getElementById("image")?.click()}
-                        >
-                          Reemplazar
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setForm({ ...form, image_url: "" })}
-                        >
-                          Quitar
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Formato apaisado o vertical. Se achica sola a 1600px y se convierte a WebP antes
-                    de subirse, así que podés mandar la foto tal como salió de la cámara.
-                  </p>
-                )}
+                <ServiceMediaEditor
+                  items={form.media}
+                  onChange={(media) => setForm({ ...form, media })}
+                  disabled={uploading}
+                />
+
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {form.media.length === 0
+                    ? "Podés elegir varios archivos de una. Las fotos se achican solas a 1600px y se convierten a WebP, así que mandalas tal como salieron de la cámara."
+                    : "La primera foto de la lista es la portada: es la que sale en el catálogo y en el inicio. Usá las flechas para cambiar el orden."}
+                </p>
 
                 <Input
-                  id="image"
+                  id="media"
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/avif"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp,image/avif,video/mp4,video/quicktime,video/webm"
                   disabled={uploading}
-                  className={form.image_url ? "sr-only" : ""}
                   onChange={(e) => {
-                    void pickImage(e.target.files?.[0]);
+                    void pickFiles(e.target.files);
                     // Permite volver a elegir el mismo archivo después de quitarlo.
                     e.target.value = "";
                   }}
                 />
 
                 {uploading && (
-                  <p className="text-xs text-muted-foreground">Optimizando y subiendo…</p>
+                  <p className="text-xs text-muted-foreground">
+                    Subiendo… los videos pueden tardar un rato largo.
+                  </p>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-4">

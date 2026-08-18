@@ -69,39 +69,41 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          {user ? (
+          {/* Al lado del botón dorado, que es la acción principal, va lo de la
+              sesión. Cuánto hay para poner ahí depende de quién esté:
+
+              El equipo no tiene páginas de clienta — la cuenta del centro no
+              reserva turnos ni tiene historial, y ofrecérselo la mandaba a
+              pantallas que ahora la rebotan. Descontando el panel, que ya es el
+              botón dorado, lo único que le queda es salir. Un desplegable con
+              un solo ítem adentro es un clic de más para nada, así que va el
+              botón directo.
+
+              La clienta sí tiene a dónde ir además de reservar, y ahí el
+              desplegable se gana el lugar. */}
+          {!user ? (
+            <Button asChild variant="ghost" size="sm" className={onOliveGhost}>
+              <Link to="/auth">Ingresar</Link>
+            </Button>
+          ) : isTeam ? (
+            <Button variant="outline" size="sm" className={onOliveOutline} onClick={signOut}>
+              Cerrar sesión
+            </Button>
+          ) : (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className={onOliveOutline}>
-                  {isTeam ? "Panel" : "Mi cuenta"}
+                  Mi cuenta
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                {/* Dos menús distintos, no uno con cosas escondidas: la cuenta
-                    del centro no reserva turnos ni tiene historial de clienta.
-                    Ofrecérselo la mandaba a pantallas que ahora la rebotan. */}
-                {isTeam ? (
-                  <DropdownMenuItem asChild>
-                    <Link to="/admin">Ir al panel</Link>
-                  </DropdownMenuItem>
-                ) : (
-                  <>
-                    <DropdownMenuItem asChild>
-                      <Link to="/mi-cuenta">Mi perfil y turnos</Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link to="/reservar">Reservar turno</Link>
-                    </DropdownMenuItem>
-                  </>
-                )}
+                <DropdownMenuItem asChild>
+                  <Link to="/mi-cuenta">Mi perfil y turnos</Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut}>Cerrar sesión</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : (
-            <Button asChild variant="ghost" size="sm" className={onOliveGhost}>
-              <Link to="/auth">Ingresar</Link>
-            </Button>
           )}
 
           {/* El botón por defecto es oliva sobre oliva: acá manda el dorado.

@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { buildSlots, formatMoney, formatTime, toDateKey } from "@/lib/shiraf";
 import { isTeamAccount } from "@/lib/roles";
+import { notifyAppointment } from "@/lib/notifications.functions";
 
 // Claves opcionales, no claves obligatorias con valor `undefined`: con
 // `exactOptionalPropertyTypes` activado esa diferencia hace que el router exija
@@ -152,15 +153,32 @@ function BookingPage() {
     mutationFn: async () => {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth.user) throw new Error("Necesitás iniciar sesión.");
-      const { error } = await supabase.from("appointments").insert({
-        client_id: auth.user.id,
-        service_id: serviceId!,
-        professional_id: professionalId!,
-        starts_at: slot!,
-        duration_minutes: service!.duration_minutes,
-        client_notes: notes || null,
-      });
+      const { data: created, error } = await supabase
+        .from("appointments")
+        .insert({
+          client_id: auth.user.id,
+          service_id: serviceId!,
+          professional_id: professionalId!,
+          starts_at: slot!,
+          duration_minutes: service!.duration_minutes,
+          client_notes: notes || null,
+        })
+        .select("id")
+        .single();
       if (error) throw error;
+
+      // Avisarle al centro que hay un turno esperando. El turno nace pendiente y
+      // no sirve de nada hasta que alguien lo confirma, así que si nadie mira el
+      // panel se queda ahí — es el aviso que evita que una clienta espere una
+      // respuesta que nunca sale.
+      //
+      // El fallo se traga a propósito: el turno YA está reservado y es lo que le
+      // importa a la clienta. Hacer fallar la mutación por un mail la mandaría a
+      // reintentar una reserva que ya existe, y el segundo intento lo rebotaría
+      // el control de superposición contra su propio turno.
+      await notifyAppointment({
+        data: { appointmentId: created.id, event: "new-request" },
+      }).catch(() => undefined);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });

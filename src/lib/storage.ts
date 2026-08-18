@@ -7,6 +7,31 @@ export const SERVICE_IMAGES_BUCKET = "servicios";
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
+/** Tipos de video que aceptan a la vez el navegador para elegirlos y Cloudinary. */
+const ALLOWED_VIDEO = ["video/mp4", "video/quicktime", "video/webm"];
+
+/**
+ * Tope de video.
+ *
+ * Son los 100 MB por archivo del plan Free de Cloudinary, no un número nuestro:
+ * pasado eso la subida la rechaza el otro lado, y conviene frenarla acá antes
+ * de que alguien espere cinco minutos para ver un error.
+ *
+ * El video NO se comprime en el navegador —no hay un canvas para video— así que
+ * este límite es sobre el archivo tal cual sale del celular. Un minuto de video
+ * de celular ronda los 60-100 MB, así que es un tope real y no teórico: si
+ * empieza a molestar, la salida es subir con `eager` de Cloudinary y no
+ * agrandar el número.
+ */
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
+/** Qué es el archivo que eligieron, o null si no es nada que sepamos manejar. */
+function kindOf(file: File): "image" | "video" | null {
+  if (ALLOWED.includes(file.type)) return "image";
+  if (ALLOWED_VIDEO.includes(file.type)) return "video";
+  return null;
+}
+
 /** Ancho máximo servido. Alcanza para el panel del home y la ficha a pantalla completa. */
 const MAX_WIDTH = 1600;
 const WEBP_QUALITY = 0.82;
@@ -59,24 +84,40 @@ async function compress(file: File): Promise<{ blob: Blob; extension: string; ty
 }
 
 /**
- * Sube una foto de tratamiento y devuelve su URL pública.
+ * Sube una foto o un video de tratamiento y devuelve su URL pública y qué es.
  *
  * El nombre lo genera randomUUID en vez de usar el del archivo: evita choques
  * entre dos "limpieza.jpg", saca de la URL los acentos y espacios que traen los
  * nombres reales, y hace que al reemplazar una foto no se sirva la anterior
  * desde la caché.
+ *
+ * Devuelve también el `kind` en vez de dejar que quien llama lo deduzca de la
+ * URL: es el valor que va a service_media.kind, y de ahí sale después el
+ * endpoint correcto para borrarlo. Deducirlo dos veces es una oportunidad de
+ * deducirlo distinto.
  */
-export async function uploadServiceImage(file: File): Promise<string> {
-  if (!ALLOWED.includes(file.type)) {
-    throw new Error("El archivo tiene que ser una imagen JPG, PNG, WebP o AVIF.");
+export async function uploadServiceMedia(
+  file: File,
+): Promise<{ url: string; kind: "image" | "video" }> {
+  const kind = kindOf(file);
+  if (!kind) {
+    throw new Error("El archivo tiene que ser una imagen (JPG, PNG, WebP) o un video (MP4, MOV).");
   }
-  if (file.size > MAX_BYTES) {
+
+  const limit = kind === "video" ? MAX_VIDEO_BYTES : MAX_BYTES;
+  if (file.size > limit) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
     throw new Error(
-      `La imagen pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El máximo es 15 MB.`,
+      kind === "video"
+        ? `El video pesa ${mb} MB. El máximo es 100 MB.`
+        : `La imagen pesa ${mb} MB. El máximo es 15 MB.`,
     );
   }
 
-  const { blob } = await compress(file);
+  // El video sube tal cual: comprimir en el navegador es cosa de canvas, que
+  // sólo sabe de imágenes. Cloudinary lo recodifica del lado suyo cuando lo
+  // sirve, que es de dónde sale el ahorro real.
+  const blob = kind === "video" ? file : (await compress(file)).blob;
 
   // ── Camino anterior: Supabase Storage ─────────────────────────────────────
   // Se deja comentado y no borrado porque el bucket sigue existiendo con las
@@ -109,7 +150,8 @@ export async function uploadServiceImage(file: File): Promise<string> {
   form.append("folder", folder);
   form.append("signature", signature);
 
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+  // El endpoint cambia según el tipo: /image/upload no acepta un mp4.
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${kind}/upload`, {
     method: "POST",
     body: form,
   });
@@ -122,12 +164,12 @@ export async function uploadServiceImage(file: File): Promise<string> {
   }
 
   const result = (await response.json()) as { secure_url?: string };
-  if (!result.secure_url) throw new Error("Cloudinary no devolvió la URL de la imagen.");
+  if (!result.secure_url) throw new Error("Cloudinary no devolvió la URL del archivo.");
 
   // Se guarda la URL "pelada", sin transformaciones: los tamaños se arman al
-  // mostrar, con imageUrl(). Si acá se guardara ya transformada, quedaría
-  // congelada al tamaño que se eligió el día de la subida.
-  return result.secure_url;
+  // mostrar, con imageUrl() o videoUrl(). Si acá se guardara ya transformada,
+  // quedaría congelada al tamaño que se eligió el día de la subida.
+  return { url: result.secure_url, kind };
 }
 
 /** Extrae la ruta dentro del bucket a partir de la URL pública. */
@@ -139,24 +181,30 @@ export function servicePathFromUrl(url: string | null | undefined): string | nul
 }
 
 /**
- * Borra una foto. No lanza si falla: un archivo huérfano no es motivo para
- * frenar el guardado del tratamiento, que es lo que importa.
+ * Borra una foto o un video. No lanza si falla: un archivo huérfano no es
+ * motivo para frenar el guardado del tratamiento, que es lo que importa.
  *
  * Atiende las dos procedencias porque conviven: las fotos cargadas antes de la
  * migración siguen en el bucket de Supabase y las nuevas están en Cloudinary.
  * Se distingue por la forma de la URL, no por una fecha ni una bandera en la
  * base — es el único dato que siempre está.
+ *
+ * @param kind de service_media.kind. Decide el endpoint de borrado, y el
+ *   equivocado devuelve "not found" con status 200: parecería que funcionó.
  */
-export async function removeServiceImage(url: string | null | undefined): Promise<void> {
+export async function removeServiceMedia(
+  url: string | null | undefined,
+  kind: "image" | "video" = "image",
+): Promise<void> {
   if (!url) return;
 
   const publicId = publicIdFromUrl(url);
   if (publicId) {
     try {
-      await deleteImage({ data: { publicId } });
+      await deleteImage({ data: { publicId, resourceType: kind } });
     } catch (error) {
       console.warn(
-        "[cloudinary] no se pudo borrar la imagen:",
+        "[cloudinary] no se pudo borrar el archivo:",
         error instanceof Error ? error.message : error,
       );
     }

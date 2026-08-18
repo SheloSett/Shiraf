@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SiteHeader } from "@/components/site-header";
@@ -6,7 +7,7 @@ import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { imageUrl } from "@/lib/cloudinary";
+import { imageUrl, videoPosterUrl, videoUrl } from "@/lib/cloudinary";
 import { formatMoney, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/servicios/$serviceId")({
@@ -47,7 +48,9 @@ function ServiceDetail() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("services")
-        .select("id, name, description, category, duration_minutes, price, image_url")
+        .select(
+          "id, name, description, category, duration_minutes, price, image_url, service_media(id, url, kind, position)",
+        )
         .eq("id", serviceId)
         .eq("is_published", true)
         .maybeSingle();
@@ -71,6 +74,23 @@ function ServiceDetail() {
         .filter((p): p is NonNullable<typeof p> => !!p && p.is_active);
     },
   });
+
+  /**
+   * La galería sin la portada, que ya se muestra arriba a media pantalla.
+   *
+   * Va acá y no después de los early returns de abajo porque es un hook: si
+   * quedara ahí, se ejecutaría en unos renders y en otros no, que es lo único
+   * que React no perdona.
+   *
+   * La portada se descarta por URL y no por posición: es lo que hace el trigger
+   * de la base —la primera IMAGEN, salteando videos— y compararla así evita
+   * tener que repetir esa regla acá y que las dos se desincronicen.
+   */
+  const gallery = useMemo(() => {
+    const media = service.data?.service_media ?? [];
+    const cover = service.data?.image_url;
+    return [...media].sort((a, b) => a.position - b.position).filter((m) => m.url !== cover);
+  }, [service.data]);
 
   if (service.isLoading) {
     return (
@@ -200,6 +220,58 @@ function ServiceDetail() {
           el hero ni lo que sigue. En mobile la foto está oculta, así que ahí sí
           hace falta aire entre el botón y el filete. */}
       <OrganicRule className="mt-20 lg:mt-0" />
+
+      {/* La galería: el resto de las fotos y los videos.
+          Se saltea la portada porque ya está arriba, ocupando media pantalla, y
+          repetirla es lo primero que se nota. Un tratamiento con una sola foto
+          no tiene resto, y entonces esta sección no existe: la ficha queda
+          exactamente como era antes de que hubiera galería. */}
+      {gallery.length > 0 && (
+        <>
+          <section className="grid lg:grid-cols-12">
+            <div className="px-5 py-20 lg:col-span-9 lg:col-start-2 lg:px-0 lg:py-28">
+              <Reveal>
+                <p className="text-eyebrow text-muted-foreground">Cómo se ve</p>
+                <h2 className="display-section mt-5 text-foreground">La galería</h2>
+              </Reveal>
+
+              <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {gallery.map((item, i) => (
+                  <Reveal key={item.id} delay={i * 80}>
+                    <figure className="surface-olive grain relative aspect-[4/5] overflow-hidden rounded-sm">
+                      {item.kind === "video" ? (
+                        /* `controls` y nada de autoplay: un video que arranca
+                           solo con sonido en la ficha de un tratamiento es
+                           molesto, y en celular se come los datos de alguien que
+                           quizás sólo quería el precio. `preload="none"` va por
+                           lo mismo — hasta que no le den play, lo único que baja
+                           es el poster, que es una jpg. */
+                        <video
+                          src={videoUrl(item.url, "card") ?? undefined}
+                          poster={videoPosterUrl(item.url, "card") ?? undefined}
+                          controls
+                          preload="none"
+                          playsInline
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      ) : (
+                        <img
+                          src={imageUrl(item.url, "card") ?? undefined}
+                          alt={`${s.name} en Shiraf`}
+                          loading="lazy"
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      )}
+                    </figure>
+                  </Reveal>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <OrganicRule />
+        </>
+      )}
 
       {/* Quién lo realiza. Los horarios que se muestran son los de atención de
           cada profesional — datos públicos de professional_schedules — no la
