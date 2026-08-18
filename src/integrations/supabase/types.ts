@@ -470,6 +470,13 @@ export type Database = {
           slot_start: string;
         }[];
       };
+      // team_member_ids la agrega la migración 20260818000000.
+      team_member_ids: {
+        Args: Record<string, never>;
+        Returns: {
+          member_id: string;
+        }[];
+      };
     };
     Enums: {
       // 'staff' lo agrega la migración 20260813060000.

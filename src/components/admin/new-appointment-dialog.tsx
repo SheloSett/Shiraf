@@ -22,7 +22,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { TeamTag } from "@/components/admin/team-tag";
 import { supabase } from "@/integrations/supabase/client";
+import { useTeamMemberIds } from "@/hooks/useTeamMemberIds";
 import { buildSlots, formatMoney, toDateKey, WEEKDAYS } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
@@ -151,6 +153,24 @@ export function NewAppointmentDialog({
         .filter((p): p is NonNullable<typeof p> => !!p && p.is_active);
     },
   });
+
+  /**
+   * Quiénes de esa lista son del equipo y no clientas.
+   *
+   * `profiles` tiene una fila por cada cuenta, así que la consulta de arriba
+   * trae también a las empleadas y a la dueña. No se las esconde a propósito:
+   * una empleada también se atiende en el centro y hay que poder cargarle el
+   * turno. Se las marca y se las manda al final.
+   */
+  const teamIds = useTeamMemberIds(open);
+
+  // Las clientas primero, el equipo después. `sort` es estable, así que adentro
+  // de cada grupo se mantiene el orden alfabético que ya trajo la consulta.
+  const pickerClients = useMemo(() => {
+    const rows = clients.data ?? [];
+    if (teamIds.size === 0) return rows;
+    return [...rows].sort((a, b) => Number(teamIds.has(a.id)) - Number(teamIds.has(b.id)));
+  }, [clients.data, teamIds]);
 
   const service = services.data?.find((s) => s.id === serviceId);
   const client = clients.data?.find((c) => c.id === clientId);
@@ -323,11 +343,17 @@ export function NewAppointmentDialog({
                     className="w-full justify-between font-normal"
                   >
                     {client ? (
-                      <span className="truncate">
-                        {client.full_name ?? "Sin nombre"}
-                        {client.phone && (
-                          <span className="text-muted-foreground"> · {client.phone}</span>
-                        )}
+                      <span className="flex min-w-0 items-center">
+                        <span className="truncate">
+                          {client.full_name ?? "Sin nombre"}
+                          {client.phone && (
+                            <span className="text-muted-foreground"> · {client.phone}</span>
+                          )}
+                        </span>
+                        {/* También acá, y no sólo en la lista: si no, se elige a
+                            una empleada, se cierra el desplegable y el turno se
+                            carga sin que nada haya vuelto a avisar. */}
+                        {teamIds.has(client.id) && <TeamTag />}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">Buscar clienta…</span>
@@ -335,7 +361,7 @@ export function NewAppointmentDialog({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
                   <Command>
                     <CommandInput placeholder="Nombre o teléfono…" />
                     <CommandList>
@@ -346,7 +372,7 @@ export function NewAppointmentDialog({
                         </span>
                       </CommandEmpty>
                       <CommandGroup>
-                        {clients.data?.map((c) => (
+                        {pickerClients.map((c) => (
                           <CommandItem
                             key={c.id}
                             // `value` es lo que filtra cmdk: sin el teléfono acá,
@@ -369,6 +395,7 @@ export function NewAppointmentDialog({
                                 <span className="text-muted-foreground"> · {c.phone}</span>
                               )}
                             </span>
+                            {teamIds.has(c.id) && <TeamTag />}
                           </CommandItem>
                         ))}
                       </CommandGroup>

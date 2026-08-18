@@ -105,7 +105,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="es">
+    // suppressHydrationWarning por el script de abajo: agrega `js` al <html>
+    // antes de que React hidrate, así que el atributo class del cliente nunca
+    // va a coincidir con el del servidor. Es a propósito — la clase NO puede
+    // venir del SSR, porque entonces quien no tenga JS se queda con el
+    // contenido en opacity:0 para siempre. Sin esto, React tira un warning de
+    // mismatch en cada carga y tapa los que sí son bugs.
+    <html lang="es" suppressHydrationWarning>
       <head>
         {/* Marca que hay JS antes del primer pintado. Las animaciones de
             revelado cuelgan de `.js`, así que sin JS el contenido se muestra

@@ -59,32 +59,40 @@ type Busy = { starts_at: string; duration_minutes: number };
 const MINUTE = 60000;
 
 /**
- * ── DOS PERILLAS PENDIENTES DE DECISIÓN DEL CENTRO ──────────────────────────
- * Están las dos acá arriba y a la vista porque no son detalles de
- * implementación: son reglas del negocio que todavía nadie definió. Ver TODO.md.
+ * ── LAS PERILLAS DE LA AGENDA ───────────────────────────────────────────────
+ * Están acá arriba y a la vista porque no son detalles de implementación: son
+ * reglas del negocio. El margen de limpieza ya lo definió el centro; el
+ * desborde sigue pendiente. Ver TODO.md.
  */
 
 /**
  * Minutos entre una clienta y la siguiente, para limpiar y preparar la cabina.
  *
- * PENDIENTE: hay que preguntarle al centro. En cero los turnos van pegados —la
- * que entra 12:45 se cruza en la puerta con la que sale—. Con 15, una sesión de
- * 45 minutos pasa a ofrecerse 12:00, 13:00, 14:00 en vez de 12:00, 12:45,
- * 13:30: entra una clienta menos por tarde, pero los horarios quedan redondos.
+ * DEFINIDO POR EL CENTRO (18/8/2026): 10 minutos de limpieza entre clienta y
+ * clienta. Antes estaba en 0 y los turnos iban pegados — la que entraba 12:45
+ * se cruzaba en la puerta con la que salía.
  *
- * Se queda en 0 mientras tanto porque es lo que la app hacía hasta ahora: subir
- * el número sin que nadie lo haya pedido le borraría turnos de la agenda.
+ * El margen sale del paso entre horarios y también ensancha los bloques ya
+ * ocupados, así que vale igual contra un turno existente que entre dos horarios
+ * sugeridos. Una profesional de 12 a 16 con sesiones de 45 ofrece ahora
+ * 12:00, 12:55, 13:50, 14:45 — cuatro donde antes entraban cinco.
+ *
+ * Ojo con lo que esto le hace a los horarios: dejan de ser redondos y quedan en
+ * :55, :50, :45, que son más incómodos de dictar por teléfono. Si el centro
+ * prefiere 12:00 · 13:00 · 14:00 · 15:00, eso es este número en 15 y no en 10:
+ * cuesta lo mismo en turnos (también entran cuatro) y se lee mucho mejor. Vale
+ * la pena preguntárselo.
  */
-export const SLOT_BUFFER_MINUTES = 0;
+export const SLOT_BUFFER_MINUTES = 10;
 
 /**
  * ¿El último turno del día puede terminar después del horario de salida?
  *
- * PENDIENTE, y es LA pregunta para el centro. Con una profesional de 12 a 16 y
- * sesiones de 45 minutos:
+ * PENDIENTE, y es LA pregunta para el centro. Con una profesional de 12 a 16,
+ * sesiones de 45 minutos y los 10 de limpieza:
  *
- *   false → 12:00, 12:45, 13:30, 14:15, 15:00   (la última sale 15:45)
- *   true  → ídem + 15:45, que la deja hasta las 16:30
+ *   false → 12:00, 12:55, 13:50, 14:45   (la última sale 15:30)
+ *   true  → ídem + 15:40, que la deja hasta las 16:25
  *
  * Queda en false, que NO es la lista que se pidió —esa incluía las 15:45—, y la
  * razón es en qué dirección duele equivocarse:
@@ -96,11 +104,11 @@ export const SLOT_BUFFER_MINUTES = 0;
  *   profesional trabajando después de su hora. Eso no se deshace: ya está
  *   comprometido y hay que llamarla para cancelarlo.
  *
- * Además, con el recálculo el desborde puede ser grande. Si a esa profesional
- * le tomaron un masaje de 45 y queda libre desde las 12:45, una depilación de
- * 90 encadena 12:45 y 14:15, y la siguiente arranca 15:45: terminaría 17:15,
- * una hora y cuarto tarde. "Un ratito más" y "hora y cuarto" son la misma
- * regla, y la regla no sabe distinguirlas.
+ * Además el desborde puede ser grande, porque lo acota la DURACIÓN del
+ * tratamiento y no un ratito fijo. Esa misma profesional de 12 a 16, con una
+ * depilación de 90, encadena 12:00 y 13:40; en true se le suma 15:20, que
+ * termina 16:50 — cincuenta minutos tarde. "Un ratito más" y "casi una hora"
+ * son la misma regla, y la regla no sabe distinguirlas.
  *
  * Cuando el centro decida, esto es una sola línea.
  */
