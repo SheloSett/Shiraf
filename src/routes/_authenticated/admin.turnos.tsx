@@ -17,6 +17,7 @@ import { Plus } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { usePendingAppointments } from "@/hooks/usePendingAppointments";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/_authenticated/admin/turnos")({
@@ -32,6 +33,10 @@ function AdminAppointments() {
   const [creating, setCreating] = useState(false);
   /** Invitada que se está vinculando a una cuenta, o null. */
   const [linking, setLinking] = useState<GuestToLink | null>(null);
+
+  // El mismo número que muestra el menú lateral: react-query comparte la
+  // consulta, así que estar en esta pantalla no la pide dos veces.
+  const pendingCount = usePendingAppointments();
 
   const appointments = useQuery({
     queryKey: ["admin-appointments", filter],
@@ -109,9 +114,19 @@ function AdminAppointments() {
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Status)} className="mt-8">
         <TabsList>
+          {/* Sólo "Pendiente" lleva número: es el único estado que pide algo de
+              quien mira la pantalla. Ponerle el conteo a las cuatro pestañas
+              haría que ninguna llame la atención.
+
+              Antes era `<TabsTrigger>{STATUS_LABEL[f]}</TabsTrigger>` a secas. */}
           {FILTERS.map((f) => (
-            <TabsTrigger key={f} value={f}>
+            <TabsTrigger key={f} value={f} className="gap-2">
               {STATUS_LABEL[f]}
+              {f === "pending" && pendingCount > 0 && (
+                <span className="min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums">
+                  {pendingCount > 99 ? "99+" : pendingCount}
+                </span>
+              )}
             </TabsTrigger>
           ))}
         </TabsList>

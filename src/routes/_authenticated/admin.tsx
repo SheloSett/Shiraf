@@ -17,6 +17,7 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccess } from "@/hooks/useAccess";
+import { usePendingAppointments } from "@/hooks/usePendingAppointments";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -146,6 +147,10 @@ function AdminLayout() {
   // esté acá se decide solo: la sección abierta muestra sus subsecciones.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
+  // Turnos esperando respuesta. Se pide sólo si la persona puede verlos: sin el
+  // acceso, la RLS devuelve cero igual y la consulta sería al pedo.
+  const pendingCount = usePendingAppointments(can("appointments"));
+
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
   const visibleNav = nav.filter((item) => (item.adminOnly ? isAdmin : can(item.permission)));
 
@@ -202,39 +207,96 @@ function AdminLayout() {
             // La sección se despliega si estás en el padre o en cualquier hijo.
             const sectionActive =
               active || item.children.some((child) => location.pathname.startsWith(child.to));
+            // …salvo que la hayas abierto o cerrado vos con la flechita: esa
+            // decisión manda sobre la automática.
+            const open = openSections[item.to] ?? sectionActive;
 
             return (
               <div key={item.to} className="contents lg:block">
-                <Link
-                  to={item.to}
-                  className={`flex items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
-                    active
-                      ? "bg-primary-foreground/15 text-primary-foreground"
-                      : "text-primary-foreground/65 hover:text-primary-foreground"
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
+                {/* El link y la flechita van en la misma fila pero separados:
+                    tocar el nombre navega, tocar la flecha sólo despliega. Si
+                    fuera un botón solo, no se podría entrar a "Servicios". */}
+                <div className="relative flex items-center">
+                  <Link
+                    to={item.to}
+                    className={`flex flex-1 items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
+                      item.children.length > 0 ? "pr-9" : ""
+                    } ${
+                      active
+                        ? "bg-primary-foreground/15 text-primary-foreground"
+                        : "text-primary-foreground/65 hover:text-primary-foreground"
+                    }`}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                    {/* El contador de turnos por responder. Va en el menú y no
+                        sólo adentro de la sección para que se vea desde
+                        cualquier pantalla del panel: un turno pendiente es
+                        alguien esperando una respuesta. */}
+                    {item.to === "/admin/turnos" && pendingCount > 0 && (
+                      <span className="ml-auto min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums">
+                        {pendingCount > 99 ? "99+" : pendingCount}
+                      </span>
+                    )}
+                  </Link>
 
-                {item.children.length > 0 && sectionActive && (
-                  <div className="flex gap-1 lg:mt-1 lg:ml-4 lg:flex-col lg:border-l lg:border-primary-foreground/20 lg:pl-3">
-                    {item.children.map((child) => {
-                      const childActive = location.pathname.startsWith(child.to);
-                      return (
-                        <Link
-                          key={child.to}
-                          to={child.to}
-                          className={`whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors lg:px-2 lg:py-1.5 ${
-                            childActive
-                              ? "bg-primary-foreground/15 text-primary-foreground lg:bg-transparent"
-                              : "text-primary-foreground/55 hover:text-primary-foreground"
-                          }`}
-                        >
-                          {child.label}
-                        </Link>
-                      );
-                    })}
+                  {item.children.length > 0 && (
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      aria-label={`${open ? "Ocultar" : "Mostrar"} las subsecciones de ${item.label}`}
+                      onClick={() => setOpenSections((prev) => ({ ...prev, [item.to]: !open }))}
+                      className="absolute right-1 rounded-sm p-1.5 text-primary-foreground/55 transition-colors hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform duration-300 ease-out ${
+                          open ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {/* Antes las subsecciones aparecían y desaparecían de golpe con
+                    `{sectionActive && (…)}`. Ahora el bloque siempre está en el
+                    DOM y lo que se anima es su alto: el truco de la grilla de
+                    0fr a 1fr deja que el alto lo calcule el navegador, así la
+                    transición es suave sin tener que hardcodear un max-height.
+                    En mobile además se achica el ancho, para que cerrado no
+                    deje un hueco en la fila horizontal del menú. */}
+                {item.children.length > 0 && (
+                  <div
+                    className={`grid transition-all duration-300 ease-out ${
+                      open
+                        ? "grid-rows-[1fr] opacity-100"
+                        : "pointer-events-none max-w-0 grid-rows-[0fr] opacity-0 lg:max-w-none"
+                    }`}
+                  >
+                    {/* Este div de en medio es el que recorta: con
+                        `overflow-hidden` el navegador acepta achicarlo hasta 0
+                        y por eso la grilla puede animar el alto. Los márgenes y
+                        el borde van adentro, para que cerrado no quede
+                        ocupando lugar. */}
+                    <div className="overflow-hidden">
+                      <div className="flex gap-1 lg:mt-1 lg:ml-4 lg:flex-col lg:border-l lg:border-primary-foreground/20 lg:pl-3">
+                        {item.children.map((child) => {
+                          const childActive = location.pathname.startsWith(child.to);
+                          return (
+                            <Link
+                              key={child.to}
+                              to={child.to}
+                              className={`whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors lg:px-2 lg:py-1.5 ${
+                                childActive
+                                  ? "bg-primary-foreground/15 text-primary-foreground lg:bg-transparent"
+                                  : "text-primary-foreground/55 hover:text-primary-foreground"
+                              }`}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
