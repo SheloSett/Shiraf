@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -11,6 +11,41 @@ export const Route = createFileRoute("/_authenticated/admin/")({
   component: AdminCalendar,
 });
 
+/**
+ * El color de un turno en la grilla.
+ *
+ * Son DOS cosas cruzadas, no una: el estado que le puso el panel y si la hora
+ * del turno ya pasó. Un pendiente de la semana que viene es agenda por delante;
+ * el mismo pendiente del martes pasado es un turno que ya se vivió y que nadie
+ * cerró. Son situaciones opuestas con el mismo `status`, así que lo vencido se
+ * decide ANTES que el estado y se lleva el rojizo: es lo único del calendario
+ * que pide que alguien vaya a hacer algo.
+ *
+ * Antes esto era un ternario anidado acá abajo con sólo tres ramas —cancelado,
+ * confirmado y "todo lo demás"—. El problema era ese "todo lo demás": los cuatro
+ * estados de la base incluyen `completed`, que caía ahí y salía pintado igual
+ * que un pendiente. Un turno ya cerrado se veía idéntico a uno que nadie tocó.
+ *
+ * `now` llega en null mientras no hidrató (ver abajo); sin reloj no se puede
+ * saber qué venció, así que en ese rato los turnos se pintan por estado nomás.
+ */
+function appointmentTone(status: string, startsAt: string, now: number | null) {
+  if (status === "cancelled") return "bg-muted text-muted-foreground line-through";
+
+  // Realizado: mismo oliva que confirmado, pero con la barra sólida al costado y
+  // el texto apagado. Se distingue del confirmado sin sumar un color nuevo a una
+  // paleta que ya tiene cuatro, y se lee como lo que es: archivo, nada por hacer.
+  if (status === "completed")
+    return "border-l-2 border-primary bg-primary/10 text-muted-foreground";
+
+  // Pendiente o confirmado con la hora ya pasada.
+  if (now !== null && new Date(startsAt).getTime() < now)
+    return "bg-destructive/12 text-foreground";
+
+  if (status === "confirmed") return "bg-primary/10 text-foreground";
+  return "bg-gold/15 text-foreground";
+}
+
 function AdminCalendar() {
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
@@ -19,8 +54,28 @@ function AdminCalendar() {
     return d;
   });
 
+  /**
+   * El reloj, recién después de hidratar.
+   *
+   * No se puede leer durante el render del servidor: ahí la fecha se arma en la
+   * zona horaria del servidor, que es UTC, y a las 23:35 de Argentina allá ya es
+   * el día siguiente. El HTML llegaría con el círculo de "hoy" corrido un día y
+   * saltando al hidratar. En null hasta que monta, y de ahí sale tanto qué día
+   * se remarca como dónde está el corte de lo vencido.
+   */
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => setNow(Date.now()), []);
+
   const monthStart = cursor;
   const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+
+  // El número de hoy, pero sólo si el mes que se está mirando es el corriente:
+  // navegando a septiembre no tiene que quedar un 19 remarcado.
+  const today = now === null ? null : new Date(now);
+  const todayDay =
+    today && today.getFullYear() === cursor.getFullYear() && today.getMonth() === cursor.getMonth()
+      ? today.getDate()
+      : null;
 
   const appointments = useQuery({
     queryKey: ["admin-calendar", monthStart.toISOString()],
@@ -88,21 +143,32 @@ function AdminCalendar() {
           </div>
         ))}
         {cells.map((day, i) => (
-          <div key={i} className="min-h-28 bg-card p-2">
+          <div
+            key={i}
+            className={`min-h-28 p-2 ${day === todayDay ? "bg-gold-soft/20" : "bg-card"}`}
+          >
             {day && (
               <>
-                <span className="text-xs text-muted-foreground">{day}</span>
+                {/* El día de hoy va marcado en la CELDA y no en cada turno: "hoy"
+                    es una propiedad del día, y los turnos ya cargan su color de
+                    estado. Ponerles encima una segunda señal deja dos cosas
+                    distintas peleando por el mismo recuadro. */}
+                {day === todayDay ? (
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">
+                    {day}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">{day}</span>
+                )}
                 <div className="mt-1 space-y-1">
                   {(byDay[day] ?? []).map((a) => (
                     <div
                       key={a.id}
-                      className={`rounded-sm px-1.5 py-1 text-[11px] leading-tight ${
-                        a.status === "cancelled"
-                          ? "bg-muted text-muted-foreground line-through"
-                          : a.status === "confirmed"
-                            ? "bg-primary/10 text-foreground"
-                            : "bg-gold/15 text-foreground"
-                      }`}
+                      className={`rounded-sm px-1.5 py-1 text-[11px] leading-tight ${appointmentTone(
+                        a.status,
+                        a.starts_at,
+                        now,
+                      )}`}
                     >
                       <span className="font-medium">{formatTime(a.starts_at)}</span>{" "}
                       {a.services?.name}
@@ -118,12 +184,23 @@ function AdminCalendar() {
         ))}
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-3 text-xs text-muted-foreground">
+      {/* La leyenda tenía tres entradas para cuatro estados: faltaba "Realizado",
+          que hasta ahora no se pintaba distinto. Van las cuatro más "Vencido",
+          que no es un estado de la base sino el cruce de pendiente/confirmado
+          con la hora ya pasada — por eso es la única sin STATUS_LABEL. */}
+      <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-gold/40" /> {STATUS_LABEL["pending"]}
         </span>
         <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-primary/25" /> {STATUS_LABEL["confirmed"]}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-sm border-l-2 border-primary bg-primary/25" />{" "}
+          {STATUS_LABEL["completed"]}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-sm bg-destructive/30" /> Vencido sin cerrar
         </span>
         <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-muted" /> {STATUS_LABEL["cancelled"]}

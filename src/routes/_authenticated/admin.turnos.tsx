@@ -16,6 +16,7 @@ import { useState } from "react";
 import { MessageCircle, Plus } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
+import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { usePendingAppointments } from "@/hooks/usePendingAppointments";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
@@ -78,6 +79,8 @@ function AdminAppointments() {
   const [creating, setCreating] = useState(false);
   /** Invitada que se está vinculando a una cuenta, o null. */
   const [linking, setLinking] = useState<GuestToLink | null>(null);
+  /** Invitada a la que se le están corrigiendo los datos, o null. */
+  const [editing, setEditing] = useState<GuestToEdit | null>(null);
 
   // El mismo número que muestra el menú lateral: react-query comparte la
   // consulta, así que estar en esta pantalla no la pide dos veces.
@@ -89,7 +92,9 @@ function AdminAppointments() {
       const { data, error } = await supabase
         .from("appointments")
         .select(
-          "id, starts_at, status, duration_minutes, client_notes, client_id, guest_name, guest_phone, services(name, price), professionals(full_name)",
+          // guest_email no se muestra en la tabla, pero lo necesita el diálogo
+          // de editar: es lo que decide a cuántos turnos alcanza la corrección.
+          "id, starts_at, status, duration_minutes, client_notes, client_id, guest_name, guest_phone, guest_email, services(name, price), professionals(full_name)",
         )
         .eq("status", filter)
         .order("starts_at");
@@ -196,6 +201,7 @@ function AdminAppointments() {
       />
 
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
+      <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
 
       <Tabs value={filter} onValueChange={(v) => setFilter(v as Status)} className="mt-8">
         <TabsList>
@@ -243,6 +249,24 @@ function AdminAppointments() {
                         <Badge variant="outline" className="font-normal text-[10px]">
                           sin cuenta
                         </Badge>
+                        {/* Editar va sin condición, al revés que vincular: sus
+                            datos viven en este turno y siempre se pueden
+                            corregir. Es más, el caso más útil es justo el que
+                            no tiene teléfono todavía. */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditing({
+                              appointmentId: a.id,
+                              name: a.guest_name ?? "",
+                              phone: a.guest_phone,
+                              email: a.guest_email,
+                            })
+                          }
+                          className="text-[10px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                        >
+                          editar
+                        </button>
                         {/* Sólo con teléfono: es el dato con el que se buscan
                             los demás turnos de la misma persona. */}
                         {a.person.phone && (
