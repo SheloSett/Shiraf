@@ -40,7 +40,7 @@ parece:
 | | Riesgo |
 | --- | --- |
 | Reescribir 30 `.from()` en llamadas Prisma | Bajo. Es tedio mecánico. |
-| Mover los datos | **Casi nulo.** Son 77 filas en total. |
+| Mover los datos | **Casi nulo.** Son 87 filas en total. |
 | Reemplazar el auth | Medio. Hay 4 usuarios; se recrean a mano. |
 | **Reemplazar las 39 policies RLS** | **Alto. Acá es donde se filtran datos.** |
 
@@ -66,7 +66,7 @@ historial completo de `supabase/migrations/` —creando y dropeando en orden—,
 es exacto salvo que alguien haya tocado algo a mano en el SQL Editor. Cómo
 confirmarlo contra la base está más abajo.
 
-### La base tiene 77 filas
+### La base tiene 87 filas
 
 ```
 profiles                 4     professional_services   11
@@ -78,6 +78,10 @@ service_media            6     product_costs            7
 professionals            4     stock_movements          3
 client_notes             0
 ```
+
+✅ **Verificado el 20/8/2026 corriendo `scripts/export-supabase.mjs`**: los 15
+conteos dan exactamente eso. (El documento decía "77 filas" en el título: era un
+error de suma, los números de la tabla siempre estuvieron bien.)
 
 **Esto es lo que hace viable la migración.** No hay que planificar un traspaso
 con ventana de mantenimiento ni verificar integridad de millones de filas: entra
@@ -624,51 +628,57 @@ git checkout -b migracion-prisma
 
 ---
 
-### Fase 0 — Red de seguridad
+### Fase 0 — Red de seguridad ✅ HECHA
 
 **Antes de cualquier otra cosa.**
 
-1. **Bajate los datos actuales.** No escribas un script: `d63787b` dejó la CLI
-   de Supabase configurada, así que es un comando y no se le escapa ninguna
-   tabla.
+1. ✅ **Los datos están bajados**, con `node scripts/export-supabase.mjs`: las 15
+   tablas en `scripts/datos/*.json` y las 4 cuentas en `scripts/usuarios.json`.
+   87 filas, los 15 conteos verificados contra la sección 1.
+
+   Se hizo con un script y no con `npx supabase db dump` porque el dump pide la
+   contraseña de la base (Project Settings → Database), que no está en el `.env`.
+   El script usa la service role key, que sí está.
+
+   ⚠️ **Falta todavía el dump SQL completo**, y hace falta: es el único que
+   sirve para restaurar de verdad si algo sale mal, porque incluye el esquema y
+   no sólo las filas. Cuando tengas la contraseña a mano:
 
    ```bash
    npx supabase db dump --data-only -f scripts/datos.sql
    ```
 
-   Si todavía no corriste el `supabase link`, está explicado paso a paso en
+   El `supabase link` está explicado paso a paso en
    [`supabase/MIGRACIONES.md`](supabase/MIGRACIONES.md).
 
-   Los **4 usuarios van aparte**, porque viven en el esquema `auth` y no salen
-   en ese dump:
+2. 🔴 **Los datos NO se commitean. Este repositorio es público.**
 
-   ```bash
-   curl -s "$SUPABASE_URL/auth/v1/admin/users" \
-     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" > scripts/usuarios.json
-   ```
+   Una versión anterior de este documento decía lo contrario —"acá no hay nada
+   sensible más allá de 4 nombres y teléfonos"— y estaba mal por dos motivos:
 
-   Hacen falta los `id`: son las claves foráneas de medio esquema.
+   - Que sean pocos no los hace menos personales. `profiles` trae nombre
+     completo, **teléfono** y fecha de nacimiento de 4 personas reales, y
+     `appointments` los datos de contacto de 3 invitadas. En un repositorio
+     público eso queda indexado por buscadores y no se borra del todo con un
+     `git rm`: queda en el historial y en los forks.
+   - Además está `product_costs`, que son los **costos de compra**. No es dato
+     personal pero sí información comercial.
 
-   Si preferís JSON por tabla para que el seed de la Fase 4 lo lea más cómodo,
-   sumá `npx supabase db dump --data-only --schema public` y convertilo, o pedile
-   las 15 tablas a la API REST. Pero **el dump SQL bajalo igual**: es el que
-   sirve para restaurar si algo sale mal.
+   `scripts/datos/` y `scripts/usuarios.json` están en el `.gitignore`. **La red
+   de seguridad no se debilita**: los archivos están en el disco, y se
+   regeneran con un comando. Lo único que no hay es una copia publicada en
+   internet.
 
-2. **Commiteá ese dump.** Son unos KB y es la red de seguridad entera.
-   Excepción explícita a la regla de no commitear datos: acá no hay nada
-   sensible más allá de 4 nombres y teléfonos, y el valor de tenerlo versionado
-   supera al riesgo. Si preferís, agregalo al `.gitignore` y guardalo aparte,
-   **pero guardalo**.
-
-   ⚠️ `scripts/usuarios.json` es la excepción de la excepción: trae los mails de
-   las 4 cuentas. Ese al `.gitignore`.
+   ⚠️ **Eso significa que la red de seguridad vive en una sola máquina.** Antes
+   de tocar la base, copiá `scripts/datos/` a algún lado —un pendrive, un drive
+   privado, el mail—. Un backup que existe en un solo disco es medio backup.
 
 3. **No borres ni pauses el proyecto de Supabase.** Queda intacto hasta que el
    nuevo lleve dos semanas andando. Es el único rollback verdadero.
 
-**Verificación:** el dump existe, tiene las 15 tablas y suma 77 filas; y
-`scripts/usuarios.json` trae las 4 cuentas con su `id`.
+**Verificación:** ✅ los 15 JSON existen y suman 87 filas;
+`scripts/usuarios.json` trae las 4 cuentas con su `id`; y ninguno de los dos
+aparece en `git status`.
 
 ---
 
@@ -944,7 +954,7 @@ que probar: esta fase se verifica en la base y nada más.
 
 ### Fase 4 — Cargar los datos
 
-77 filas. Escribí `prisma/seed.ts` que lea lo exportado en la Fase 0.
+87 filas. Escribí `prisma/seed.ts` que lea lo exportado en la Fase 0.
 
 **Va después de la Fase 3 a propósito**: los tres triggers que se quedan en SQL
 tienen que estar puestos antes de cargar, porque dos de ellos participan de la

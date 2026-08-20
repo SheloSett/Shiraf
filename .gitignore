@@ -60,3 +60,20 @@ supabase/.temp/
 package-lock.json
 
 .claude/
+
+
+# Fase 0 de la migracion a Prisma: el volcado de los datos de Supabase.
+#
+# NO van al repo, aunque MIGRACION-A-PRISMA.md diga que si. Ese permiso se
+# escribio sin tener en cuenta que este repositorio es PUBLICO, y el volcado
+# trae datos de personas reales -nombre, telefono, fecha de nacimiento de las
+# clientas, y los datos de contacto de las invitadas- ademas de los costos de
+# compra, que son informacion comercial.
+#
+# La red de seguridad sigue existiendo: los archivos estan en el disco. Lo que
+# no hay es una copia publicada en internet. Para regenerarlos:
+#
+#     node scripts/export-supabase.mjs
+#
+scripts/datos/
+scripts/usuarios.json
