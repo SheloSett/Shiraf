@@ -37,6 +37,11 @@ public/preview-mails/
 .wrangler/
 .dev.vars
 
+# Caché de la CLI de Supabase. La crea sola cualquier `npx supabase …` y no
+# tiene nada que aporte al repo: guarda la última versión de la CLI y el ref
+# del proyecto linkeado.
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
