@@ -178,6 +178,13 @@ function AdminTeam() {
       await linkProfessionalAccount(userId, professionalId),
     onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-team-professionals"] });
+      // Y la lista de Profesionales, que es OTRA clave sobre la misma tabla y
+      // muestra el mismo dato con otras palabras ("Entra al panel y ve su
+      // agenda" / "Sin acceso al panel"). Sin esto, atar una ficha desde acá
+      // dejaba esa pantalla diciendo que la profesional no tiene acceso hasta
+      // que la caché venciera sola. El camino inverso —"Darle acceso" desde
+      // Profesionales— ya invalidaba las dos.
+      await queryClient.invalidateQueries({ queryKey: ["admin-professionals"] });
       toast.success(
         variables.professionalId
           ? "Ficha vinculada: ya ve su agenda al entrar al panel."
@@ -222,6 +229,9 @@ function AdminTeam() {
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-team-professionals"] });
+      // El alta también puede atar una ficha (el desplegable del formulario),
+      // así que Profesionales queda igual de desactualizada que en `link`.
+      await queryClient.invalidateQueries({ queryKey: ["admin-professionals"] });
       closeForm();
       if (result.linkError) {
         toast.warning(
