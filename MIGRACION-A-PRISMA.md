@@ -6,7 +6,10 @@
 > varias cosas que parecen obvias están mal.
 >
 > Escrito el 20/8/2026, contra el estado de la rama
-> `panel-solo-para-el-equipo` en el commit `d63787b`.
+> `panel-solo-para-el-equipo` en el commit `d63787b`, y **revisado el mismo día**
+> contra el repo: se corrigió el inventario de policies (eran conteos del
+> historial de migraciones, no de la base), el orden de las fases, y seis cosas
+> del armado de Docker que no funcionaban como estaban escritas.
 
 ---
 
@@ -17,9 +20,9 @@ Docker** y **Prisma** como capa de datos, sin depender de la nube de Supabase.
 
 Se le señaló que Prisma **no elimina las migraciones** —`prisma migrate` genera
 archivos `.sql` igual que ahora— y que el riesgo real está en reimplementar a
-mano las 96 reglas de seguridad que hoy hace cumplir Postgres. Lo confirmó igual.
-**Esa decisión está tomada: no hay que volver a discutirla, hay que ejecutarla
-bien.**
+mano las reglas de seguridad que hoy hace cumplir Postgres: **39 policies, 19
+funciones y 15 triggers**. Lo confirmó igual. **Esa decisión está tomada: no hay
+que volver a discutirla, hay que ejecutarla bien.**
 
 Lo que sí cambia el plan es entender dónde está el riesgo, que no es donde
 parece:
@@ -29,7 +32,7 @@ parece:
 | Reescribir 30 `.from()` en llamadas Prisma | Bajo. Es tedio mecánico. |
 | Mover los datos | **Casi nulo.** Son 77 filas en total. |
 | Reemplazar el auth | Medio. Hay 4 usuarios; se recrean a mano. |
-| **Reemplazar las 61 policies RLS** | **Alto. Acá es donde se filtran datos.** |
+| **Reemplazar las 39 policies RLS** | **Alto. Acá es donde se filtran datos.** |
 
 Todo el documento está organizado alrededor de proteger esa última fila.
 
@@ -48,7 +51,10 @@ bloqueo desaparece sin trabajo extra.
 
 ## 1. Punto de partida — inventario exacto
 
-Medido sobre el repo y sobre la base, no estimado.
+Contado sobre el repo, no estimado. Lo de la base sale de reconstruir el
+historial completo de `supabase/migrations/` —creando y dropeando en orden—, que
+es exacto salvo que alguien haya tocado algo a mano en el SQL Editor. Cómo
+confirmarlo contra la base está más abajo.
 
 ### La base tiene 77 filas
 
@@ -84,11 +90,34 @@ delicado de todos y el costo es un mensaje de WhatsApp a dos clientas.
 
 ### La base de datos
 
-- **61 policies RLS** — `appointments` 9, `services` 6, `professionals` 6,
-  `profiles` 5, y el resto de a 1-3 por tabla
+- **39 policies RLS** — 35 en `public` y 4 sobre `storage.objects`. La lista
+  completa, policy por policy, está en la Fase 5.
 - **19 funciones** en `public`
 - **15 triggers**
 - **4 enums**: `app_role`, `app_permission`, `appointment_status`, `media_kind`
+
+> ### ⚠️ Cómo NO contar las policies
+> Contar los `CREATE POLICY` de `supabase/migrations/` da **61**, y está mal: 26
+> de esas fueron dropeadas y recreadas después, así que el número mezcla
+> versiones vivas con versiones muertas. `appointments` es el caso más claro —
+> tiene 9 `CREATE POLICY` en el historial, de los cuales
+> [`20260813070000`](supabase/migrations/20260813070000_permissions.sql) dropeó 4
+> para reemplazarlos. Vivas quedan **5**.
+>
+> Trabajar sobre el conteo del historial no es sólo impreciso: lleva a abrir
+> migraciones viejas y traducir la versión superada de una regla. Eso ya pasó una
+> vez en este proyecto y dejó a la empleada sin poder confirmar turnos (trampa
+> #10). **La verdad está en la base, no en los archivos:**
+>
+> ```sql
+> select schemaname, tablename, policyname, cmd, qual, with_check
+>   from pg_policies
+>  where schemaname in ('public','storage')
+>  order by tablename, policyname;
+> ```
+>
+> Corré eso **antes de empezar la Fase 5** y compará contra la tabla que está
+> ahí. Si difiere, gana la base.
 
 ---
 
@@ -216,13 +245,18 @@ servicio de un solo uso lo resuelve y compose sabe encadenarlo:
       db: { condition: service_healthy }
     environment:
       DATABASE_URL: ${DATABASE_URL}
-    command: ["npx", "prisma", "migrate", "deploy"]
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
     restart: "no"
 
   app:
     depends_on:
       migrate: { condition: service_completed_successfully }
 ```
+
+⚠️ Ese `command` **sólo funciona si la imagen lleva adentro el paquete `prisma`
+y la carpeta `prisma/`**. Ver más abajo: hoy no lleva ninguno de los dos, y `npx`
+tampoco es una salida (sin la dependencia instalada, `npx` se la baja de
+internet en cada arranque del contenedor).
 
 ### 🔴 Prisma no entra en la imagen actual tal como está
 
@@ -245,14 +279,20 @@ imagen se construye sin quejarse y la primera consulta explota con
 Hay que arreglarlo, y hay dos caminos:
 
 1. **Recomendado: pasar la etapa de runtime a `node:22-slim`** (Debian) y copiar
-   el cliente generado:
+   el cliente generado **y la CLI**:
 
    ```dockerfile
    FROM node:22-slim AS runtime
-   COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
+   COPY --from=build /app/node_modules/.prisma        ./node_modules/.prisma
    COPY --from=build /app/node_modules/@prisma/client ./node_modules/@prisma/client
-   COPY --from=build /app/prisma ./prisma
+   # Las dos de abajo son para el servicio `migrate`, no para la app:
+   COPY --from=build /app/node_modules/prisma         ./node_modules/prisma
+   COPY --from=build /app/prisma                      ./prisma
    ```
+
+   Las cuatro líneas hacen falta y cada una por un motivo distinto: las dos
+   primeras para que la app consulte, las dos últimas para que
+   `migrate deploy` tenga con qué y qué aplicar.
 
 2. **Seguir en alpine**, que es más chica, pero entonces hay que declarar el
    binario para musl en `schema.prisma`:
@@ -313,13 +353,38 @@ Tres cosas que hay que entender de eso:
 3. `--host 0.0.0.0` es obligatorio: sin eso Vite escucha sólo en el loopback
    **del contenedor** y desde el navegador del host no se llega.
 
-### Los comandos de Prisma, sin instalar nada
+### 🔴 En ese contenedor no existe `npx`
+
+La etapa `deps` es `oven/bun:1-alpine` (mirá el `Dockerfile`, primera etapa).
+**Las imágenes de bun no traen Node ni npm ni npx** — son bun y nada más. Todo
+comando que empiece con `npx` adentro de ese contenedor falla con
+`command not found`, y el mensaje no sugiere por qué.
+
+Son `bunx`:
 
 ```bash
-docker compose -f docker-compose.dev.yml run --rm app npx prisma migrate dev --name lo_que_hace
-docker compose -f docker-compose.dev.yml run --rm app npx prisma studio
-docker compose -f docker-compose.dev.yml run --rm app npx prisma db pull
+docker compose -f docker-compose.dev.yml run --rm app bunx prisma migrate dev --name lo_que_hace
+docker compose -f docker-compose.dev.yml run --rm app bunx prisma generate
+docker compose -f docker-compose.dev.yml run --rm app bunx prisma db pull
+docker compose -f docker-compose.dev.yml run --rm --service-ports app bunx prisma studio
 ```
+
+(`--service-ports` en el de Studio: sin eso `run` no publica puertos y la
+pantalla de Studio no abre desde el host.)
+
+Dos cosas más que hay que resolver acá y no dejar para producción:
+
+- **La CLI de Prisma bajo bun es un borde conocido.** Probala apenas armes la
+  Fase 1, con `bunx prisma migrate dev`, **antes** de tener nada escrito
+  encima. Si no anda, la salida es una etapa `tools` sobre `node:22-slim` en el
+  `Dockerfile` —con el paquete `prisma` y la carpeta `prisma/`— y un servicio de
+  compose que use esa etapa para los comandos. No arregles esto instalando
+  Prisma en el host: ahí se cae el requisito entero de la sección.
+- **Alpine también es musl acá.** El arreglo recomendado de más arriba
+  (`node:22-slim`) cubre el runtime de producción, pero el contenedor de
+  desarrollo sigue en alpine. O le agregás
+  `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]` al `schema.prisma`,
+  o movés también el dev a una imagen Debian. Elegí una y dejala anotada.
 
 **Dejá estos comandos escritos en el `README.md`.** Si no están a mano, la
 próxima persona instala Prisma en el host "por esta vez" y el requisito se cae.
@@ -356,7 +421,7 @@ Perder tiempo acá es el error más caro, porque además rompe cosas que hoy and
 - `src/lib/notifications.ts` — texto de los avisos, sin I/O
 - `src/lib/contact.ts`, `src/lib/shiraf.ts`, `src/lib/utils.ts`
 - `src/lib/permissions.ts` — la definición de los permisos **se conserva y pasa a
-  ser la fuente de verdad**, ver Fase 4
+  ser la fuente de verdad**, ver Fase 5
 - Todo `src/components/ui/**` — shadcn, no sabe qué hay atrás
 - Todo el CSS, el diseño y las páginas públicas en su parte visual
 
@@ -374,6 +439,21 @@ Perder tiempo acá es el error más caro, porque además rompe cosas que hoy and
 Cada fase termina con **la app corriendo y verificada**. No pases a la siguiente
 sin que la verificación dé bien.
 
+**El orden no es negociable y no es el intuitivo.** Lo intuitivo es reescribir
+las pantallas apenas está el esquema. Pero una pantalla sólo se puede verificar
+de verdad cuando ya existen las tres cosas de las que depende:
+
+1. **los triggers** (Fase 3) — sin `check_appointment_overlap`, `sync_service_cover`
+   y `apply_stock_movement` puestos, la pantalla de turnos, la galería y el stock
+   se comportan distinto que en producción y la prueba no vale;
+2. **los datos** (Fase 4) — contra una base vacía toda pantalla se ve igual de
+   bien, así que la verificación no verifica nada;
+3. **los permisos** (Fase 5) — `requirePermission()` es lo primero que llama
+   cada server function de la Fase 6.
+
+Por eso las pantallas van últimas, en la Fase 6. Nada de lo anterior es trabajo
+tirado: cada fase deja algo comprobable.
+
 Trabajá en una rama nueva desde `panel-solo-para-el-equipo`:
 
 ```bash
@@ -386,30 +466,47 @@ git checkout -b migracion-prisma
 
 **Antes de cualquier otra cosa.**
 
-1. **Exportá los datos actuales a JSON.** Escribí
-   `scripts/export-supabase.mjs` que lea las 15 tablas por la API REST con la
-   `SUPABASE_SERVICE_ROLE_KEY` del `.env` y las guarde en
-   `scripts/datos/<tabla>.json`. La forma exacta:
+1. **Bajate los datos actuales.** No escribas un script: `d63787b` dejó la CLI
+   de Supabase configurada, así que es un comando y no se le escapa ninguna
+   tabla.
 
-   ```js
-   const r = await fetch(`${SUPABASE_URL}/rest/v1/${tabla}?select=*`, {
-     headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
-   });
+   ```bash
+   npx supabase db dump --data-only -f scripts/datos.sql
    ```
 
-   Exportá también los 4 usuarios con `GET /auth/v1/admin/users` — hacen falta
-   los `id`, que son las claves foráneas de medio esquema.
+   Si todavía no corriste el `supabase link`, está explicado paso a paso en
+   [`supabase/MIGRACIONES.md`](supabase/MIGRACIONES.md).
 
-2. **Commiteá ese JSON.** Son unos KB y es la red de seguridad entera.
+   Los **4 usuarios van aparte**, porque viven en el esquema `auth` y no salen
+   en ese dump:
+
+   ```bash
+   curl -s "$SUPABASE_URL/auth/v1/admin/users" \
+     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" > scripts/usuarios.json
+   ```
+
+   Hacen falta los `id`: son las claves foráneas de medio esquema.
+
+   Si preferís JSON por tabla para que el seed de la Fase 4 lo lea más cómodo,
+   sumá `npx supabase db dump --data-only --schema public` y convertilo, o pedile
+   las 15 tablas a la API REST. Pero **el dump SQL bajalo igual**: es el que
+   sirve para restaurar si algo sale mal.
+
+2. **Commiteá ese dump.** Son unos KB y es la red de seguridad entera.
    Excepción explícita a la regla de no commitear datos: acá no hay nada
    sensible más allá de 4 nombres y teléfonos, y el valor de tenerlo versionado
    supera al riesgo. Si preferís, agregalo al `.gitignore` y guardalo aparte,
    **pero guardalo**.
 
+   ⚠️ `scripts/usuarios.json` es la excepción de la excepción: trae los mails de
+   las 4 cuentas. Ese al `.gitignore`.
+
 3. **No borres ni pauses el proyecto de Supabase.** Queda intacto hasta que el
    nuevo lleve dos semanas andando. Es el único rollback verdadero.
 
-**Verificación:** los 15 JSON existen y suman 77 filas.
+**Verificación:** el dump existe, tiene las 15 tablas y suma 77 filas; y
+`scripts/usuarios.json` trae las 4 cuentas con su `id`.
 
 ---
 
@@ -450,14 +547,15 @@ git checkout -b migracion-prisma
    cual el contenedor de desarrollo no arranca en Windows. A partir de acá no se
    corre más `npm run dev` en el host.
 
-2. `npm i -D prisma && npm i @prisma/client && npx prisma init`
+2. `bun add -d prisma && bun add @prisma/client && bunx prisma init` — adentro del
+   contenedor, con `docker compose -f docker-compose.dev.yml run --rm app …`
 
 3. **Generá el esquema por introspección, no a mano.** Apuntá
    `DATABASE_URL` a la base **de Supabase** (Project Settings → Database →
    Connection string, modo *session*) y corré:
 
    ```bash
-   npx prisma db pull
+   bunx prisma db pull
    ```
 
    Trae las 15 tablas, los 4 enums y todas las FK ya escritas. Escribir eso a
@@ -465,15 +563,19 @@ git checkout -b migracion-prisma
 
 4. **Limpiá el esquema introspectado.** Cosas que hay que arreglar sí o sí:
 
-   - Sacá todo lo del esquema `auth` (`auth.users`). Las columnas que hoy
-     apuntan ahí (`profiles.id`, `appointments.client_id`,
-     `professionals.user_id`, `user_roles.user_id`, `user_permissions.user_id`)
-     pasan a apuntar a la tabla de usuarios de better-auth.
+   - **Las FK al esquema `auth` no van a aparecer como modelos.** La
+     introspección sólo mira los esquemas del `search_path` —o sea `public`—,
+     así que `auth.users` no viene: las columnas que apuntan ahí
+     (`profiles.id`, `appointments.client_id`, `professionals.user_id`,
+     `user_roles.user_id`, `user_permissions.user_id`) vuelven como `String`
+     sueltos, con un warning de "referencia a una tabla fuera del esquema". **No
+     busques un modelo `users` para borrar: no está.** Lo que hay que hacer es
+     apuntarlas a la tabla de usuarios de better-auth, que se crea en la Fase 2.
    - Poné `@updatedAt` en las 7 columnas `updated_at`. **Eso reemplaza los 7
      triggers `update_updated_at_column` de una.**
    - Revisá que los enums quedaron como enums de Postgres y no como texto.
 
-5. `npx prisma migrate dev --name esquema_inicial` contra la base local nueva.
+5. `bunx prisma migrate dev --name esquema_inicial` contra la base local nueva.
 
 6. **El lint que hace cumplir LA REGLA.** En `eslint.config.js`:
 
@@ -485,14 +587,28 @@ git checkout -b migracion-prisma
          paths: [
            { name: "@prisma/client", message: "Prisma sólo en *.functions.ts / *.server.ts. Ver MIGRACION-A-PRISMA.md, LA REGLA." },
            { name: "@/lib/db", message: "Idem: la base no se toca desde una pantalla." },
+           // ⚠️ Repetida a propósito, ver abajo.
+           { name: "server-only", message: "TanStack Start does not use the Next.js `server-only` package. Rename the module to `*.server.ts` or mark it with `@tanstack/react-start/server-only`." },
          ],
        }],
      },
    }
    ```
 
-**Verificación:** `docker compose up db` levanta, `npx prisma migrate status` da
-limpio, y `npx prisma studio` muestra las 15 tablas vacías.
+   ⚠️ **Esa tercera entrada no es decorativa.** Ya hay un `no-restricted-imports`
+   en el bloque general de [`eslint.config.js`](eslint.config.js) que bloquea
+   `server-only`. En flat config, un bloque posterior con la misma regla
+   **reemplaza** la configuración anterior para los archivos que matchea, no la
+   suma. Sin repetir esa línea, las pantallas ganan la protección de Prisma y
+   pierden la de `server-only` en silencio.
+
+   ⚠️ Y tené presente lo que el lint **no** puede ver: los imports indirectos.
+   Una pantalla que importa un `.functions.ts` que importa Prisma pasa el lint
+   igual. La comprobación de verdad es buscar `@prisma/client` en el bundle del
+   navegador después de un `build`. **Hacela una vez al terminar la Fase 6.**
+
+**Verificación:** `docker compose up db` levanta, `bunx prisma migrate status` da
+limpio, y `bunx prisma studio` muestra las 15 tablas vacías.
 
 ---
 
@@ -525,7 +641,22 @@ datos.**
    Renombralo a `src/lib/auth-middleware.ts` y actualizá los imports. **No
    cambies el nombre de `userId` ni la forma del contexto.**
 
-4. Reemplazá los 26 `supabase.auth.*` por el cliente de better-auth. El mapeo:
+4. 🔴 **Borrá `src/integrations/supabase/auth-attacher.ts` y sacá su línea de
+   `src/start.ts`.** Este paso es el que hace cierto el paso anterior y es fácil
+   no verlo, porque el archivo no aparece buscando `.from(` ni `.rpc(`.
+
+   Hoy el token viaja como header `Authorization: Bearer`, y quien se lo pega a
+   cada llamada al servidor es `attachSupabaseAuth`, registrado como
+   `functionMiddleware` global en [`src/start.ts`](src/start.ts). **better-auth
+   no usa headers, usa cookies**, que el navegador manda solo. Si el archivo
+   queda, cada llamada a una server function sigue pidiéndole la sesión a
+   Supabase — o falla, cuando Supabase ya no esté.
+
+   Los dos archivos de auth dicen arriba *"This file is automatically generated.
+   Do not edit it directly"*: son de Lovable. **Borralos, no los edites**, así
+   nadie los regenera encima.
+
+5. Reemplazá los 26 `supabase.auth.*` por el cliente de better-auth. El mapeo:
 
    | Supabase | better-auth |
    | --- | --- |
@@ -538,31 +669,260 @@ datos.**
    | `resetPasswordForEmail` | `forgetPassword` |
    | `getClaims` | ya no existe: la sesión se lee en el servidor |
 
-5. **Los mails de auth por Resend, con las plantillas que ya existen.**
+6. **Los mails de auth por Resend, con las plantillas que ya existen.**
    Conectá los hooks de verificación y recuperación de better-auth a un envío
    por Resend, reusando `supabase/emails/confirmar-cuenta.html` y
    `recuperar-contrasena.html`. Los placeholders `{{ .ConfirmationURL }}` de
    Supabase pasan a interpolación normal. **Acá es donde se destraba el bloqueo
    viejo del TODO.**
 
-6. **Los 2 triggers sobre `auth.users` se vuelven código:**
+7. **Los 2 triggers sobre `auth.users` se vuelven código:**
    - `handle_new_user` (crea el `profile` y le pone el rol `client`) → hook
      `after signup` de better-auth.
    - `claim_guest_appointments` (al confirmar el mail, le pasa los turnos de
      invitada) → hook `after email verified`. **No lo saltees**: es una
      funcionalidad viva, no un detalle.
 
-7. **Creá las 4 cuentas a mano** con los mismos mails que hoy, y asignales los
-   roles y permisos del JSON exportado en la Fase 0. Los `id` nuevos no van a
-   coincidir con los viejos: **anotá el mapeo `id_viejo → id_nuevo`**, lo
-   necesita la Fase 6.
+8. **Creá las 4 cuentas a mano** con los mismos mails que hoy, y asignales los
+   roles y permisos exportados en la Fase 0. Los `id` nuevos no van a coincidir
+   con los viejos: **anotá el mapeo `id_viejo → id_nuevo` y dejalo en un archivo**
+   —no en el historial de una terminal—, lo necesita la Fase 4.
 
 **Verificación:** las 4 cuentas entran y salen; recuperar contraseña manda un
 mail que funciona; una cuenta nueva recibe el mail de confirmación en castellano.
 
 ---
 
-### Fase 3 — Los datos, pantalla por pantalla
+### Fase 3 — Triggers y funciones: qué sobrevive en SQL
+
+**No traduzcas los 15 triggers a código.** Tres tienen que quedarse en la base, y
+el motivo importa.
+
+#### Se quedan como SQL (van en una migración de Prisma con `--create-only`)
+
+| Trigger / función | Por qué NO puede ir a código |
+| --- | --- |
+| `check_appointment_overlap` | **Condición de carrera.** "Consultar si el horario está libre" y después "insertar" son dos operaciones: entre una y otra entra otra reserva. La base lo resuelve dentro de la misma transacción. En código es un bug que aparece justo el sábado a la mañana. |
+| `apply_stock_movement` | Ídem: el saldo de stock se actualiza atómicamente con el movimiento. |
+| `sync_service_cover` | Mantiene `services.image_url` igual a la primera imagen de la galería. Es un invariante de datos, no una regla de negocio: vale aunque alguien escriba por fuera de la app. |
+
+Prisma soporta SQL a mano: `bunx prisma migrate dev --create-only` y pegás el
+cuerpo. Copialos de `20260813020000`, `20260805165256` y `20260818010000`.
+
+⚠️ Los tres usan `auth.uid()` o `has_permission()` en algún renglón. Al copiarlos
+hay que sacar esas referencias: `auth` no existe en la base nueva. Lo que se
+conserva de cada uno es **la parte atómica** —el chequeo de solape, el saldo, la
+portada—, no la de permisos, que va a `authz.server.ts` en la Fase 5.
+
+#### Se vuelven código
+
+| Origen | Destino |
+| --- | --- |
+| 7 × `update_updated_at_column` | `@updatedAt` de Prisma (Fase 1) |
+| `handle_new_user`, `claim_guest_appointments` | Hooks de better-auth (Fase 2) |
+| `enforce_appointment_client_scope`, `validate_appointment`, `guard_professional_account_link` | `authz.server.ts` (Fase 5) |
+
+#### Las 8 RPC
+
+| RPC | Reemplazo |
+| --- | --- |
+| `professional_busy_slots` | **Dejala en SQL.** Es una consulta con generación de series; en Prisma queda peor. `$queryRaw`. |
+| `my_agenda` | Server function con Prisma. ⚠️ Hoy la seguridad la da que **no toma parámetro** de profesional: el alcance sale de `auth.uid()`. **Mantené eso**: sacá el id de la sesión, nunca de un argumento. |
+| `my_professional_id` | Consulta trivial. Ojo con `is_active`. |
+| `team_member_ids` | Consulta trivial. |
+| `rename_service_category`, `rename_product_category` | `prisma.$transaction`. El renombrado tiene que ser atómico — ver `20260816000000`. |
+| `link_guest_appointments` | `updateMany`. Reusá `normalize_phone`: se queda como función SQL o se reescribe en TS, pero **una sola vez**. |
+| `has_role`, `has_permission` | `authz.server.ts`. |
+
+**Verificación:** `bunx prisma migrate deploy` corre limpio contra la base nueva
+y los tres triggers figuran en `pg_trigger`. Todavía no hay datos ni pantallas
+que probar: esta fase se verifica en la base y nada más.
+
+---
+
+### Fase 4 — Cargar los datos
+
+77 filas. Escribí `prisma/seed.ts` que lea lo exportado en la Fase 0.
+
+**Va después de la Fase 3 a propósito**: los tres triggers que se quedan en SQL
+tienen que estar puestos antes de cargar, porque dos de ellos participan de la
+carga. Y va antes de las pantallas porque una pantalla contra una base vacía no
+se puede verificar.
+
+**El orden importa, por las claves foráneas:**
+
+```
+1. usuarios (ya creados a mano en la Fase 2)
+2. profiles          ← usá el mapeo id_viejo → id_nuevo
+3. user_roles, user_permissions
+4. service_categories → services → service_media
+5. professionals → professional_services, professional_schedules
+6. product_categories → products → product_costs
+7. stock_movements
+8. appointments      ← client_id: mapeo, o NULL si es invitada
+9. client_notes
+```
+
+⚠️ **Los `id` de usuario cambian.** Toda columna que apunte a una cuenta
+(`profiles.id`, `appointments.client_id`, `professionals.user_id`,
+`user_roles.user_id`, `user_permissions.user_id`) tiene que pasar por el mapeo.
+Un `client_id` sin traducir apunta a nadie y el turno queda huérfano.
+
+⚠️ `appointments.client_id` **es NULL a propósito** en los turnos de invitadas.
+No lo trates como un dato faltante ni intentes completarlo.
+
+⚠️ Al insertar en `service_media`, el trigger `sync_service_cover` va a
+recalcular `image_url` solo. **Es lo correcto**: no seedees `services.image_url`
+a mano, dejá que lo escriba el trigger.
+
+⚠️ **`check_appointment_overlap` está vivo mientras seedeás** —lo creaste en la
+Fase 3— y no distingue una reserva nueva de una carga histórica. Si dos de los 4
+turnos se pisan en la base vieja (pasa: se cargaron antes de que existiera el
+trigger, en `20260813020000`), el seed falla ahí. La salida es
+`ALTER TABLE public.appointments DISABLE TRIGGER trg_check_appointment_overlap;`
+alrededor de esa carga, **y volver a habilitarlo al terminar**. Dejalo en el
+mismo script, no en dos comandos sueltos: un trigger deshabilitado y olvidado es
+la puerta abierta al sobreturno.
+
+⚠️ **`price` y `duration_minutes` vienen del export y se insertan tal cual.** En
+la base vieja los completaba `validate_appointment`, que en la Fase 5 pasa a
+código y por lo tanto **no existe como trigger acá**. Es justo lo que querés —
+son los precios del día que se reservó, congelados (trampa #6)— pero significa
+que si el export los trajo vacíos, se insertan vacíos y la columna es `NOT NULL`.
+Comprobalo antes de correr el seed, no después.
+
+**Verificación:** comparar los 15 conteos contra la tabla de la sección 1. Y
+abrir el sitio: las 6 fotos del catálogo tienen que verse. Y los 4 turnos tienen
+que conservar el precio que tenían, no el del catálogo de hoy.
+
+---
+
+### Fase 5 — Las 39 policies se vuelven código
+
+**La fase de la que depende que esto no termine en una filtración de datos.**
+
+Antes de empezar, corré la consulta a `pg_policies` de la sección 1 y compará
+contra las tablas de acá. Si difieren, gana la base — estas listas salen de
+reconstruir el historial de migraciones, que es exacto salvo que alguien haya
+tocado algo a mano en el SQL Editor.
+
+1. Escribí `src/lib/authz.server.ts` con las tres primitivas, que reemplazan a
+   `has_role()` y `has_permission()`:
+
+   ```ts
+   export async function getAccess(userId: string): Promise<Access>
+   export async function requirePermission(userId: string, p: Permission): Promise<void>
+   export async function requireAdmin(userId: string): Promise<void>
+   ```
+
+   **Respetá la regla que ya existe en la base**: el admin pasa siempre, sin
+   mirar la tabla de permisos. Está explicada en `src/hooks/useAccess.ts` y en
+   `src/lib/permissions.ts`; no la reinventes.
+
+2. Recorré las **35 policies de `public`** una por una. Acá está la lista
+   completa: nombre, operación, la regla que hace cumplir, y **la migración donde
+   está la versión vigente** — que es de la única de la que hay que copiar.
+
+   **Tildá cada renglón a medida que lo traducís.** Esta lista es el entregable
+   de la fase: si al final quedó alguna sin tildar, hay una puerta abierta.
+
+   #### `appointments` (5) — lo más sensible
+   | Op | Policy | Regla | Vigente en |
+   | --- | --- | --- | --- |
+   | SELECT | `read appointments` | `client_id = uid` **o** permiso `appointments` | `20260813070000` |
+   | UPDATE | `update appointments` | ídem, en `using` y en `with check` | `20260813070000` |
+   | INSERT | `staff create appointments` | permiso `appointments` | `20260813070000` |
+   | INSERT | `clients create own appointments` | `client_id = uid`. **La más vieja y sigue viva** | `20260805164122` |
+   | DELETE | `delete appointments` | permiso `appointments` | `20260813070000` |
+
+   #### `profiles` (3) — teléfonos
+   | Op | Policy | Regla | Vigente en |
+   | --- | --- | --- | --- |
+   | SELECT | `read profiles` | `uid = id` **o** `clients_contact` **o** `appointments` ← ver trampa #4 | `20260813070000` |
+   | UPDATE | `update profiles` | `uid = id` **o** `clients_contact` | `20260813070000` |
+   | INSERT | `own profile insert` | `uid = id` | `20260805164122` |
+
+   #### `client_notes` (3) — notas clínicas
+   | Op | Policy | Regla | Vigente en |
+   | --- | --- | --- | --- |
+   | SELECT | `read client notes` | `client_id = uid` **o** `clients_notes` | `20260814010000` |
+   | INSERT | `write client notes` | ídem | `20260814010000` |
+   | UPDATE | `update client notes` | ídem | `20260814010000` |
+
+   #### `user_roles` (3) y `user_permissions` (3) — el reparto de accesos
+   | Op | Policy | Regla | Vigente en |
+   | --- | --- | --- | --- |
+   | SELECT | `read own roles` | `user_id = uid` **o** rol admin | `20260805164122` |
+   | INSERT | `admin assigns non-admin roles` | rol admin **y** `role <> 'admin'` | `20260813070000` |
+   | DELETE | `admin removes non-admin roles` | ídem | `20260813070000` |
+   | SELECT | `read permissions` | `user_id = uid` **o** rol admin | `20260813070000` |
+   | INSERT | `admin grants permissions` | **rol** admin, no permiso | `20260813070000` |
+   | DELETE | `admin revokes permissions` | ídem | `20260813070000` |
+
+   ⚠️ Repartir accesos es del **rol** `admin` y no de un permiso, a propósito:
+   ningún permiso se amplía a sí mismo. No lo conviertas en `requirePermission`.
+
+   #### Catálogo — `services` (3), `service_media` (3), `service_categories` (1)
+   | Op | Policy | Regla | Vigente en |
+   | --- | --- | --- | --- |
+   | SELECT | `published services anon` | `is_published` | `20260805165527` |
+   | SELECT | `published services authenticated` | `is_published` **o** `catalog` | `20260813070000` |
+   | ALL | `manage services` | `catalog` | `20260813070000` |
+   | SELECT | `published service media anon` | el service del que cuelga está publicado | `20260818010000` |
+   | SELECT | `published service media authenticated` | `catalog` **o** el service está publicado | `20260818010000` |
+   | ALL | `manage service media` | `catalog` | `20260818010000` |
+   | ALL | `manage service categories` | `catalog` | `20260813070000` |
+
+   #### Equipo — `professionals` (3), `professional_services` (2), `professional_schedules` (2)
+   | Op | Policy | Regla | Vigente en |
+   | --- | --- | --- | --- |
+   | SELECT | `active professionals anon` | `is_active` | `20260805165527` |
+   | SELECT | `active professionals authenticated` | `is_active` **o** `team` | `20260813070000` |
+   | ALL | `manage professionals` | `team` | `20260813070000` |
+   | SELECT | `professional services public` | `true` — anon y authenticated | `20260805164122` |
+   | ALL | `manage professional services` | `team` | `20260813070000` |
+   | SELECT | `schedules public` | `true` — anon y authenticated | `20260805164122` |
+   | ALL | `manage schedules` | `team` | `20260813070000` |
+
+   #### Stock — `products` (1), `stock_movements` (1), `product_categories` (1), `product_costs` (1)
+   | Op | Policy | Regla | Vigente en |
+   | --- | --- | --- | --- |
+   | ALL | `manage products` | `stock` | `20260813070000` |
+   | ALL | `manage stock movements` | `stock` | `20260813070000` |
+   | ALL | `manage product categories` | `stock` ← **no `catalog`**, ver trampa #5 | `20260814000000` |
+   | ALL | `manage product costs` | `stock_costs` — costos de compra | `20260814010000` |
+
+   ⚠️ Ninguna de estas cuatro tiene policy de lectura pública: el stock no sale
+   en el sitio. Al pasarlas a código, la server function tiene que exigir el
+   permiso **también para leer**.
+
+   **Copiá esta tabla a un archivo aparte del repo** con una columna más: en qué
+   server function quedó cada chequeo. Es lo que va a permitir auditar después.
+
+3. Las **4** policies de `storage.objects` (`servicios lectura publica`,
+   `servicios alta`, `servicios cambio`, `servicios baja`) **se descartan**: el
+   bucket de Supabase Storage muere con la migración y las fotos nuevas ya van a
+   Cloudinary.
+
+4. **Los 3 triggers de autorización pasan a código** y hay que leerlos antes,
+   porque encierran decisiones que no son obvias:
+   - `enforce_appointment_client_scope` — qué puede tocar una clienta de su
+     propio turno. **Leé `20260819000000` antes**: esta función ya se rompió una
+     vez por reescribirla desde una copia vieja.
+   - `validate_appointment` — turno en el futuro, dentro del horario, con
+     precio congelado.
+   - `guard_professional_account_link` — sólo la dueña ata una ficha a una
+     cuenta. Sin esto, cualquiera con `team` se apunta una ficha ajena y lee los
+     teléfonos y las notas de esas clientas.
+
+**Verificación:** escribí tests. Es la única fase donde son obligatorios. Como
+mínimo, por cada tabla sensible: *"una clienta pide los turnos de otra y recibe
+vacío"*, *"una staff sin `clients_notes` pide una nota clínica y recibe null"*,
+*"una staff con `team` intenta atarse una ficha y recibe error"*.
+
+---
+
+### Fase 6 — Los datos, pantalla por pantalla
 
 Recién ahora se tocan las 30 `.from()`.
 
@@ -597,143 +957,17 @@ mantienen exactamente iguales** — hay invalidaciones cruzadas entre pantallas
 que se rompen en silencio si les cambiás el nombre. (Ver `admin-professionals`
 vs `admin-team-professionals`, que ya causó un bug.)
 
-**Verificación por pantalla:** entrar con la cuenta admin y con la staff, y
-comprobar que cada una ve lo que le toca.
+`requirePermission` ya existe: lo escribiste en la Fase 5. Si te encontrás
+inventándolo acá, estás haciendo las fases en el orden viejo.
 
----
+**Verificación por pantalla:** entrar con la cuenta admin **y** con la staff, y
+comprobar que cada una ve lo que le toca. Esto recién tiene sentido porque la
+base ya tiene los datos de la Fase 4: contra una base vacía las dos cuentas ven
+lo mismo —nada— y la verificación pasa sin comprobar nada.
 
-### Fase 4 — Las 61 policies se vuelven código
-
-**La fase de la que depende que esto no termine en una filtración de datos.**
-
-1. Escribí `src/lib/authz.server.ts` con las tres primitivas, que reemplazan a
-   `has_role()` y `has_permission()`:
-
-   ```ts
-   export async function getAccess(userId: string): Promise<Access>
-   export async function requirePermission(userId: string, p: Permission): Promise<void>
-   export async function requireAdmin(userId: string): Promise<void>
-   ```
-
-   **Respetá la regla que ya existe en la base**: el admin pasa siempre, sin
-   mirar la tabla de permisos. Está explicada en `src/hooks/useAccess.ts` y en
-   `src/lib/permissions.ts`; no la reinventes.
-
-2. Recorré las 61 policies **una por una** y anotá para cada una dónde quedó su
-   chequeo. La distribución:
-
-   | Tabla | Policies | Qué protegen |
-   | --- | --- | --- |
-   | `appointments` | 9 | Lo más sensible: una clienta ve **sólo** sus turnos |
-   | `services` | 6 | Público lee sólo publicados; escribe `catalog` |
-   | `professionals` | 6 | Público lee activas; escribe `team` |
-   | `profiles` | 5 | Teléfonos. Lee `clients_contact` **o** `appointments` |
-   | `user_roles` | 3 | Cada uno lee el suyo; escribe sólo admin |
-   | `user_permissions` | 3 | Ídem. **Ningún permiso se amplía a sí mismo** |
-   | `client_notes` | 3 | **Notas clínicas.** Permiso `clients_notes` |
-   | `product_costs` | 1 | Costos de compra. Permiso `stock_costs` |
-   | `professional_services` | 3 | `team` |
-   | `professional_schedules` | 3 | `team` |
-   | `product_categories` | 3 | `stock` (ojo: **no** `catalog`, ver 20260814000000) |
-   | `service_categories` | 2 | `catalog` |
-   | `service_media` | 2 | Heredan de `services` |
-   | `products` | 2 | `stock` |
-   | `stock_movements` | 2 | `stock` |
-
-   **Escribí esa tabla de traducción en un archivo y dejala en el repo.** Es lo
-   que va a permitir auditar después si algo quedó sin cubrir.
-
-3. Las 3 policies de `storage.objects` **se descartan**: el bucket de Supabase
-   Storage muere con la migración y las fotos nuevas ya van a Cloudinary.
-
-4. **Los 3 triggers de autorización pasan a código** y hay que leerlos antes,
-   porque encierran decisiones que no son obvias:
-   - `enforce_appointment_client_scope` — qué puede tocar una clienta de su
-     propio turno. **Leé `20260819000000` antes**: esta función ya se rompió una
-     vez por reescribirla desde una copia vieja.
-   - `validate_appointment` — turno en el futuro, dentro del horario, con
-     precio congelado.
-   - `guard_professional_account_link` — sólo la dueña ata una ficha a una
-     cuenta. Sin esto, cualquiera con `team` se apunta una ficha ajena y lee los
-     teléfonos y las notas de esas clientas.
-
-**Verificación:** escribí tests. Es la única fase donde son obligatorios. Como
-mínimo, por cada tabla sensible: *"una clienta pide los turnos de otra y recibe
-vacío"*, *"una staff sin `clients_notes` pide una nota clínica y recibe null"*,
-*"una staff con `team` intenta atarse una ficha y recibe error"*.
-
----
-
-### Fase 5 — Triggers y funciones: qué sobrevive en SQL
-
-**No traduzcas los 15 triggers a código.** Tres tienen que quedarse en la base, y
-el motivo importa.
-
-#### Se quedan como SQL (van en una migración de Prisma con `--create-only`)
-
-| Trigger / función | Por qué NO puede ir a código |
-| --- | --- |
-| `check_appointment_overlap` | **Condición de carrera.** "Consultar si el horario está libre" y después "insertar" son dos operaciones: entre una y otra entra otra reserva. La base lo resuelve dentro de la misma transacción. En código es un bug que aparece justo el sábado a la mañana. |
-| `apply_stock_movement` | Ídem: el saldo de stock se actualiza atómicamente con el movimiento. |
-| `sync_service_cover` | Mantiene `services.image_url` igual a la primera imagen de la galería. Es un invariante de datos, no una regla de negocio: vale aunque alguien escriba por fuera de la app. |
-
-Prisma soporta SQL a mano: `npx prisma migrate dev --create-only` y pegás el
-cuerpo. Copialos de `20260813020000`, `20260805165256` y `20260818010000`.
-
-#### Se vuelven código
-
-| Origen | Destino |
-| --- | --- |
-| 7 × `update_updated_at_column` | `@updatedAt` de Prisma (Fase 1) |
-| `handle_new_user`, `claim_guest_appointments` | Hooks de better-auth (Fase 2) |
-| `enforce_appointment_client_scope`, `validate_appointment`, `guard_professional_account_link` | `authz.server.ts` (Fase 4) |
-
-#### Las 8 RPC
-
-| RPC | Reemplazo |
-| --- | --- |
-| `professional_busy_slots` | **Dejala en SQL.** Es una consulta con generación de series; en Prisma queda peor. `$queryRaw`. |
-| `my_agenda` | Server function con Prisma. ⚠️ Hoy la seguridad la da que **no toma parámetro** de profesional: el alcance sale de `auth.uid()`. **Mantené eso**: sacá el id de la sesión, nunca de un argumento. |
-| `my_professional_id` | Consulta trivial. Ojo con `is_active`. |
-| `team_member_ids` | Consulta trivial. |
-| `rename_service_category`, `rename_product_category` | `prisma.$transaction`. El renombrado tiene que ser atómico — ver `20260816000000`. |
-| `link_guest_appointments` | `updateMany`. Reusá `normalize_phone`: se queda como función SQL o se reescribe en TS, pero **una sola vez**. |
-| `has_role`, `has_permission` | `authz.server.ts`. |
-
----
-
-### Fase 6 — Cargar los datos
-
-77 filas. Escribí `prisma/seed.ts` que lea los JSON de la Fase 0.
-
-**El orden importa, por las claves foráneas:**
-
-```
-1. usuarios (ya creados a mano en la Fase 2)
-2. profiles          ← usá el mapeo id_viejo → id_nuevo
-3. user_roles, user_permissions
-4. service_categories → services → service_media
-5. professionals → professional_services, professional_schedules
-6. product_categories → products → product_costs
-7. stock_movements
-8. appointments      ← client_id: mapeo, o NULL si es invitada
-9. client_notes
-```
-
-⚠️ **Los `id` de usuario cambian.** Toda columna que apunte a una cuenta
-(`profiles.id`, `appointments.client_id`, `professionals.user_id`,
-`user_roles.user_id`, `user_permissions.user_id`) tiene que pasar por el mapeo.
-Un `client_id` sin traducir apunta a nadie y el turno queda huérfano.
-
-⚠️ `appointments.client_id` **es NULL a propósito** en los turnos de invitadas.
-No lo trates como un dato faltante ni intentes completarlo.
-
-⚠️ Al insertar en `service_media`, el trigger `sync_service_cover` va a
-recalcular `image_url` solo. **Es lo correcto**: no seedees `services.image_url`
-a mano, dejá que lo escriba el trigger.
-
-**Verificación:** comparar los 15 conteos contra la tabla de la sección 1. Y
-abrir el sitio: las 6 fotos del catálogo tienen que verse.
+**Verificación final de la fase, una sola vez:** construí y buscá
+`@prisma/client` en el bundle del navegador. No tiene que aparecer. El lint de la
+Fase 1 no ve los imports indirectos; esto sí.
 
 ---
 
@@ -792,8 +1026,9 @@ funcionando.**
 
 Cosas que parecen obvias y están mal. Cada una salió de leer el código.
 
-1. **`auth.uid()` desaparece y no tiene reemplazo directo.** Aparece en las 61
-   policies y en 6 funciones. En código, el equivalente es `context.userId`, y la
+1. **`auth.uid()` desaparece y no tiene reemplazo directo.** Aparece en casi
+   todas las policies y en 6 funciones. En código, el equivalente es
+   `context.userId`, y la
    diferencia crítica es que `auth.uid()` **no se puede falsear desde el
    navegador** y un parámetro sí. Cada vez que traduzcas un `auth.uid()`, el
    valor tiene que salir de la sesión del servidor. **Nunca de un argumento de la
@@ -850,11 +1085,37 @@ Cosas que parecen obvias y están mal. Cada una salió de leer el código.
     no existe.
 
 12. **El servicio `migrate` usa la imagen de producción, que hoy no trae la CLI
-    de Prisma.** `npx prisma migrate deploy` necesita el paquete `prisma`
-    —el de desarrollo, no `@prisma/client`— y la carpeta `prisma/` con el
-    esquema y las migraciones. La etapa de runtime actual no copia ninguno de
-    los dos. O los copiás (ver sección 3), o el servicio `migrate` usa la etapa
-    `deps` en vez de la final.
+    de Prisma.** `prisma migrate deploy` necesita el paquete `prisma` —el de
+    desarrollo, no `@prisma/client`— y la carpeta `prisma/` con el esquema y las
+    migraciones. La etapa de runtime actual no copia ninguno de los dos, y
+    **`npx` tampoco es la salida**: sin la dependencia instalada se la baja de
+    internet en cada arranque. Hay que copiar las dos cosas (sección 3).
+
+    ⚠️ Y la etapa `deps` **no es un plan B**: sólo copia `package.json`,
+    `bun.lock` y `bunfig.toml`. No tiene la carpeta `prisma/`, así que
+    `migrate deploy` no encuentra qué aplicar. Si querés una etapa aparte, hay
+    que armarla, no reusar ésa.
+
+13. **En el contenedor de desarrollo no hay `npx`.** La etapa `deps` es
+    `oven/bun:1-alpine` y las imágenes de bun no traen Node ni npm. Es `bunx`.
+    Está explicado en la sección 3, con las dos cosas que hay que resolver ahí
+    mismo (la CLI de Prisma bajo bun, y musl).
+
+14. **El bloque nuevo de `no-restricted-imports` pisa al que ya está.** En flat
+    config la regla no se suma, se reemplaza. Sin repetir la entrada de
+    `server-only`, las pantallas ganan una protección y pierden otra sin que
+    nadie se entere. Ver Fase 1, punto 6.
+
+15. **`auth-attacher.ts` no aparece buscando `.from(` ni `.rpc(`**, y es el que
+    hace que las server functions reciban la sesión. Hoy la manda por header;
+    better-auth la manda por cookie. Si queda, cada llamada al servidor sigue
+    hablando con Supabase. Ver Fase 2, punto 4.
+
+16. **Contar los `CREATE POLICY` de las migraciones da 61 y es un número
+    inventado.** 26 fueron dropeadas y recreadas. Vivas hay 39. Peor que el
+    número: buscar 61 obliga a abrir migraciones viejas, que es exactamente cómo
+    se produjo el accidente de la trampa #10. La lista real está en la Fase 5 y
+    la verdad está en `pg_policies`.
 
 ---
 
@@ -899,7 +1160,14 @@ Antes de dar la migración por terminada, con cada rol:
       no aparece hasta la primera consulta real
 - [ ] En el host **no hay** Node, Postgres ni Prisma instalados, y todo se puede
       hacer igual
-- [ ] Los comandos de Prisma quedaron escritos en el `README.md`
+- [ ] `bunx prisma migrate dev` corre adentro del contenedor de desarrollo
+- [ ] Los comandos de Prisma quedaron escritos en el `README.md`, con `bunx`
+
+**Las policies** — la fase de la que depende que no se filtren datos
+- [ ] La tabla de traducción de la Fase 5 está en el repo, con las **35** de
+      `public` tildadas y la server function donde quedó cada chequeo
+- [ ] `@prisma/client` **no** aparece en el bundle del navegador
+- [ ] `auth-attacher.ts` está borrado y su línea sacada de `src/start.ts`
 
 **Sistema**
 - [ ] `POST /api/recordatorios` sin secreto → 401
