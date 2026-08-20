@@ -682,7 +682,57 @@ aparece en `git status`.
 
 ---
 
-### Fase 1 — Postgres en Docker y el esquema en Prisma
+### Fase 1 — Postgres en Docker y el esquema en Prisma 🟡 A MEDIAS
+
+> **Estado al 20/8/2026.** El esquema está escrito y validado, y el SQL de la
+> migración inicial está generado. **Nada de eso se aplicó todavía a una base
+> real**, porque en la máquina donde se trabajó no se pudo instalar Docker y el
+> Postgres del host pide una contraseña que no está.
+>
+> | | |
+> | --- | --- |
+> | ✅ `prisma/schema.prisma` | 16 modelos, 4 enums. `prisma validate` pasa |
+> | ✅ `prisma/migrations/20260820000000_esquema_inicial/` | 286 líneas: 16 tablas, 9 índices únicos, 15 FK |
+> | ⬜ Aplicarlo a una base | **Pendiente. Es el primer paso en la máquina con Docker.** |
+> | ⬜ `docker-compose.yml` con `db`, `docker-compose.dev.yml`, `Dockerfile` | Pendiente |
+>
+> #### 🔴 Lo primero en la máquina con Docker, antes que nada
+>
+> ```bash
+> bun add -d prisma && bun add @prisma/client
+> ```
+>
+> **No lo corras con npm.** El repo tiene dos lockfiles y el `Dockerfile` usa
+> `bun install --frozen-lockfile`: si `package.json` y `bun.lock` no coinciden,
+> el build falla. Por eso desde la máquina sin bun **no se tocó `package.json`**
+> —el Prisma que generó todo esto se corrió con `npx prisma@6`, que no instala
+> nada en el proyecto— y el repo quedó consistente.
+>
+> Después:
+>
+> ```bash
+> docker compose up -d db
+> bunx prisma migrate deploy      # aplica la migración ya generada
+> bunx prisma generate
+> ```
+>
+> #### Y cuando tengas la contraseña de la base de Supabase
+>
+> ```bash
+> bunx prisma db pull --schema /tmp/comparar.prisma   # contra una COPIA
+> ```
+>
+> y compará contra `prisma/schema.prisma`. El esquema se armó del OpenAPI de
+> PostgREST más las migraciones, que juntas son fieles, pero **no detectan nada
+> que se haya tocado a mano en el SQL Editor.** Es la única forma de descartarlo.
+>
+> #### Queda anotado para la Fase 3
+>
+> El `CHECK (client_id IS NOT NULL OR guest_name <> '')` de `appointments`
+> —constraint `appointments_identifies_someone`, de `20260816010000`— **Prisma no
+> lo puede expresar** en el esquema. Va en la migración a mano de la Fase 3,
+> junto con los tres triggers. Sin él, se puede grabar un turno que no identifica
+> a nadie.
 
 1. Agregá el servicio al `docker-compose.yml` (ya existe, con el servicio `app`
    configurado; no lo reescribas, sumale uno):
