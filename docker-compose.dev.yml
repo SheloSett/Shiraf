@@ -1,0 +1,66 @@
+# Shiraf — desarrollo, también en contenedor.
+#
+# El requisito es que en la máquina de trabajo lo único instalado sea Docker: ni
+# Node, ni Postgres, ni la CLI de Prisma. Con esto se cumple.
+#
+#     docker compose -f docker-compose.dev.yml up
+#
+# El sitio queda en http://localhost:8081 y recarga solo al editar en el host.
+
+services:
+  db:
+    image: postgres:17
+    container_name: shiraf-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shiraf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shiraf}
+      POSTGRES_DB: shiraf
+    volumes:
+      - shiraf-pgdata-dev:/var/lib/postgresql/data
+    # Publicado para poder abrir Prisma Studio o un cliente desde el host.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shiraf -d shiraf"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # La etapa con node_modules, sin el build de producción. Es oven/bun.
+      target: deps
+    container_name: shiraf-app-dev
+    # --host 0.0.0.0 es obligatorio: sin eso Vite escucha sólo en el loopback
+    # DEL CONTENEDOR y desde el navegador del host no se llega. El síntoma es
+    # una pestaña que no carga, sin ningún error en los logs.
+    command: ["bun", "run", "dev", "--host", "0.0.0.0"]
+    volumes:
+      # El código, en vivo.
+      - .:/app
+      # 🔴 Este volumen anónimo NO es un detalle. Sin él, el bind mount de arriba
+      # tapa el node_modules del contenedor con el del host — que en Windows
+      # tiene los binarios de rollup y esbuild compilados para Windows. La app no
+      # arranca y el error no dice eso en ningún lado.
+      - /app/node_modules
+    ports:
+      - "8081:8081"
+    env_file: .env
+    environment:
+      # ⚠️ Pisa lo que diga el .env a propósito. Adentro de la red de compose el
+      # host de la base es `db`; desde la máquina es localhost. Tener las dos
+      # cosas escritas en el mismo .env es la fuente del error más frecuente de
+      # todo el armado.
+      DATABASE_URL: postgresql://shiraf:${POSTGRES_PASSWORD:-shiraf}@db:5432/shiraf
+    depends_on:
+      db:
+        condition: service_healthy
+    # Sin read_only acá: el de producción lo tiene y hay que dejarlo, pero en
+    # desarrollo Vite escribe su caché y lo necesita.
+
+volumes:
+  shiraf-pgdata-dev:

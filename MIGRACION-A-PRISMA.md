@@ -693,8 +693,11 @@ aparece en `git status`.
 > | --- | --- |
 > | ✅ `prisma/schema.prisma` | 16 modelos, 4 enums. `prisma validate` pasa |
 > | ✅ `prisma/migrations/20260820000000_esquema_inicial/` | 286 líneas: 16 tablas, 9 índices únicos, 15 FK |
+> | ✅ `docker-compose.yml` | `db` → `migrate` → `app`, más `pg-backup`. YAML verificado |
+> | ✅ `docker-compose.dev.yml` | Con el volumen anónimo y el `--host 0.0.0.0` |
+> | ✅ `Dockerfile` | Runtime a `node:22-slim`, las 4 copias de Prisma, sin Supabase |
+> | ✅ `.env.example` | Las 4 variables nuevas, y las de Supabase marcadas como de salida |
 > | ⬜ Aplicarlo a una base | **Pendiente. Es el primer paso en la máquina con Docker.** |
-> | ⬜ `docker-compose.yml` con `db`, `docker-compose.dev.yml`, `Dockerfile` | Pendiente |
 >
 > #### 🔴 Lo primero en la máquina con Docker, antes que nada
 >
@@ -955,7 +958,17 @@ turnos de invitada **no** aparecen en el historial.
 
 ---
 
-### Fase 3 — Triggers y funciones: qué sobrevive en SQL
+### Fase 3 — Triggers y funciones: qué sobrevive en SQL 🟡 A MEDIAS
+
+> **Estado al 20/8/2026.** La migración a mano está escrita, sin aplicar:
+> `prisma/migrations/20260820000001_reglas_que_se_quedan_en_sql/`.
+>
+> Lleva los tres triggers y el `CHECK` de `appointments`. Ninguna de las tres
+> funciones usaba `auth.uid()` ni `has_permission()`, así que se copiaron casi
+> textuales; lo único que se sacó fue `SECURITY DEFINER`, que estaba para saltear
+> la RLS y acá no hay RLS que saltear.
+>
+> **Falta todavía**: las 8 RPC de más abajo, que son la otra mitad de la fase.
 
 **No traduzcas los 15 triggers a código.** Tres tienen que quedarse en la base, y
 el motivo importa.

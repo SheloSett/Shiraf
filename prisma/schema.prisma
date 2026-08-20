@@ -22,11 +22,23 @@
 
 generator client {
   provider = "prisma-client-js"
-  // Dos targets a propósito: "native" para trabajar en Windows, y el de musl
-  // para la imagen de desarrollo, que es alpine (ver MIGRACION-A-PRISMA.md,
-  // sección 3). La imagen de producción es node:22-slim, o sea debian, y esa
-  // la cubre "native" cuando se construye adentro del contenedor.
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+
+  // 🔴 LOS TRES HACEN FALTA. Prisma no es sólo JavaScript: lleva un motor
+  // nativo, y hay que bajar uno por cada sistema donde vaya a correr. Si falta
+  // el que corresponde, la imagen se construye igual y explota en la PRIMERA
+  // CONSULTA, en producción.
+  //
+  //   native                     · Windows, para trabajar en la máquina de casa
+  //   linux-musl-openssl-3.0.x   · alpine — las etapas `deps` y `build` del
+  //                                Dockerfile son oven/bun:1-alpine, y ahí
+  //                                corre `prisma generate`
+  //   debian-openssl-3.0.x       · node:22-slim (bookworm) — la etapa `runtime`,
+  //                                que es DONDE CORRE LA APP DE VERDAD
+  //
+  // El tercero es el que más fácil se olvida: `prisma generate` corre en alpine,
+  // donde "native" resuelve a musl, así que sin declararlo explícitamente el
+  // motor de debian nunca se baja y el que viaja en la imagen no sirve.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
