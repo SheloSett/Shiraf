@@ -5,11 +5,21 @@
 > app funcionando. Hay una sección de trampas al final que explica por qué
 > varias cosas que parecen obvias están mal.
 >
-> Escrito el 20/8/2026, contra el estado de la rama
-> `panel-solo-para-el-equipo` en el commit `d63787b`, y **revisado el mismo día**
-> contra el repo: se corrigió el inventario de policies (eran conteos del
-> historial de migraciones, no de la base), el orden de las fases, y seis cosas
-> del armado de Docker que no funcionaban como estaban escritas.
+> Escrito el 20/8/2026 contra la rama `panel-solo-para-el-equipo`, y **revisado
+> dos veces el mismo día**:
+>
+> 1. Contra el repo: se corrigió el inventario de policies (eran conteos del
+>    historial de migraciones, no de la base), el orden de las fases, y seis
+>    cosas del armado de Docker que no funcionaban como estaban escritas.
+> 2. Contra **`Ecommerce_mm`**, el otro proyecto de la dueña. La versión
+>    original proponía una arquitectura distinta de la que ella ya mantiene.
+>    **Ahora Shiraf se organiza como ese proyecto**: las mismas cuatro carpetas,
+>    el mismo auth con JWT, el mismo contenedor de backups. Eso cambió la
+>    sección 2, la Fase 2 y la Fase 7.
+>
+> **Ese otro proyecto es material de lectura obligatoria**, no una referencia
+> suelta: varias partes de este plan dicen "andá a copiar de tal archivo" en vez
+> de explicar cómo se hace.
 
 ---
 
@@ -123,24 +133,76 @@ delicado de todos y el costo es un mensaje de WhatsApp a dos clientas.
 
 ## 2. La arquitectura de destino
 
-### No hace falta un backend separado
+### La forma la marca `Ecommerce_mm`, no este documento
 
-**Esto es lo más importante de toda la sección y lo más fácil de equivocar.** El
-primer impulso es levantar un Express o un Nest al lado. **No lo hagas.**
+**Leé esto antes que nada, porque define todo lo demás y una versión anterior de
+este archivo decía lo contrario.**
 
-La app ya es TanStack Start con SSR, y **ya tiene una capa de servidor**:
-`createServerFn`. Hay tres archivos que la usan hoy y funcionan:
+La dueña ya tiene otro proyecto andando —`Ecommerce_mm`, en la carpeta de al
+lado— con Express + Prisma, y lo mantiene ella. **Shiraf se organiza igual.** No
+es una preferencia estética: un proyecto que se entiende a los seis meses vale
+más que uno técnicamente más prolijo pero ajeno.
+
+Lo que se copia de ahí es **la separación en capas**, que es lo que hace que ese
+backend se lea fácil:
+
+| En `Ecommerce_mm` | Qué hace | En Shiraf |
+| --- | --- | --- |
+| `routes/x.routes.js` | Flaco. Dice **quién puede llamar qué** y nada más | `server/routes/x.routes.ts` |
+| `controllers/x.controller.js` | La lógica y Prisma | `server/controllers/x.controller.ts` |
+| `middleware/auth.middleware.js` | Verifica el JWT, pone `req.user` | `server/middleware/auth.middleware.ts` |
+| `services/email.service.js` | Lo transversal: mails, cron | `server/services/` |
+
+Mirá `backend/src/routes/category.routes.js`: son 20 líneas, ningún `if`, ningún
+Prisma. Sólo el mapeo y los middlewares. **Ese es el patrón a repetir.**
+
+### Lo que NO se copia: partirlo en dos procesos
+
+`Ecommerce_mm` tiene `backend/` y `frontend/` separados porque su frontend es
+Vite + React + react-router: un SPA que no tiene servidor propio, así que
+necesita un Express al lado.
+
+**Shiraf no está en esa situación.** Es TanStack Start con SSR, o sea que **ya
+trae su propio servidor adentro** — hay tres archivos usándolo hoy y funcionan:
 
 - `src/lib/team.functions.ts` — alta y baja de empleadas
 - `src/lib/cloudinary.functions.ts` — firma de subidas
 - `src/lib/notifications.functions.ts` — envío de mails
 
-Esos archivos **son el backend**. La migración no agrega un servicio: mueve el
-acceso a datos desde "el navegador le pega a PostgREST" hacia "el navegador
-llama una server function que usa Prisma".
+Sumarle un Express al lado serían dos servidores haciendo el trabajo de uno, más
+CORS, más un segundo contenedor, más un segundo deploy. Y partirlo de verdad
+—como el ecommerce— obligaría a sacarle el SSR y el ruteo a TanStack Start y
+rehacerlo con react-router: es rehacer el frontend, no mover archivos.
 
-Un segundo servicio te obligaría a inventar autenticación entre servicios, CORS,
-un segundo contenedor y un segundo deploy, para no ganar nada.
+**Entonces: las mismas cuatro carpetas, un solo proceso.** El layout de destino:
+
+```
+src/
+  routes/                    ← las pantallas (ya existe, no se toca)
+  components/                ← (ya existe, no se toca)
+  server/                    ← TODO lo nuevo vive acá
+    routes/                  ← createServerFn + middleware. Quién llama qué.
+      turnos.routes.ts
+      catalogo.routes.ts
+      equipo.routes.ts
+    controllers/             ← la lógica y Prisma
+      turnos.controller.ts
+      catalogo.controller.ts
+    middleware/
+      auth.middleware.ts     ← verifica el JWT → context.userId
+      permission.middleware.ts  ← el equivalente de adminMiddleware
+    services/
+      email.service.ts
+      reminders.service.ts
+    db.ts                    ← el PrismaClient, uno solo
+  prisma/
+```
+
+La única pieza del ecommerce que no tiene equivalente directo es el `index.js`
+que monta los routers: acá eso lo hace TanStack. Lo que sí hay que ubicar a mano
+es **el limitador de intentos de login**, que en el ecommerce vive en
+`loginLimiter.js` — en Shiraf va en `src/server.ts`, donde ya se interceptan
+paths (ver Fase 2).
 
 ### El diagrama, antes y después
 
@@ -172,9 +234,12 @@ Pero eso vale **sólo si se respeta una regla, sin excepciones**:
 
 > ### 🔴 LA REGLA
 > **Ningún archivo de `src/routes/` ni de `src/components/` importa Prisma,
-> nunca.** El acceso a la base vive únicamente en archivos `*.functions.ts` y
-> `*.server.ts`, y toda función exportada de ahí empieza verificando la sesión y
-> el permiso.
+> nunca.** El acceso a la base vive únicamente bajo `src/server/`, y toda función
+> que las pantallas puedan llamar empieza verificando la sesión y el permiso.
+>
+> Es la misma regla que en `Ecommerce_mm`: el frontend le habla al backend, nunca
+> a la base. Allá la separación te la garantiza que son dos procesos distintos.
+> Acá, que es uno solo, **te la tiene que garantizar la disciplina y el lint.**
 
 En la Fase 1 se instala un lint que lo hace cumplir. No es opcional.
 
@@ -183,27 +248,81 @@ En la Fase 1 se instala un lint que lo hace cumplir. No es opcional.
 | Pieza | Elección | Por qué |
 | --- | --- | --- |
 | Base | **Postgres 17** en Docker | Lo que ya corre en Supabase; evita sorpresas de versión |
-| ORM | **Prisma** | Lo pedido |
+| ORM | **Prisma** | Lo pedido, y lo que usa `Ecommerce_mm` |
 | API | **`createServerFn`** de TanStack Start | Ya está en el proyecto |
-| Auth | **better-auth** | Adaptador Prisma oficial, email+contraseña, verificación y recuperación incluidas, agnóstico del framework |
+| Auth | **JWT propio**: `jsonwebtoken` + `bcryptjs` | Es el de `Ecommerce_mm`. Copiar un mecanismo probado y propio, en vez de sumar una librería que no se usa en ningún otro lado |
 | Mails | **Resend** (sin cambios) | Ya está escrito en `notifications.functions.ts` |
 | Imágenes | **Cloudinary** (sin cambios) | Ya migrado, no depende de Supabase |
+| Backups | **`prodrigestivill/postgres-backup-local`** | Ya corre en `Ecommerce_mm` con rotación configurada. No escribir un cron a mano |
 
-### Sobre better-auth
+### Sobre el auth: se copia el de `Ecommerce_mm`
 
-Se elige por descarte:
+**No hay que diseñar nada acá. Está resuelto en el otro proyecto y hay que ir a
+copiarlo.** Los archivos a leer, en este orden:
 
-- **Auth.js/NextAuth**: pensado para Next; fuera de Next es incómodo.
-- **Lucia**: dejó de mantenerse como librería, hoy es material de lectura.
-- **A mano** (argon2 + cookies): es más código del que parece — verificación de
-  mail, recuperación, expiración, rotación. Es exactamente donde no conviene
-  improvisar.
-- **better-auth**: hace las cuatro cosas, tiene adaptador Prisma y se monta como
-  un handler sobre cualquier servidor.
+| Archivo de `Ecommerce_mm` | Qué sacar de ahí |
+| --- | --- |
+| `backend/src/middleware/auth.middleware.js` | `authMiddleware` (verifica el JWT), `adminMiddleware`, `customerMiddleware` |
+| `backend/src/routes/customer.routes.js` | El mapa completo: `register`, `login`, `forgot-password`, `reset-password`, `/me`, `/me/password` |
+| `backend/src/controllers/customer.controller.js` | `register`, `customerLogin`, `forgotPassword` (línea 621), `resetPassword` (652) |
+| `backend/src/middleware/loginLimiter.js` | El limitador de intentos |
 
-Se monta en `src/server.ts`, **con el mismo patrón que ya usa
-`/api/recordatorios`**: interceptar el path antes de que TanStack lo tome. Andá
-a mirar ese archivo, ya está resuelto ahí.
+El mecanismo de recuperación de contraseña, que es lo único delicado, ya está
+bien hecho ahí y se copia tal cual:
+
+```js
+const token = crypto.randomBytes(32).toString("hex");
+// se guarda en resetToken + resetTokenExpiry (1 hora)
+// al usarlo: where { resetToken, resetTokenExpiry: { gt: new Date() } }
+// y se limpian los dos campos
+```
+
+Token aleatorio, con vencimiento, de un solo uso, que se borra al usarse. **No
+lo mejores, copialo.**
+
+#### 🔴 Las dos cosas que Shiraf necesita y el ecommerce no tiene
+
+1. **Confirmación de mail al registrarse.** En el ecommerce el registro crea la
+   cuenta y listo. En Shiraf **no alcanza**, y no por prolijidad: al confirmar el
+   mail se dispara `claim_guest_appointments`, que le pasa a la clienta nueva los
+   turnos que había sacado como invitada, buscándolos **por mail**. Sin
+   verificar, cualquiera se registra con el mail de otra y ve sus turnos: nombre,
+   teléfono y tratamientos.
+
+   El mecanismo es **el mismo que el de `forgotPassword`** —token aleatorio con
+   vencimiento— con otro nombre de columna. No es territorio nuevo.
+
+   Si en algún momento se decide sacar la confirmación, **entonces hay que sacar
+   también el vínculo automático de los turnos de invitada** y pasarlo a algo que
+   haga el centro a mano. Van juntos.
+
+2. **Permisos que cambian sin esperar.** El ecommerce mete `permissions` adentro
+   del JWT, que dura 7 días. Ahí no molesta. En Shiraf sí: la dueña tilda un
+   acceso en el panel y espera que la empleada lo tenga **ya**, no la semana que
+   viene.
+
+   Entonces: **el token lleva sólo el `id`** (y el rol, que casi no cambia). Los
+   permisos se leen de la base en cada pedido, que es lo que hace hoy
+   `has_permission()`. Es una consulta trivial sobre una tabla de 6 filas.
+
+#### Dónde se monta
+
+Las rutas de auth van como **paths HTTP interceptados en `src/server.ts`**, no
+como server functions: es el mismo patrón que ya usa `/api/recordatorios` —andá a
+mirar ese archivo, está resuelto ahí— y es lo que deja poner el rate limiter
+adelante, como en el ecommerce.
+
+```
+POST /api/auth/register          POST /api/auth/forgot-password
+POST /api/auth/login             POST /api/auth/reset-password
+POST /api/auth/logout            GET  /api/auth/verify
+```
+
+⚠️ **El token va en una cookie `httpOnly`, no en `localStorage`.** El ecommerce
+lo manda en el body y el frontend lo guarda, que es lo normal en un SPA. Shiraf
+tiene SSR: el servidor necesita leer la sesión para renderizar, y a
+`localStorage` no llega. Con cookie funciona en los dos lados y además el
+navegador la manda sola.
 
 ---
 
@@ -232,6 +351,40 @@ imagen fija la versión y deja de depender de qué tiene puesto cada máquina.
 | `db` | `postgres:17` | La base. Volumen nombrado, sólo loopback. |
 | `migrate` | la del proyecto | Corre `prisma migrate deploy` **una vez** y termina. |
 | `app` | la del proyecto | El sitio. |
+| `pg-backup` | `prodrigestivill/postgres-backup-local` | El backup diario. **Copiado de `Ecommerce_mm`.** |
+
+### El backup ya está resuelto en el otro proyecto
+
+No escribas un cron con `pg_dump` a mano: `Ecommerce_mm/docker-compose.yml` tiene
+un servicio que lo hace, con rotación configurada y probada. Se copia con los
+nombres cambiados:
+
+```yaml
+  pg-backup:
+    image: prodrigestivill/postgres-backup-local:17
+    container_name: shiraf-backup
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: shiraf
+      POSTGRES_USER: shiraf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+      SCHEDULE: "59 23 * * *"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ./backups:/backups
+```
+
+⚠️ La etiqueta de la imagen tiene que coincidir con la versión de Postgres: el
+ecommerce usa `:15` porque su base es 15. Acá es **17**.
+
+⚠️ Y vale lo mismo que allá: **`./backups` vive en el mismo disco que la base.**
+Eso protege de un borrado accidental, no de que se muera el disco. Hace falta una
+copia afuera del VPS.
 
 El servicio `migrate` es la pieza que suele faltar. Que la app aplique
 migraciones al arrancar está mal cuando hay más de una réplica —dos procesos
@@ -430,7 +583,16 @@ Perder tiempo acá es el error más caro, porque además rompe cosas que hoy and
 - `src/lib/storage.ts` — sólo hay que sacar la rama de Supabase Storage
   (`servicePathFromUrl` y el `.remove()`). La de Cloudinary queda.
 - `src/lib/reminders.server.ts` — cambia únicamente la consulta del medio; la
-  lógica de husos horarios y la marca `reminded_at` quedan igual.
+  lógica de husos horarios y la marca `reminded_at` quedan igual. **Al final se
+  muda a `src/server/services/reminders.service.ts`**, que es donde vive en el
+  ecommerce (`services/cron.service.js`), pero eso es mover un archivo: hacelo en
+  un commit aparte, no mezclado con un cambio de lógica.
+
+> ### ⚠️ Mudar archivos y cambiarles el contenido, nunca en el mismo commit
+> Los tres `*.functions.ts` de hoy terminan bajo `src/server/`, y varios `lib/`
+> también. Es tentador aprovechar el viaje y reescribirlos de paso. **No lo
+> hagas**: si algo se rompe, un diff que mueve y edita a la vez no deja ver qué
+> lo rompió. Primero mover, commit, después cambiar.
 
 ---
 
@@ -570,7 +732,7 @@ git checkout -b migracion-prisma
      `user_roles.user_id`, `user_permissions.user_id`) vuelven como `String`
      sueltos, con un warning de "referencia a una tabla fuera del esquema". **No
      busques un modelo `users` para borrar: no está.** Lo que hay que hacer es
-     apuntarlas a la tabla de usuarios de better-auth, que se crea en la Fase 2.
+     apuntarlas a la tabla de usuarios propia, que se crea en la Fase 2.
    - Poné `@updatedAt` en las 7 columnas `updated_at`. **Eso reemplaza los 7
      triggers `update_updated_at_column` de una.**
    - Revisá que los enums quedaron como enums de Postgres y no como texto.
@@ -585,8 +747,8 @@ git checkout -b migracion-prisma
      rules: {
        "no-restricted-imports": ["error", {
          paths: [
-           { name: "@prisma/client", message: "Prisma sólo en *.functions.ts / *.server.ts. Ver MIGRACION-A-PRISMA.md, LA REGLA." },
-           { name: "@/lib/db", message: "Idem: la base no se toca desde una pantalla." },
+           { name: "@prisma/client", message: "Prisma sólo bajo src/server/. Ver MIGRACION-A-PRISMA.md, LA REGLA." },
+           { name: "@/server/db", message: "Idem: la base no se toca desde una pantalla." },
            // ⚠️ Repetida a propósito, ver abajo.
            { name: "server-only", message: "TanStack Start does not use the Next.js `server-only` package. Rename the module to `*.server.ts` or mark it with `@tanstack/react-start/server-only`." },
          ],
@@ -617,13 +779,31 @@ limpio, y `bunx prisma studio` muestra las 15 tablas vacías.
 La fase más delicada. **Hacela entera antes de tocar una sola pantalla de
 datos.**
 
-1. Instalá better-auth con adaptador Prisma. Sus tablas (`user`, `session`,
-   `account`, `verification`) entran al mismo `schema.prisma` y a la misma
-   migración.
+**Antes de escribir una línea, abrí los cuatro archivos de `Ecommerce_mm` que
+lista la sección 2.** Esta fase es en un 80% copiar de ahí.
 
-2. **Montá el handler en `src/server.ts`.** Ya hay un path interceptado ahí
-   (`/api/recordatorios`); copiá ese patrón para `/api/auth/*`. No inventes otro
-   mecanismo.
+1. **La tabla de usuarios en `schema.prisma`.** Mirá `model Customer` en
+   `Ecommerce_mm/backend/prisma/schema.prisma` (línea 281) y copiá la forma:
+
+   ```prisma
+   email             String    @unique
+   password          String            // bcrypt
+   resetToken        String?           // 32 bytes hex, un solo uso
+   resetTokenExpiry  DateTime?         // 1 hora
+   verifyToken       String?           // ← Shiraf suma esto, ver sección 2
+   verifyTokenExpiry DateTime?
+   emailVerified     DateTime?
+   ```
+
+   ⚠️ Shiraf ya tiene `profiles`, `user_roles` y `user_permissions`. **La tabla
+   nueva guarda sólo lo de autenticación** —mail, contraseña, tokens— y las otras
+   tres quedan como están, colgando de su `id`. No las fusiones: el reparto de
+   permisos es un sistema aparte y funciona.
+
+2. **Las rutas, en `src/server.ts`.** Ya hay un path interceptado ahí
+   (`/api/recordatorios`); copiá ese patrón para los seis de `/api/auth/*` que
+   lista la sección 2. Con el rate limiter adelante del `register` y del `login`,
+   como en `customer.routes.js`.
 
 3. **Reescribí `src/integrations/supabase/auth-middleware.ts`.**
 
@@ -634,12 +814,16 @@ datos.**
 
    ```ts
    // Antes: valida el JWT de Supabase → context.userId
-   // Después: lee la sesión de better-auth de la cookie → context.userId
-   return next({ context: { userId: session.user.id } });
+   // Después: lee la cookie, jwt.verify con JWT_SECRET → context.userId
+   return next({ context: { userId: payload.id } });
    ```
 
-   Renombralo a `src/lib/auth-middleware.ts` y actualizá los imports. **No
-   cambies el nombre de `userId` ni la forma del contexto.**
+   Es `auth.middleware.js` del ecommerce, con dos diferencias: el token sale de
+   la cookie en vez del header, y **el payload lleva sólo el `id` y el rol, no
+   los permisos** (el motivo está en la sección 2).
+
+   Movelo a `src/server/middleware/auth.middleware.ts` y actualizá los imports.
+   **No cambies el nombre de `userId` ni la forma del contexto.**
 
 4. 🔴 **Borrá `src/integrations/supabase/auth-attacher.ts` y sacá su línea de
    `src/start.ts`.** Este paso es el que hace cierto el paso anterior y es fácil
@@ -647,49 +831,67 @@ datos.**
 
    Hoy el token viaja como header `Authorization: Bearer`, y quien se lo pega a
    cada llamada al servidor es `attachSupabaseAuth`, registrado como
-   `functionMiddleware` global en [`src/start.ts`](src/start.ts). **better-auth
-   no usa headers, usa cookies**, que el navegador manda solo. Si el archivo
-   queda, cada llamada a una server function sigue pidiéndole la sesión a
+   `functionMiddleware` global en [`src/start.ts`](src/start.ts). **Con la cookie
+   `httpOnly` eso deja de hacer falta**: la manda el navegador sola. Si el
+   archivo queda, cada llamada a una server function sigue pidiéndole la sesión a
    Supabase — o falla, cuando Supabase ya no esté.
 
    Los dos archivos de auth dicen arriba *"This file is automatically generated.
    Do not edit it directly"*: son de Lovable. **Borralos, no los edites**, así
    nadie los regenera encima.
 
-5. Reemplazá los 26 `supabase.auth.*` por el cliente de better-auth. El mapeo:
+5. Reemplazá los 26 `supabase.auth.*`. El mapeo, contra las rutas nuevas:
 
-   | Supabase | better-auth |
+   | Supabase | Shiraf, después |
    | --- | --- |
-   | `signInWithPassword` | `signIn.email` |
-   | `signUp` | `signUp.email` |
-   | `signOut` | `signOut` |
-   | `getUser` / `getSession` | `useSession` / `getSession` |
-   | `onAuthStateChange` | la reactividad de `useSession` |
-   | `updateUser` (contraseña) | `changePassword` |
-   | `resetPasswordForEmail` | `forgetPassword` |
-   | `getClaims` | ya no existe: la sesión se lee en el servidor |
+   | `signInWithPassword` | `POST /api/auth/login` |
+   | `signUp` | `POST /api/auth/register` |
+   | `signOut` | `POST /api/auth/logout` (borra la cookie) |
+   | `getUser` / `getSession` (14 usos) | Una sola server function `getMe()`, cacheada con react-query |
+   | `onAuthStateChange` | Ya no existe. Al entrar y al salir, invalidá la query de `getMe` |
+   | `updateUser` (contraseña) | `PUT /api/auth/password` — el `changePassword` del ecommerce |
+   | `resetPasswordForEmail` | `POST /api/auth/forgot-password` |
+   | `getClaims` | Ya no existe: la sesión se lee en el servidor |
+
+   ⚠️ **`onAuthStateChange` es el que no tiene traducción directa** y aparece 3
+   veces. Era un suscriptor: Supabase avisaba solo cuando cambiaba la sesión. Con
+   JWT no hay a quién suscribirse. En el ecommerce esto se resuelve con el
+   contexto de React (`frontend/src/context/`) — andá a ver cómo está hecho ahí
+   antes de inventarlo.
 
 6. **Los mails de auth por Resend, con las plantillas que ya existen.**
-   Conectá los hooks de verificación y recuperación de better-auth a un envío
-   por Resend, reusando `supabase/emails/confirmar-cuenta.html` y
-   `recuperar-contrasena.html`. Los placeholders `{{ .ConfirmationURL }}` de
-   Supabase pasan a interpolación normal. **Acá es donde se destraba el bloqueo
-   viejo del TODO.**
+   Reusá `supabase/emails/confirmar-cuenta.html` y `recuperar-contrasena.html`.
+   Los placeholders `{{ .ConfirmationURL }}` de Supabase pasan a interpolación
+   normal. **Acá es donde se destraba el bloqueo viejo del TODO** — las
+   plantillas en castellano están escritas hace semanas y Supabase no las deja
+   usar sin SMTP propio.
+
+   El ecommerce manda por **nodemailer/SMTP** (`services/email.service.js`);
+   Shiraf ya tiene **Resend** escrito y andando en `notifications.functions.ts`.
+   **Quedate con Resend**: es lo único de este renglón que ya funciona en Shiraf.
 
 7. **Los 2 triggers sobre `auth.users` se vuelven código:**
-   - `handle_new_user` (crea el `profile` y le pone el rol `client`) → hook
-     `after signup` de better-auth.
-   - `claim_guest_appointments` (al confirmar el mail, le pasa los turnos de
-     invitada) → hook `after email verified`. **No lo saltees**: es una
-     funcionalidad viva, no un detalle.
+   - `handle_new_user` (crea el `profile` y le pone el rol `client`) → adentro
+     del `register`, en la misma transacción. Si falla el profile, no queda la
+     cuenta a medias.
+   - `claim_guest_appointments` (le pasa los turnos de invitada) → **al confirmar
+     el mail, no al registrarse**. El motivo está en la sección 2 y es una
+     filtración de datos, no un detalle de prolijidad. **No lo saltees ni lo
+     adelantes.**
 
 8. **Creá las 4 cuentas a mano** con los mismos mails que hoy, y asignales los
    roles y permisos exportados en la Fase 0. Los `id` nuevos no van a coincidir
    con los viejos: **anotá el mapeo `id_viejo → id_nuevo` y dejalo en un archivo**
    —no en el historial de una terminal—, lo necesita la Fase 4.
 
+   Las contraseñas se hashean con **bcrypt**, igual que en el ecommerce. En
+   `Ecommerce_mm` hay un `prisma/seed.js` y un `adminUsers.controller.js` que ya
+   hacen exactamente esto: copiá de ahí.
+
 **Verificación:** las 4 cuentas entran y salen; recuperar contraseña manda un
-mail que funciona; una cuenta nueva recibe el mail de confirmación en castellano.
+mail que funciona y el token **no se puede usar dos veces**; una cuenta nueva
+recibe el mail de confirmación **en castellano**; y hasta que no lo confirma, sus
+turnos de invitada **no** aparecen en el historial.
 
 ---
 
@@ -712,15 +914,15 @@ cuerpo. Copialos de `20260813020000`, `20260805165256` y `20260818010000`.
 ⚠️ Los tres usan `auth.uid()` o `has_permission()` en algún renglón. Al copiarlos
 hay que sacar esas referencias: `auth` no existe en la base nueva. Lo que se
 conserva de cada uno es **la parte atómica** —el chequeo de solape, el saldo, la
-portada—, no la de permisos, que va a `authz.server.ts` en la Fase 5.
+portada—, no la de permisos, que va a `permission.middleware.ts` en la Fase 5.
 
 #### Se vuelven código
 
 | Origen | Destino |
 | --- | --- |
 | 7 × `update_updated_at_column` | `@updatedAt` de Prisma (Fase 1) |
-| `handle_new_user`, `claim_guest_appointments` | Hooks de better-auth (Fase 2) |
-| `enforce_appointment_client_scope`, `validate_appointment`, `guard_professional_account_link` | `authz.server.ts` (Fase 5) |
+| `handle_new_user`, `claim_guest_appointments` | El register y la confirmación de mail (Fase 2) |
+| `enforce_appointment_client_scope`, `validate_appointment`, `guard_professional_account_link` | `permission.middleware.ts` (Fase 5) |
 
 #### Las 8 RPC
 
@@ -732,7 +934,7 @@ portada—, no la de permisos, que va a `authz.server.ts` en la Fase 5.
 | `team_member_ids` | Consulta trivial. |
 | `rename_service_category`, `rename_product_category` | `prisma.$transaction`. El renombrado tiene que ser atómico — ver `20260816000000`. |
 | `link_guest_appointments` | `updateMany`. Reusá `normalize_phone`: se queda como función SQL o se reescribe en TS, pero **una sola vez**. |
-| `has_role`, `has_permission` | `authz.server.ts`. |
+| `has_role`, `has_permission` | `permission.middleware.ts`. |
 
 **Verificación:** `bunx prisma migrate deploy` corre limpio contra la base nueva
 y los tres triggers figuran en `pg_trigger`. Todavía no hay datos ni pantallas
@@ -806,8 +1008,10 @@ contra las tablas de acá. Si difieren, gana la base — estas listas salen de
 reconstruir el historial de migraciones, que es exacto salvo que alguien haya
 tocado algo a mano en el SQL Editor.
 
-1. Escribí `src/lib/authz.server.ts` con las tres primitivas, que reemplazan a
-   `has_role()` y `has_permission()`:
+1. Escribí `src/server/middleware/permission.middleware.ts` con las tres
+   primitivas, que reemplazan a `has_role()` y `has_permission()`. Es el
+   equivalente de `adminMiddleware` / `customerMiddleware` del ecommerce, con la
+   diferencia de que Shiraf tiene permisos finos además de roles:
 
    ```ts
    export async function getAccess(userId: string): Promise<Access>
@@ -940,17 +1144,36 @@ menos a más riesgo, para que los errores aparezcan donde hacen menos daño:
 
 Para cada pantalla:
 
+**Dos archivos por pantalla, como en el ecommerce**: la ruta flaca y el
+controlador con la lógica.
+
 ```ts
-// src/lib/<area>.functions.ts
+// src/server/routes/catalogo.routes.ts
+// Flaco a propósito: dice quién puede llamar qué y nada más.
+// Es el equivalente de category.routes.js del ecommerce.
 export const listarServicios = createServerFn({ method: "GET" })
-  .middleware([requireAuth])
-  .handler(async ({ context }) => {
-    // 1. EL CHEQUEO VA PRIMERO Y NO SE NEGOCIA
-    await requirePermission(context.userId, "catalog");
-    // 2. recién ahora la consulta
-    return prisma.service.findMany({ include: { serviceMedia: true } });
-  });
+  .middleware([requireAuth, requirePermission("catalog")])
+  .handler(({ context }) => catalogo.listarServicios(context.userId));
 ```
+
+```ts
+// src/server/controllers/catalogo.controller.ts
+// Acá vive Prisma y la lógica. Ningún chequeo de permiso: para llegar
+// hasta acá ya pasó por el middleware.
+export function listarServicios(userId: string) {
+  return prisma.service.findMany({ include: { serviceMedia: true } });
+}
+```
+
+⚠️ **El chequeo de permiso va en la ruta, no adentro del controlador.** Es lo que
+hace `category.routes.js` con `authMiddleware, adminMiddleware`, y la ventaja es
+la misma: abriendo un solo archivo de 20 líneas ves quién puede hacer qué en toda
+un área. Si el chequeo queda enterrado en el controlador, para auditarlo hay que
+leer todo.
+
+⚠️ **Si una pantalla necesita algo que ninguna ruta expone, se agrega una ruta.**
+No se llama al controlador desde la pantalla. Ese es el atajo que rompe la
+separación entera, y el lint no lo ve.
 
 El `useQuery` de la pantalla cambia sólo el `queryFn`. **Las `queryKey` se
 mantienen exactamente iguales** — hay invalidaciones cruzadas entre pantallas
@@ -983,7 +1206,7 @@ Fase 1 no ve los imports indirectos; esto sí.
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PROJECT_ID` y sus cuatro gemelas
    `VITE_*`.
 4. Las que **aparecen**: `DATABASE_URL`, `POSTGRES_PASSWORD`,
-   `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`.
+   `JWT_SECRET`, `APP_URL` (para armar los links de los mails).
 5. **El cron de recordatorios cambia de lugar.** Hoy es `pg_cron` adentro de
    Supabase. Pasa al cron del sistema en el VPS; el comando exacto ya está en
    `supabase/emails/README.md`, al final:
@@ -994,14 +1217,16 @@ Fase 1 no ve los imports indirectos; esto sí.
 
    Ese es a las 10 de Buenos Aires, no en UTC — se acabó la conversión.
 
-6. **Backups.** Hasta acá los hacía Supabase. Ahora son tuyos:
+6. **Backups.** Hasta acá los hacía Supabase. Ahora son tuyos, y **no hay nada
+   que escribir**: es el servicio `pg-backup` de la sección 3, copiado de
+   `Ecommerce_mm`. Levanta con el resto del compose.
 
-   ```
-   0 3 * * *  docker exec shiraf-db pg_dump -U shiraf shiraf | gzip > /backups/shiraf-$(date +\%F).sql.gz
-   ```
+   Lo único que hay que agregar es **la copia fuera del VPS**. Un backup que vive
+   en el mismo disco que la base te salva de un borrado accidental, no de que se
+   muera el disco. Fijate cómo está resuelto en el ecommerce y hacé lo mismo.
 
-   Con rotación y **copia fuera del VPS**. Un backup que vive en el mismo disco
-   que la base no es un backup.
+   **Y probá una restauración.** Un backup que nunca se restauró es una carpeta
+   con archivos, no un backup.
 
 ---
 
@@ -1040,7 +1265,7 @@ Cosas que parecen obvias y están mal. Cada una salió de leer el código.
    reusable". No lo hagas.
 
 3. **`profiles` no tiene el mail.** Vive en `auth.users` y era deliberado.
-   Cuando migres a better-auth, **no lo copies a `profiles`** salvo que quieras
+   Cuando armes la tabla de usuarios, **no lo copies a `profiles`** salvo que quieras
    revisar quién puede leer esa tabla — hoy la lee cualquiera con
    `clients_contact` **o** con `appointments`.
 
@@ -1108,7 +1333,7 @@ Cosas que parecen obvias y están mal. Cada una salió de leer el código.
 
 15. **`auth-attacher.ts` no aparece buscando `.from(` ni `.rpc(`**, y es el que
     hace que las server functions reciban la sesión. Hoy la manda por header;
-    better-auth la manda por cookie. Si queda, cada llamada al servidor sigue
+    ahora va por cookie httpOnly. Si queda, cada llamada al servidor sigue
     hablando con Supabase. Ver Fase 2, punto 4.
 
 16. **Contar los `CREATE POLICY` de las migraciones da 61 y es un número
@@ -1165,9 +1390,19 @@ Antes de dar la migración por terminada, con cada rol:
 
 **Las policies** — la fase de la que depende que no se filtren datos
 - [ ] La tabla de traducción de la Fase 5 está en el repo, con las **35** de
-      `public` tildadas y la server function donde quedó cada chequeo
+      `public` tildadas y la ruta donde quedó cada chequeo
 - [ ] `@prisma/client` **no** aparece en el bundle del navegador
 - [ ] `auth-attacher.ts` está borrado y su línea sacada de `src/start.ts`
+
+**La forma** — que se lea como `Ecommerce_mm`, que es para lo que se eligió
+- [ ] Todo lo de servidor vive bajo `src/server/`, en `routes` / `controllers` /
+      `middleware` / `services`
+- [ ] Los archivos de `routes/` son flacos: mapeo y middlewares, sin Prisma
+      adentro
+- [ ] Ninguna pantalla llama a un controlador directo, siempre a una ruta
+- [ ] El token va en cookie `httpOnly`, no en `localStorage`
+- [ ] El JWT **no** lleva los permisos adentro — se leen de la base en cada
+      pedido, así un acceso tildado en el panel vale al instante
 
 **Sistema**
 - [ ] `POST /api/recordatorios` sin secreto → 401
