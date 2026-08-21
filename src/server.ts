@@ -168,6 +168,13 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // Reservar: los horarios libres y el alta del turno.
+      if (pathname.startsWith("/api/reservar")) {
+        const { reservarRouter } = await import("./server/routes/reservar.routes");
+        const respuesta = await reservarRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

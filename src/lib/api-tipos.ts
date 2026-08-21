@@ -337,3 +337,15 @@ export type FilaDeMiAgenda = {
 };
 
 export type RtaMiAgenda = { turnos: FilaDeMiAgenda[] };
+
+/**
+ * Lo que hace falta para dibujar los horarios libres de un día.
+ *
+ * ⚠️ De los turnos ajenos viaja **sólo cuándo empiezan y cuánto duran**. Nunca
+ * de quién son ni de qué. Es la misma frontera que ponía la función
+ * `professional_busy_slots` en la base.
+ */
+export type RtaDisponibilidad = {
+  schedules: HorarioDeAgenda[];
+  busy: { starts_at: string; duration_minutes: number }[];
+};

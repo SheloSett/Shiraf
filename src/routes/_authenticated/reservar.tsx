@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPost } from "@/lib/api";
+import type { RtaDisponibilidad, RtaProfesionalesConHorarios, RtaServicios } from "@/lib/api-tipos";
 import { buildSlots, formatMoney, formatTime, toDateKey } from "@/lib/shiraf";
 import { isTeamAccount } from "@/lib/roles";
 import { notifyAppointment } from "@/lib/notifications.functions";
@@ -73,31 +74,19 @@ function BookingPage() {
 
   const services = useQuery({
     queryKey: ["services", "published"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, category, duration_minutes, price, description")
-        .eq("is_published", true)
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    // El mismo endpoint que el catálogo público, y a propósito comparten la
+    // clave de caché: entrar acá viniendo de /servicios no vuelve a pedirlo.
+    queryFn: async () => (await api<RtaServicios>("/api/publico/servicios")).servicios,
   });
 
   const professionals = useQuery({
     queryKey: ["professionals", "for-service", serviceId],
     enabled: !!serviceId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professional_services")
-        .select("professionals!inner(id, full_name, specialty, is_active)")
-        .eq("service_id", serviceId!);
-      if (error) throw error;
-      return (data ?? [])
-        .map((row) => row.professionals)
-        .filter((p): p is NonNullable<typeof p> => !!p && p.is_active);
-    },
+    // El filtro por is_active lo hace el servidor: una profesional dada de baja
+    // no tiene que seguir apareciendo como opción.
+    queryFn: async () =>
+      (await api<RtaProfesionalesConHorarios>(`/api/publico/servicios/${serviceId}/profesionales`))
+        .profesionales,
   });
 
   const service = services.data?.find((s) => s.id === serviceId);
@@ -105,37 +94,16 @@ function BookingPage() {
   const availability = useQuery({
     queryKey: ["availability", professionalId, date && toDateKey(date)],
     enabled: !!professionalId && !!date,
+    // De los turnos ajenos vuelve SÓLO cuándo empiezan y cuánto duran, nunca
+    // de quién son. Es la misma frontera que ponía professional_busy_slots, que
+    // existía porque la RLS no dejaba leer los turnos de las demás — y sin ella
+    // esos horarios se habrían mostrado como libres.
     queryFn: async () => {
       const day = new Date(date!);
       day.setHours(0, 0, 0, 0);
-      const next = new Date(day);
-      next.setDate(next.getDate() + 1);
-
-      const [schedules, busy] = await Promise.all([
-        supabase
-          .from("professional_schedules")
-          .select("weekday, start_time, end_time")
-          .eq("professional_id", professionalId!),
-        // Vía RPC y no consultando appointments: la RLS sólo deja ver los
-        // turnos propios, así que leer la tabla directo devolvía los horarios
-        // de las demás clientas como libres. La función corre con SECURITY
-        // DEFINER y devuelve nada más que inicio y duración.
-        supabase.rpc("professional_busy_slots", {
-          _professional_id: professionalId!,
-          _from: day.toISOString(),
-          _to: next.toISOString(),
-        }),
-      ]);
-      if (schedules.error) throw schedules.error;
-      if (busy.error) throw busy.error;
-
-      return {
-        schedules: schedules.data ?? [],
-        busy: (busy.data ?? []).map((row) => ({
-          starts_at: row.slot_start,
-          duration_minutes: row.slot_minutes,
-        })),
-      };
+      return api<RtaDisponibilidad>(
+        `/api/reservar/disponibilidad?profesional=${professionalId}&fecha=${day.toISOString()}`,
+      );
     },
   });
 
@@ -151,21 +119,16 @@ function BookingPage() {
 
   const book = useMutation({
     mutationFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth.user) throw new Error("Necesitás iniciar sesión.");
-      const { data: created, error } = await supabase
-        .from("appointments")
-        .insert({
-          client_id: auth.user.id,
-          service_id: serviceId!,
-          professional_id: professionalId!,
-          starts_at: slot!,
-          duration_minutes: service!.duration_minutes,
-          client_notes: notes || null,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
+      // Sin client_id ni duration_minutes: los pone el servidor. El primero sale
+      // de la sesión —si viajara desde acá, cualquiera reservaría a nombre de
+      // otra— y la duración y el precio los fija el tratamiento, con el precio
+      // del día de hoy congelado en el turno.
+      const created = await apiPost<{ id: string }>("/api/reservar", {
+        service_id: serviceId,
+        professional_id: professionalId,
+        starts_at: slot,
+        client_notes: notes || null,
+      });
 
       // Avisarle al centro que hay un turno esperando. El turno nace pendiente y
       // no sirve de nada hasta que alguien lo confirma, así que si nadie mira el
