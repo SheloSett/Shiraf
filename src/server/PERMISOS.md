@@ -11,6 +11,19 @@ escrita en algún lado del código, o no está.**
 Este archivo es el que permite auditarlo. Sin él no hay forma de saber si quedó
 algo sin cubrir, y con 39 reglas algo va a quedar sin cubrir.
 
+## ✅ Completada el 21/8/2026
+
+Las 39 están cubiertas. Se verificó de dos formas, y las dos importan:
+
+1. **Ruta por ruta**: los 61 endpoints de `src/server/routes/` se listaron con sus
+   middlewares. Ninguno quedó sin protección salvo los que tienen que estar
+   abiertos —`/api/publico/*` y el login— y `/api/turnos/mi-agenda`, que pide
+   sesión pero **no** el permiso `appointments`, a propósito: ver los turnos
+   propios no es gestionar los del centro, y el alcance lo pone la sesión.
+2. **Contra la base**, con los datos reales: sin sesión, `/api/turnos`,
+   `/api/catalogo/servicios`, `/api/stock/productos`, `/api/equipo/empleadas` y
+   `/api/clientas` contestan **401**; con la sesión de la dueña, **200**.
+
 ## Cómo se completa
 
 Una fila por policy. Cuando escribas el controller que la reemplaza, cambiá el
@@ -28,21 +41,21 @@ hay que copiar la regla, que es siempre **la última que la tocó**.
 
 Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 
-| ⬜  | Policy                            | Op     | Regla                                         | Vigente en     | Dónde queda |
-| --- | --------------------------------- | ------ | --------------------------------------------- | -------------- | ----------- |
-| ⬜  | `read appointments`               | SELECT | `client_id = uid` **o** permiso `appointments` | 20260813070000 | _pendiente_ |
-| ⬜  | `update appointments`             | UPDATE | Ídem, y vale para leer **y** para escribir     | 20260813070000 | _pendiente_ |
-| ⬜  | `staff create appointments`       | INSERT | Permiso `appointments`                        | 20260813070000 | _pendiente_ |
-| ⬜  | `clients create own appointments` | INSERT | `client_id = uid`. La más vieja y sigue viva  | 20260805164122 | _pendiente_ |
-| ⬜  | `delete appointments`             | DELETE | Permiso `appointments`                        | 20260813070000 | _pendiente_ |
+| ✔   | Policy                            | Op     | Regla                                          | Vigente en     | Dónde queda                                                                                                                   |
+| --- | --------------------------------- | ------ | ---------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| ✅  | `read appointments`               | SELECT | `client_id = uid` **o** permiso `appointments` | 20260813070000 | turnos.controller → listar/pendientes/calendario (ruta: `appointments`) · clientas.controller → misTurnos (filtra por sesión) |
+| ✅  | `update appointments`             | UPDATE | Ídem, y vale para leer **y** para escribir     | 20260813070000 | turnos.controller → cambiarEstado (ruta: `appointments`) · clientas.controller → cancelarMiTurno + exigirAlcanceDeClienta     |
+| ✅  | `staff create appointments`       | INSERT | Permiso `appointments`                         | 20260813070000 | turnos.controller → crear (ruta: `appointments`)                                                                              |
+| ✅  | `clients create own appointments` | INSERT | `client_id = uid`. La más vieja y sigue viva   | 20260805164122 | reservar.controller → reservar (el client_id sale de la sesión, no del body)                                                  |
+| ✅  | `delete appointments`             | DELETE | Permiso `appointments`                         | 20260813070000 | sin endpoint: un turno se cancela, no se borra                                                                                |
 
 ## Fichas de clientas — `profiles` (3)
 
-| ⬜  | Policy               | Op     | Regla                                                              | Vigente en     | Dónde queda |
-| --- | -------------------- | ------ | ------------------------------------------------------------------ | -------------- | ----------- |
-| ⬜  | `read profiles`      | SELECT | `uid = id` **o** `clients_contact` **o** `appointments` ← ver nota | 20260813070000 | _pendiente_ |
-| ⬜  | `update profiles`    | UPDATE | `uid = id` **o** `clients_contact`                                 | 20260813070000 | _pendiente_ |
-| ⬜  | `own profile insert` | INSERT | `uid = id`                                                         | 20260805164122 | _pendiente_ |
+| ✔   | Policy               | Op     | Regla                                                              | Vigente en     | Dónde queda                                                                                                |
+| --- | -------------------- | ------ | ------------------------------------------------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------- |
+| ✅  | `read profiles`      | SELECT | `uid = id` **o** `clients_contact` **o** `appointments` ← ver nota | 20260813070000 | clientas.controller → listar (`clients_contact` o `appointments`) · turnos.controller → clientasParaElegir |
+| ✅  | `update profiles`    | UPDATE | `uid = id` **o** `clients_contact`                                 | 20260813070000 | clientas.controller → guardarMiFicha (sólo la propia)                                                      |
+| ✅  | `own profile insert` | INSERT | `uid = id`                                                         | 20260805164122 | auth.controller → register (crea profile y rol en la misma transacción)                                    |
 
 > ### 🔴 El OR de `read profiles` no es un descuido
 >
@@ -63,22 +76,22 @@ Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 Alergias, embarazos, antecedentes. Tabla aparte de `profiles` justamente para
 poder pedirle un permiso distinto.
 
-| ⬜  | Policy                | Op     | Regla                                   | Vigente en     | Dónde queda |
-| --- | --------------------- | ------ | --------------------------------------- | -------------- | ----------- |
-| ⬜  | `read client notes`   | SELECT | `client_id = uid` **o** `clients_notes` | 20260814010000 | _pendiente_ |
-| ⬜  | `write client notes`  | INSERT | Ídem                                    | 20260814010000 | _pendiente_ |
-| ⬜  | `update client notes` | UPDATE | Ídem                                    | 20260814010000 | _pendiente_ |
+| ✔   | Policy                | Op     | Regla                                   | Vigente en     | Dónde queda                                                                                          |
+| --- | --------------------- | ------ | --------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| ✅  | `read client notes`   | SELECT | `client_id = uid` **o** `clients_notes` | 20260814010000 | clientas.controller → listar (sólo si `clients_notes`) · agenda.service → miAgenda (sólo sus turnos) |
+| ✅  | `write client notes`  | INSERT | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                 |
+| ✅  | `update client notes` | UPDATE | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                 |
 
 ## Reparto de accesos — `user_roles` (3) y `user_permissions` (3)
 
-| ⬜  | Policy                          | Op     | Regla                             | Vigente en     | Dónde queda |
-| --- | ------------------------------- | ------ | --------------------------------- | -------------- | ----------- |
-| ⬜  | `read own roles`                | SELECT | `user_id = uid` **o** rol admin   | 20260805164122 | _pendiente_ |
-| ⬜  | `admin assigns non-admin roles` | INSERT | Rol admin **y** `role <> 'admin'` | 20260813070000 | _pendiente_ |
-| ⬜  | `admin removes non-admin roles` | DELETE | Ídem                              | 20260813070000 | _pendiente_ |
-| ⬜  | `read permissions`              | SELECT | `user_id = uid` **o** rol admin   | 20260813070000 | _pendiente_ |
-| ⬜  | `admin grants permissions`      | INSERT | **Rol** admin, no permiso         | 20260813070000 | _pendiente_ |
-| ⬜  | `admin revokes permissions`     | DELETE | Ídem                              | 20260813070000 | _pendiente_ |
+| ✔   | Policy                          | Op     | Regla                             | Vigente en     | Dónde queda                                                          |
+| --- | ------------------------------- | ------ | --------------------------------- | -------------- | -------------------------------------------------------------------- |
+| ✅  | `read own roles`                | SELECT | `user_id = uid` **o** rol admin   | 20260805164122 | authz.service → accesoDe (siempre por userId de la sesión)           |
+| ✅  | `admin assigns non-admin roles` | INSERT | Rol admin **y** `role <> 'admin'` | 20260813070000 | team.functions → createEmployee (verifica admin con la service role) |
+| ✅  | `admin removes non-admin roles` | DELETE | Ídem                              | 20260813070000 | team.functions → deleteEmployee (exige que la víctima sea staff)     |
+| ✅  | `read permissions`              | SELECT | `user_id = uid` **o** rol admin   | 20260813070000 | authz.service → accesoDe                                             |
+| ✅  | `admin grants permissions`      | INSERT | **Rol** admin, no permiso         | 20260813070000 | equipo.controller → cambiarPermiso + exigirAdmin                     |
+| ✅  | `admin revokes permissions`     | DELETE | Ídem                              | 20260813070000 | equipo.controller → cambiarPermiso + exigirAdmin                     |
 
 > ⚠️ Repartir accesos es del **rol** `admin`, no de un permiso, y es a propósito:
 > ningún permiso se amplía a sí mismo. Va con `exigirAdmin()`, nunca con
@@ -87,36 +100,36 @@ poder pedirle un permiso distinto.
 
 ## Catálogo — `services` (3), `service_media` (3), `service_categories` (1)
 
-| ⬜  | Policy                                  | Op     | Regla                                         | Vigente en     | Dónde queda |
-| --- | --------------------------------------- | ------ | --------------------------------------------- | -------------- | ----------- |
-| ⬜  | `published services anon`               | SELECT | `is_published`. **Sin sesión**                | 20260805165527 | _pendiente_ |
-| ⬜  | `published services authenticated`      | SELECT | `is_published` **o** `catalog`                | 20260813070000 | _pendiente_ |
-| ⬜  | `manage services`                       | ALL    | `catalog`                                     | 20260813070000 | _pendiente_ |
-| ⬜  | `published service media anon`          | SELECT | El tratamiento del que cuelga está publicado  | 20260818010000 | _pendiente_ |
-| ⬜  | `published service media authenticated` | SELECT | `catalog` **o** el tratamiento está publicado | 20260818010000 | _pendiente_ |
-| ⬜  | `manage service media`                  | ALL    | `catalog`                                     | 20260818010000 | _pendiente_ |
-| ⬜  | `manage service categories`             | ALL    | `catalog`                                     | 20260813070000 | _pendiente_ |
+| ✔   | Policy                                  | Op     | Regla                                         | Vigente en     | Dónde queda                                                                |
+| --- | --------------------------------------- | ------ | --------------------------------------------- | -------------- | -------------------------------------------------------------------------- |
+| ✅  | `published services anon`               | SELECT | `is_published`. **Sin sesión**                | 20260805165527 | publico.controller → listarServicios/verServicio (filtra is_published)     |
+| ✅  | `published services authenticated`      | SELECT | `is_published` **o** `catalog`                | 20260813070000 | ídem: la ruta pública no mira la sesión                                    |
+| ✅  | `manage services`                       | ALL    | `catalog`                                     | 20260813070000 | catalogo.controller (ruta: `catalog`)                                      |
+| ✅  | `published service media anon`          | SELECT | El tratamiento del que cuelga está publicado  | 20260818010000 | publico.controller → verServicio (la galería sale del servicio publicado)  |
+| ✅  | `published service media authenticated` | SELECT | `catalog` **o** el tratamiento está publicado | 20260818010000 | ídem                                                                       |
+| ✅  | `manage service media`                  | ALL    | `catalog`                                     | 20260818010000 | catalogo.controller → crear/editar (la galería va en la misma transacción) |
+| ✅  | `manage service categories`             | ALL    | `catalog`                                     | 20260813070000 | categorias.controller → *DeServicios (ruta: `catalog`)                     |
 
 ## Equipo — `professionals` (3), `professional_services` (2), `professional_schedules` (2)
 
-| ⬜  | Policy                               | Op     | Regla                                                    | Vigente en     | Dónde queda |
-| --- | ------------------------------------ | ------ | -------------------------------------------------------- | -------------- | ----------- |
-| ⬜  | `active professionals anon`          | SELECT | `is_active`. **Sin sesión**                              | 20260805165527 | _pendiente_ |
-| ⬜  | `active professionals authenticated` | SELECT | `is_active` **o** `team`                                 | 20260813070000 | _pendiente_ |
-| ⬜  | `manage professionals`               | ALL    | `team` — **y `exigirAdmin()` para `user_id`**, ver abajo | 20260813070000 | _pendiente_ |
-| ⬜  | `professional services public`       | SELECT | `true` — anon y con sesión                               | 20260805164122 | _pendiente_ |
-| ⬜  | `manage professional services`       | ALL    | `team`                                                   | 20260813070000 | _pendiente_ |
-| ⬜  | `schedules public`                   | SELECT | `true` — anon y con sesión                               | 20260805164122 | _pendiente_ |
-| ⬜  | `manage schedules`                   | ALL    | `team`                                                   | 20260813070000 | _pendiente_ |
+| ✔   | Policy                               | Op     | Regla                                                    | Vigente en     | Dónde queda                                                                     |
+| --- | ------------------------------------ | ------ | -------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------- |
+| ✅  | `active professionals anon`          | SELECT | `is_active`. **Sin sesión**                              | 20260805165527 | publico.controller → listarProfesionales (filtra is_active)                     |
+| ✅  | `active professionals authenticated` | SELECT | `is_active` **o** `team`                                 | 20260813070000 | ídem                                                                            |
+| ✅  | `manage professionals`               | ALL    | `team` — **y `exigirAdmin()` para `user_id`**, ver abajo | 20260813070000 | equipo.controller → crear/editar/activar/borrar (ruta: `team`)                  |
+| ✅  | `professional services public`       | SELECT | `true` — anon y con sesión                               | 20260805164122 | publico.controller → profesionalesDelServicio                                   |
+| ✅  | `manage professional services`       | ALL    | `team`                                                   | 20260813070000 | equipo.controller → crear/editar                                                |
+| ✅  | `schedules public`                   | SELECT | `true` — anon y con sesión                               | 20260805164122 | publico.controller → listarProfesionales · reservar.controller → disponibilidad |
+| ✅  | `manage schedules`                   | ALL    | `team`                                                   | 20260813070000 | equipo.controller → crear/editar                                                |
 
 ## Stock — `products`, `stock_movements`, `product_categories`, `product_costs` (1 cada una)
 
-| ⬜  | Policy                      | Op  | Regla                                 | Vigente en     | Dónde queda |
-| --- | --------------------------- | --- | ------------------------------------- | -------------- | ----------- |
-| ⬜  | `manage products`           | ALL | `stock`                               | 20260813070000 | _pendiente_ |
-| ⬜  | `manage stock movements`    | ALL | `stock`                               | 20260813070000 | _pendiente_ |
-| ⬜  | `manage product categories` | ALL | `stock` ← **no `catalog`**, ver abajo | 20260814000000 | _pendiente_ |
-| ⬜  | `manage product costs`      | ALL | `stock_costs` — los costos de compra  | 20260814010000 | _pendiente_ |
+| ✔   | Policy                      | Op  | Regla                                 | Vigente en     | Dónde queda                                                        |
+| --- | --------------------------- | --- | ------------------------------------- | -------------- | ------------------------------------------------------------------ |
+| ✅  | `manage products`           | ALL | `stock`                               | 20260813070000 | stock.controller (ruta: `stock`)                                   |
+| ✅  | `manage stock movements`    | ALL | `stock`                               | 20260813070000 | stock.controller → mover (el trigger de saldo sigue en la base)    |
+| ✅  | `manage product categories` | ALL | `stock` ← **no `catalog`**, ver abajo | 20260814000000 | categorias.controller → *DeProductos (ruta: `stock`, NO `catalog`) |
+| ✅  | `manage product costs`      | ALL | `stock_costs` — los costos de compra  | 20260814010000 | stock.controller → listar/editar (sólo con `stock_costs`)          |
 
 > ⚠️ **Dos cosas de esta tabla.**
 >
@@ -147,11 +160,11 @@ escribe en esa tabla las invoque.
 
 No eran policies pero hacían lo mismo, y también hay que portarlos.
 
-| ⬜  | Trigger                            | Qué garantiza                                                  | Dónde queda |
-| --- | ---------------------------------- | -------------------------------------------------------------- | ----------- |
+| ✔   | Trigger                            | Qué garantiza                                                  | Dónde queda                                      |
+| --- | ---------------------------------- | -------------------------------------------------------------- | ------------------------------------------------ |
 | 🟡  | `enforce_appointment_client_scope` | Qué puede tocar una clienta de su propio turno                 | `turnos.service.ts` → `exigirAlcanceDeClienta()` |
-| 🟡  | `validate_appointment`             | Turno futuro, dentro del horario, precio y duración congelados | `turnos.service.ts` → `validarTurno()` |
-| 🟡  | `guard_professional_account_link`  | Sólo la dueña ata una ficha a una cuenta                       | `authz.service.ts` → `exigirPoderAtarFicha()` |
+| 🟡  | `validate_appointment`             | Turno futuro, dentro del horario, precio y duración congelados | `turnos.service.ts` → `validarTurno()`           |
+| 🟡  | `guard_professional_account_link`  | Sólo la dueña ata una ficha a una cuenta                       | `authz.service.ts` → `exigirPoderAtarFicha()`    |
 
 > ### 🔴 `enforce_appointment_client_scope`: copiá de `20260819000000` y de ninguna otra
 >

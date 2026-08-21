@@ -61,21 +61,25 @@ export type ReminderRun = {
 };
 
 export async function runDailyReminders(): Promise<ReminderRun> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  // El import va adentro y no arriba, igual que en el resto de los archivos
+  // `.server`: este módulo lo alcanza el bundler del navegador y un import de
+  // nivel superior arrastraría Prisma al bundle.
+  const { prisma } = await import("@/server/db");
   const { from, to } = tomorrowInBuenosAires();
 
-  const { data, error } = await supabaseAdmin
-    .from("appointments")
-    .select("id")
-    .eq("status", "confirmed")
-    .is("reminded_at", null)
-    .gte("starts_at", from)
-    .lte("starts_at", to)
-    .order("starts_at");
-
-  if (error) throw new Error(`No se pudieron leer los turnos: ${error.message}`);
-
-  const appointments = data ?? [];
+  // Esta consulta es la que cubre el índice parcial
+  // `appointments_pending_reminder_idx` de prisma/sql/reglas.sql: confirmados
+  // de un día que todavía no recibieron el aviso. Si se le cambian las
+  // condiciones, mirá si el índice sigue sirviendo.
+  const appointments = await prisma.appointments.findMany({
+    where: {
+      status: "confirmed",
+      reminded_at: null,
+      starts_at: { gte: new Date(from), lte: new Date(to) },
+    },
+    select: { id: true },
+    orderBy: { starts_at: "asc" },
+  });
   const skipped: { id: string; reason: string }[] = [];
   let sent = 0;
 
@@ -93,17 +97,23 @@ export async function runDailyReminders(): Promise<ReminderRun> {
       continue;
     }
 
-    const { error: markError } = await supabaseAdmin
-      .from("appointments")
-      .update({ reminded_at: new Date().toISOString() })
-      .eq("id", appointment.id);
-
     // El mail YA salió. Si la marca falla, lo que no se puede hacer es contarlo
     // como no enviado: el próximo intento se lo mandaría de nuevo. Se registra
     // para que quede en el log del servidor y se sigue.
-    if (markError) {
+    //
+    // Con Prisma esto pasa de un `error` que se revisa a una excepción que hay
+    // que atrapar. El try/catch no es defensivo por las dudas: es exactamente
+    // el mismo caso de antes, escrito como lo pide el cliente nuevo.
+    try {
+      await prisma.appointments.update({
+        where: { id: appointment.id },
+        data: { reminded_at: new Date() },
+      });
+    } catch (e) {
       console.error(
-        `[recordatorios] El aviso del turno ${appointment.id} salió pero no se pudo marcar: ${markError.message}`,
+        `[recordatorios] El aviso del turno ${appointment.id} salió pero no se pudo marcar: ${
+          e instanceof Error ? e.message : e
+        }`,
       );
     }
 
