@@ -34,9 +34,10 @@ import { defineConfig } from "prisma/config";
 export default defineConfig({
   schema: "prisma/schema.prisma",
 
-  migrations: {
-    path: "prisma/migrations",
-  },
+  // Sin bloque `migrations`: el proyecto sincroniza el esquema con `db push`,
+  // igual que Ecommerce_mm. Lo que `db push` no sabe manejar —triggers, el
+  // CHECK, los indices parciales— se aplica despues con scripts/post-push.mjs.
+  // Ver prisma/_migraciones-reemplazadas/LEEME.md.
 
   // Sólo lo usan los comandos que tocan la base: migrate, db pull, studio. La
   // app en runtime NO lee esto — se conecta por el adaptador, ver src/lib/db.ts

@@ -192,7 +192,9 @@ async function main() {
       },
     });
   }
-  console.log("  services                " + servicios.length + "   (sin image_url: la pone el trigger)");
+  console.log(
+    "  services                " + servicios.length + "   (sin image_url: la pone el trigger)",
+  );
 
   const medios = leer<{
     id: string;
@@ -427,7 +429,9 @@ async function main() {
   for (const [id, saldo] of saldos) {
     await prisma.products.update({ where: { id }, data: { stock: saldo } });
   }
-  console.log("  stock_movements         " + movimientos.length + "   (saldo restaurado tras el trigger)");
+  console.log(
+    "  stock_movements         " + movimientos.length + "   (saldo restaurado tras el trigger)",
+  );
 
   // ── Verificación ──────────────────────────────────────────────────────────
   const conPortada = await prisma.services.count({ where: { NOT: { image_url: null } } });

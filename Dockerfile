@@ -110,8 +110,8 @@ COPY --from=build --chown=node:node /app/.output ./.output
 #                               el SQL y nada más; sin el adaptador,
 #                               `new PrismaClient()` ni siquiera se instancia.
 #   prisma/ y prisma.config   · para que el servicio `migrate` del compose pueda
-#                               correr `migrate deploy`. Sin la carpeta prisma/
-#                               no tiene migraciones que aplicar, y sin el
+#                               correr `db push`. Sin la carpeta prisma/ no tiene
+#                               schema que aplicar ni el reglas.sql, y sin el
 #                               config no sabe a qué base conectarse — en 7 la
 #                               URL ya no vive en schema.prisma.
 # Las dependencias de producción resueltas por bun: entran pg y
@@ -127,10 +127,17 @@ COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/node_modules/.prisma        ./node_modules/.prisma
 COPY --from=build --chown=node:node /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
-# Para el servicio `migrate`: las migraciones y, en Prisma 7, el config —que es
-# donde vive la URL de la base desde que schema.prisma dejó de aceptarla.
+# Para el servicio `migrate`: el schema, el reglas.sql y —en Prisma 7— el
+# config, que es donde vive la URL desde que schema.prisma dejó de aceptarla.
 COPY --from=build --chown=node:node /app/prisma           ./prisma
 COPY --from=build --chown=node:node /app/prisma.config.ts ./prisma.config.ts
+
+# scripts/post-push.mjs, que es el que vuelve a poner los triggers, el CHECK y
+# los indices parciales despues de cada `db push`. Sin esta linea el servicio
+# `migrate` del compose falla con "Cannot find module" — y la base queda
+# sincronizada pero SIN esas reglas, que es el peor de los dos mundos.
+# prisma/sql/reglas.sql, que es lo que lee, ya viaja adentro de ./prisma.
+COPY --from=build --chown=node:node /app/scripts          ./scripts
 COPY --from=build --chown=node:node /app/package.json     ./package.json
 
 USER node
