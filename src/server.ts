@@ -161,6 +161,13 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // Los turnos: la lista del panel, el calendario y «mi agenda».
+      if (pathname.startsWith("/api/turnos")) {
+        const { turnosRouter } = await import("./server/routes/turnos.routes");
+        const respuesta = await turnosRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

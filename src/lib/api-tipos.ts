@@ -276,3 +276,64 @@ export type MiTurno = {
 };
 
 export type RtaMisTurnos = { turnos: MiTurno[] };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Turnos
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Quién reservó, sin que la pantalla tenga que saber si tiene cuenta.
+ *
+ * Un turno puede ser de una clienta registrada o de una invitada que cargó el
+ * centro por teléfono. Los dos casos llegan con la misma forma.
+ */
+export type PersonaDelTurno = { name: string; phone: string | null; isGuest: boolean };
+
+export type TurnoDelPanel = {
+  id: string;
+  starts_at: string;
+  status: string;
+  duration_minutes: number;
+  client_notes: string | null;
+  client_id: string | null;
+  guest_name: string | null;
+  guest_phone: string | null;
+  guest_email: string | null;
+  services: { name: string; price: number };
+  professionals: { full_name: string } | null;
+  person: PersonaDelTurno;
+};
+
+export type RtaTurnos = { turnos: TurnoDelPanel[] };
+export type RtaPendientes = { total: number };
+
+export type TurnoDelCalendario = {
+  id: string;
+  starts_at: string;
+  status: string;
+  services: { name: string } | null;
+  professionals: { full_name: string } | null;
+};
+
+export type RtaCalendario = { turnos: TurnoDelCalendario[] };
+
+/**
+ * Una fila de «Mi agenda».
+ *
+ * Los nombres son los que devolvía la función `my_agenda()` de la base y se
+ * conservan para no tener que tocar el JSX de esa pantalla.
+ */
+export type FilaDeMiAgenda = {
+  appointment_id: string;
+  appointment_start: string;
+  appointment_minutes: number;
+  appointment_state: string;
+  service_name: string;
+  client_name: string | null;
+  client_phone: string | null;
+  clinical_notes: string | null;
+  booking_note: string | null;
+  client_is_guest: boolean;
+};
+
+export type RtaMiAgenda = { turnos: FilaDeMiAgenda[] };

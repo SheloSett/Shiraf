@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaPendientes } from "@/lib/api-tipos";
 
 /**
  * Cuántos turnos están esperando respuesta.
@@ -36,14 +37,7 @@ export function usePendingAppointments(enabled = true) {
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     refetchInterval: 60_000,
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from("appointments")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
-      if (error) throw error;
-      return count ?? 0;
-    },
+    queryFn: async () => (await api<RtaPendientes>("/api/turnos/pendientes")).total,
   });
 
   return query.data ?? 0;

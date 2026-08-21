@@ -3,7 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, MessageCircle, Quote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaMiAgenda } from "@/lib/api-tipos";
 import { toWhatsappNumber } from "@/lib/notifications";
 import { formatDay, formatTime, toDateKey } from "@/lib/shiraf";
 
@@ -65,11 +66,11 @@ function MyAgenda() {
     staleTime: 60_000,
     refetchOnWindowFocus: true,
     refetchInterval: 5 * 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("my_agenda", { _days: DAYS_AHEAD });
-      if (error) throw error;
-      return (data ?? []) as AgendaRow[];
-    },
+    // Sigue sin recibir el id de la profesional, igual que la función original:
+    // el alcance sale de la sesión. Si se lo pudiera pasar, cualquiera pediría
+    // la agenda de cualquiera.
+    queryFn: async () =>
+      (await api<RtaMiAgenda>(`/api/turnos/mi-agenda?dias=${DAYS_AHEAD}`)).turnos,
   });
 
   // Agrupados por día, respetando el orden que ya trae la consulta (starts_at

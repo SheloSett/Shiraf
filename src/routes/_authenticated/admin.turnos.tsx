@@ -17,7 +17,8 @@ import { MessageCircle, Plus } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPut } from "@/lib/api";
+import type { RtaTurnos } from "@/lib/api-tipos";
 import { usePendingAppointments } from "@/hooks/usePendingAppointments";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
 import {
@@ -88,42 +89,11 @@ function AdminAppointments() {
 
   const appointments = useQuery({
     queryKey: ["admin-appointments", filter],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("appointments")
-        .select(
-          // guest_email no se muestra en la tabla, pero lo necesita el diálogo
-          // de editar: es lo que decide a cuántos turnos alcanza la corrección.
-          "id, starts_at, status, duration_minutes, client_notes, client_id, guest_name, guest_phone, guest_email, services(name, price), professionals(full_name)",
-        )
-        .eq("status", filter)
-        .order("starts_at");
-      if (error) throw error;
-
-      // client_id es nulo en los turnos que el centro carga a nombre de alguien
-      // sin cuenta, así que hay que filtrarlos antes de buscar sus fichas.
-      const clientIds = [
-        ...new Set((data ?? []).map((a) => a.client_id).filter((id): id is string => !!id)),
-      ];
-      const clients = clientIds.length
-        ? (await supabase.from("profiles").select("id, full_name, phone").in("id", clientIds)).data
-        : [];
-      const byId = new Map((clients ?? []).map((c) => [c.id, c]));
-
-      return (data ?? []).map((a) => {
-        const profile = a.client_id ? (byId.get(a.client_id) ?? null) : null;
-        return {
-          ...a,
-          // Una sola forma para los dos casos, así la tabla no tiene que saber
-          // si el turno es de una clienta con cuenta o de una invitada.
-          person: {
-            name: profile?.full_name ?? a.guest_name ?? "Sin nombre",
-            phone: profile?.phone ?? a.guest_phone ?? null,
-            isGuest: !a.client_id,
-          },
-        };
-      });
-    },
+    // `person` viene armada del servidor: una sola forma para el turno de una
+    // clienta con cuenta y para el de una invitada, así la tabla no tiene que
+    // saber cuál es cuál. Antes eso costaba una segunda consulta acá, para
+    // buscar los profiles de los que sí tenían cuenta.
+    queryFn: async () => (await api<RtaTurnos>(`/api/turnos?estado=${filter}`)).turnos,
   });
 
   const setStatus = useMutation({
@@ -135,8 +105,7 @@ function AdminAppointments() {
       status: Status;
       notify: NotifiableAppointment;
     }) => {
-      const { error } = await supabase.from("appointments").update({ status }).eq("id", id);
-      if (error) throw error;
+      await apiPut(`/api/turnos/${id}/estado`, { status });
 
       const event = NOTIFIES[status];
       if (!event) return { mail: null };

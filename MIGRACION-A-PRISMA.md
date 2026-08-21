@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 13 archivos        |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 9 archivos         |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1381,8 +1381,8 @@ que la anterior compile limpio.
 > grep -rl 'from "@/integrations/supabase' src --include=*.ts --include=*.tsx >   | grep -v '^src/integrations/supabase/'
 > ```
 >
-> Al 21/8/2026 son 13. Lo que falta es casi todo **turnos** —el bloque más
-> grande y el más sensible— más `admin.equipo`, `admin.cuenta` y `contacto`.
+> Al 21/8/2026 son 9: `reservar` y los tres diálogos de turnos, `admin.equipo`,
+> `admin.cuenta`, `storage.ts`, `contacto` y `__root`.
 
 > #### ✅ Hecho: el paso 1, las 4 páginas públicas
 >

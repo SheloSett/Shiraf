@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaCalendario } from "@/lib/api-tipos";
 import { formatTime, STATUS_LABEL, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
@@ -79,16 +80,12 @@ function AdminCalendar() {
 
   const appointments = useQuery({
     queryKey: ["admin-calendar", monthStart.toISOString()],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("appointments")
-        .select("id, starts_at, status, services(name), professionals(full_name)")
-        .gte("starts_at", monthStart.toISOString())
-        .lt("starts_at", monthEnd.toISOString())
-        .order("starts_at");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (
+        await api<RtaCalendario>(
+          `/api/turnos/calendario?desde=${monthStart.toISOString()}&hasta=${monthEnd.toISOString()}`,
+        )
+      ).turnos,
   });
 
   const firstWeekday = monthStart.getDay();
