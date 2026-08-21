@@ -733,8 +733,8 @@ git checkout -b migracion-prisma
 > | 2 · Auth                   | ✅ login, registro, recuperar, confirmar mail |
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
-> | **5 · Permisos en código** | ⬜ **acá seguís**                             |
-> | 6 · Las pantallas          | ⬜ 47 archivos                                |
+> | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
+> | **6 · Las pantallas**      | ⬜ **acá seguís** — 47 archivos                |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1284,7 +1284,27 @@ Es lo que evita que se dé por bueno algo que sólo se sabe que compila.
 
 ---
 
-### Fase 5 — Los permisos, en código ⬜ **EMPEZÁ ACÁ**
+### Fase 5 — Los permisos, en código 🟡 ESCRITA, SIN LLAMAR
+
+> **Estado al 21/8/2026.** Lo de esta fase está escrito y compila limpio, pero
+> **ninguna de estas reglas la llama nadie todavía**: quien las tiene que
+> invocar son los controllers, y esos se escriben en la Fase 6. Una regla
+> escrita y no llamada no protege nada.
+>
+> |     |                                                                                                                |
+> | --- | -------------------------------------------------------------------------------------------------------------- |
+> | ✅  | `src/server/PERMISOS.md` — las 39 policies, con la migración de la que hay que copiar cada regla y su casilla   |
+> | ✅  | `puedeAlguno()` / `exigirAlguno()` — para el OR de `read profiles`: `clients_contact` **o** `appointments`      |
+> | ✅  | `exigirAlcanceDeClienta()` — el port de `enforce_appointment_client_scope`, desde la versión buena              |
+> | ✅  | `validarTurno()` — el port de `validate_appointment`, con el huso horario resuelto sin depender del proceso     |
+> | ✅  | `exigirPoderAtarFicha()` — el port de `guard_professional_account_link`                                        |
+> | ⬜  | Que los controllers las llamen — **Fase 6.** Es lo que las vuelve reales                                        |
+>
+> **SIN PROBAR (necesita Docker):** todo lo de arriba. Los tipos cierran y el
+> lint pasa, pero no se ejecutó ni una vez. Lo primero a probar allá es
+> `validarTurno()` contra la agenda real de una profesional: el cálculo del huso
+> horario es lo más fácil de tener mal sin que se note.
+
 
 **Es la fase de la que depende que esto no termine en una filtración de datos.**
 Mientras la base era Supabase, quien decidía qué veía cada persona era Postgres,
@@ -1347,7 +1367,7 @@ donde son obligatorios. Como mínimo, uno por tabla sensible:
 
 ---
 
-### Fase 6 — Las pantallas, una por una ⬜
+### Fase 6 — Las pantallas, una por una ⬜ **EMPEZÁ ACÁ**
 
 47 archivos de `src/` hablan con Supabase. Se pasan **de a uno, con un commit
 por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.

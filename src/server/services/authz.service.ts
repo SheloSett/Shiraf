@@ -87,6 +87,35 @@ export function exigirPermiso(acceso: Acceso, permiso: Permission): void {
   }
 }
 
+/**
+ * ¿Tiene ALGUNO de estos permisos? La dueña siempre.
+ *
+ * Existe por una policy concreta y no por generalidad: `read profiles` decía
+ *
+ *     uid = id OR has_permission('clients_contact') OR has_permission('appointments')
+ *
+ * Los dos permisos, no uno. El motivo está escrito en la migración
+ * 20260813070000: la pantalla de turnos muestra el nombre y el teléfono de
+ * quien reservó, así que una empleada que sólo gestiona turnos tiene que poder
+ * leer la ficha. **Si se traduce con un solo `puede()`, la agenda queda
+ * mostrando una lista de «—» en vez de nombres.**
+ *
+ * ⚠️ Esto NO es lo mismo que `impliedPermissions()` de @/lib/permissions.
+ * Ese helper existe para que la pantalla de accesos no ofrezca una casilla que
+ * promete un candado inexistente, y es cosa de la interfaz. Acá los permisos se
+ * chequean explícitos, igual que los enumeraba la policy.
+ */
+export function puedeAlguno(acceso: Acceso, permisos: Permission[]): boolean {
+  return acceso.esAdmin || permisos.some((p) => acceso.permisos.includes(p));
+}
+
+/** Exige alguno de estos permisos, o tira. Ver `puedeAlguno`. */
+export function exigirAlguno(acceso: Acceso, permisos: Permission[]): void {
+  if (!puedeAlguno(acceso, permisos)) {
+    throw new ErrorDeAcceso("No tenés el acceso necesario para esto.");
+  }
+}
+
 /** Sólo la dueña. Era `has_role(uid, 'admin')`. */
 export function exigirAdmin(acceso: Acceso): void {
   if (!acceso.esAdmin) {
@@ -106,5 +135,30 @@ export class ErrorDeAcceso extends Error {
   constructor(mensaje: string) {
     super(mensaje);
     this.name = "ErrorDeAcceso";
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sólo la dueña ata una ficha a una cuenta
+//    (guard_professional_account_link)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 🔴 **Sin esto hay una filtración, no una inconsistencia.**
+ *
+ * Quien tiene el permiso `team` puede editar las fichas de las profesionales. Si
+ * además pudiera escribir `professionals.user_id`, se ataría a sí mismo la ficha
+ * de otra y pasaría a ver los teléfonos y las notas clínicas de las clientas de
+ * esa profesional, vía «Mi agenda».
+ *
+ * Por eso el chequeo es `exigirAdmin()` y no `exigirPermiso(acceso, "team")`:
+ * `team` es exactamente lo que tiene quien haría el abuso.
+ *
+ * Se llama sólo cuando el cambio toca `user_id`. Editar el nombre, la
+ * especialidad o la bio de una ficha sigue siendo cosa de `team`.
+ */
+export function exigirPoderAtarFicha(acceso: Acceso): void {
+  if (!acceso.esAdmin) {
+    throw new ErrorDeAcceso("Sólo la dueña puede darle acceso al panel a una profesional.");
   }
 }
