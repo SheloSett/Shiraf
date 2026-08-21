@@ -771,12 +771,11 @@ aparece en `git status`.
 
 ---
 
-### Fase 1 — Postgres en Docker y el esquema en Prisma 🟡 A MEDIAS
+### Fase 1 — Postgres en Docker y el esquema en Prisma ✅ HECHA Y APLICADA
 
-> **Estado al 20/8/2026.** El esquema está escrito y validado, y el SQL de la
-> migración inicial está generado. **Nada de eso se aplicó todavía a una base
-> real**, porque en la máquina donde se trabajó no se pudo instalar Docker y el
-> Postgres del host pide una contraseña que no está.
+> **Estado al 20/8/2026, actualizado en la máquina con Docker.** Ya no es
+> teoría: la base se levanta, se migra y responde. Todo lo de abajo se corrió
+> contra un Postgres real.
 >
 > | | |
 > | --- | --- |
@@ -786,7 +785,10 @@ aparece en `git status`.
 > | ✅ `docker-compose.dev.yml` | Con el volumen anónimo y el `--host 0.0.0.0` |
 > | ✅ `Dockerfile` | Runtime a `node:22-slim`, las 4 copias de Prisma, sin Supabase |
 > | ✅ `.env.example` | Las 4 variables nuevas, y las de Supabase marcadas como de salida |
-> | ⬜ Aplicarlo a una base | **Pendiente. Es el primer paso en la máquina con Docker.** |
+> | ✅ Aplicarlo a una base | **Hecho.** 3 migraciones, 17 tablas, 4 enums, 3 triggers, 7 índices, 1 CHECK |
+| ✅ `prisma.config.ts` | Prisma 7 ya no acepta `url` en el schema |
+| ✅ `docker build` + `migrate deploy` desde la imagen | Verificado |
+| ✅ `docker compose -f docker-compose.dev.yml up` | Sirve en `localhost:8081` |
 >
 > #### 🔴 Lo primero en la máquina con Docker, antes que nada
 >
@@ -1047,10 +1049,13 @@ turnos de invitada **no** aparecen en el historial.
 
 ---
 
-### Fase 3 — Triggers y funciones: qué sobrevive en SQL 🟡 A MEDIAS
+### Fase 3 — Triggers y funciones: qué sobrevive en SQL 🟡 LOS TRIGGERS SÍ, LAS RPC NO
 
-> **Estado al 20/8/2026.** La migración a mano está escrita, sin aplicar:
-> `prisma/migrations/20260820000001_reglas_que_se_quedan_en_sql/`.
+> **Estado al 20/8/2026.** La migración a mano está escrita **y aplicada y
+> probada**: `prisma/migrations/20260820000001_reglas_que_se_quedan_en_sql/`.
+> Se verificó que los tres hacen lo suyo contra un Postgres real — la portada
+> sigue a la primera foto y cae a la siguiente al borrarla, un turno encimado se
+> rechaza, y el stock suma y resta.
 >
 > Lleva los tres triggers y el `CHECK` de `appointments`. Ninguna de las tres
 > funciones usaba `auth.uid()` ni `has_permission()`, así que se copiaron casi
