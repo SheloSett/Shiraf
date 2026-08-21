@@ -415,62 +415,130 @@ y la carpeta `prisma/`**. Ver más abajo: hoy no lleva ninguno de los dos, y `np
 tampoco es una salida (sin la dependencia instalada, `npx` se la baja de
 internet en cada arranque del contenedor).
 
-### 🔴 Prisma no entra en la imagen actual tal como está
+### ✅ Prisma en la imagen — resuelto, y con menos vueltas de las previstas
 
-**Leé esto antes de tocar el `Dockerfile`, porque el síntoma aparece recién en
-runtime y en producción.**
+**Esta sección decía otra cosa hasta el 20/8/2026, y lo que decía era correcto
+para Prisma 5 y 6.** El proyecto instaló **Prisma 7.9.1**, que cambió la
+arquitectura de raíz. Se reescribe entera en vez de corregirla por partes,
+porque el razonamiento viejo llevaba a un Dockerfile más complicado del
+necesario.
 
-El `Dockerfile` de hoy tiene una etapa final deliberadamente mínima:
+#### Lo que se creía (Prisma ≤ 6)
 
-```dockerfile
-FROM node:22-alpine AS runtime
-COPY --from=build --chown=node:node /app/.output ./.output   # ← y NADA más
+El cliente llevaba un **motor de consultas nativo**: un binario de Rust,
+distinto por sistema operativo y enlazado contra `libssl`. De ahí salían tres
+complicaciones que **ya no aplican**:
+
+- había que declarar `binaryTargets` con cada plataforma de destino;
+- alpine (musl) era un dolor de cabeza clásico, con el `openssl` que nunca era
+  la versión correcta;
+- generar en una etapa y correr en otra podía dejar el binario equivocado, y eso
+  fallaba recién en la primera consulta real, en producción.
+
+#### Lo que es (Prisma 7)
+
+El motor pasó a ser un **compilador en WASM**: el mismo archivo en todas las
+plataformas.
+
+> **Comprobado** sobre lo que genera la 7.9.1 en este proyecto:
+> `node_modules/.prisma/client/` tiene `query_compiler_fast_bg.wasm` y **cero**
+> binarios nativos — ni `.node`, ni `.so`, ni `.dll`.
+
+Consecuencias, todas a favor:
+
+- **`binaryTargets` no va.** Quedó comentado en `schema.prisma` con la
+  explicación. No baja nada.
+- **`openssl` no hace falta.** El `apt-get install openssl` de la etapa de
+  runtime está comentado, no borrado, para que no lo vuelva a agregar el
+  próximo que lea un tutorial de 2024.
+- **alpine vuelve a ser viable.** Se deja `node:22-slim` igual, por no reabrir
+  una discusión cerrada, pero el motivo original desapareció.
+- **Copiar el cliente entre etapas es seguro**, sin importar el sistema
+  operativo de cada una.
+
+#### Lo que sí cambió a cambio: hace falta un driver adapter
+
+El WASM arma el SQL pero **no se conecta a la base**. Eso lo hace ahora un
+*driver adapter*, en el constructor:
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg";
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const prisma  = new PrismaClient({ adapter });
 ```
 
-Sin `node_modules` y sin código fuente. Está muy bien para lo que hay hoy, pero
-**Prisma Client no es sólo JavaScript**: necesita su *query engine*, que es un
-binario nativo, más el cliente generado. Nada de eso viaja en `.output`. La
-imagen se construye sin quejarse y la primera consulta explota con
-`Query engine binary not found`.
+Sin él, `new PrismaClient()` **ni siquiera se instancia**: tira *"A driver
+adapter is required to connect to your database"*. Por eso el proyecto suma
+`@prisma/adapter-pg` y `pg` como dependencias normales.
 
-Hay que arreglarlo, y hay dos caminos:
+#### Y otra cosa que Prisma 7 rompió: la URL salió de `schema.prisma`
 
-1. **Recomendado: pasar la etapa de runtime a `node:22-slim`** (Debian) y copiar
-   el cliente generado **y la CLI**:
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")   // ← P1012 en Prisma 7
+}
+```
 
-   ```dockerfile
-   FROM node:22-slim AS runtime
-   COPY --from=build /app/node_modules/.prisma        ./node_modules/.prisma
-   COPY --from=build /app/node_modules/@prisma/client ./node_modules/@prisma/client
-   # Las dos de abajo son para el servicio `migrate`, no para la app:
-   COPY --from=build /app/node_modules/prisma         ./node_modules/prisma
-   COPY --from=build /app/prisma                      ./prisma
-   ```
+La URL vive ahora en **`prisma.config.ts`**, en la raíz. Es lo primero que carga
+la CLI; sin él, `migrate` y `db pull` no saben a qué base apuntar. **La imagen
+de producción tiene que copiarlo**, o el servicio `migrate` falla.
 
-   Las cuatro líneas hacen falta y cada una por un motivo distinto: las dos
-   primeras para que la app consulte, las dos últimas para que
-   `migrate deploy` tenga con qué y qué aplicar.
+⚠️ Adentro de ese archivo, usá `process.env.DATABASE_URL` y **no** el helper
+`env("DATABASE_URL")` de `prisma/config`. Parecen lo mismo y no lo son: el helper
+**tira** si la variable no está, y el config se carga en TODOS los comandos,
+incluido `generate` — que no necesita base para nada. Con el helper, el
+`docker build` moría con `PrismaConfigEnvError`, que es correcto que no exista
+ahí: la URL de la base no se hornea en una imagen.
 
-2. **Seguir en alpine**, que es más chica, pero entonces hay que declarar el
-   binario para musl en `schema.prisma`:
+#### Cómo quedó el Dockerfile
 
-   ```prisma
-   generator client {
-     provider      = "prisma-client-js"
-     binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
-   }
-   ```
+```dockerfile
+FROM oven/bun:1-alpine AS deps        # todas, para compilar
+FROM oven/bun:1-alpine AS prod-deps   # bun install --production
+FROM oven/bun:1-alpine AS build       # bunx prisma generate && bun run build
+FROM node:22-slim      AS runtime
+```
 
-   y agregar `RUN apk add --no-cache openssl` en la etapa de runtime.
+Y el runtime copia, **en este orden**:
 
-Se recomienda el 1. La diferencia de tamaño son unas decenas de MB; la
-diferencia de horas perdidas con el `openssl` de alpine es bastante peor, y es
-un problema clásico y conocido de Prisma sobre alpine.
+```dockerfile
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/node_modules/.prisma        ./node_modules/.prisma
+COPY --from=build /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --from=build /app/prisma           ./prisma
+COPY --from=build /app/prisma.config.ts ./prisma.config.ts
+```
 
-⚠️ `prisma generate` tiene que correr **en la etapa de build**, no en la de
-runtime: el cliente se genera contra el `schema.prisma` y tiene que estar hecho
-antes de copiar.
+⚠️ **El orden importa.** `bun install` deja `@prisma/client` vacío — se llena
+recién con `prisma generate`, y `.prisma/` directamente no existe hasta
+entonces. Por eso el cliente generado se copia **después**, pisando lo que dejó
+el instalador.
 
+⚠️ **`prisma` (el CLI) está en `dependencies`, no en `devDependencies`.** No es
+un descuido: el servicio `migrate` corre `migrate deploy` **adentro de esta
+imagen**, así que para ella es una dependencia de runtime.
+
+⚠️ **No copies paquetes sueltos por nombre.** Se intentó y está mal: `pg`
+arrastra ocho dependencias transitivas, y esa lista habría que mantenerla a
+mano. El día que sume una novena, el build pasa y la app se cae al conectarse.
+Para eso está la etapa `prod-deps`.
+
+⚠️ `prisma generate` corre **en la etapa de build**, antes de `bun run build`:
+el código del servidor importa `@prisma/client`, y ese paquete está vacío hasta
+que `generate` lo escribe.
+
+#### Verificado de punta a punta el 20/8/2026
+
+No es teoría: se construyó la imagen y se corrió todo contra un Postgres real.
+
+| Qué | Resultado |
+| --- | --- |
+| `docker build` | ✅ |
+| `migrate deploy` **desde la imagen de producción** | ✅ las 3 migraciones |
+| `PrismaClient` + adapter consultando desde la imagen | ✅ |
+| La app arranca y responde 200 | ✅ |
+| `POST /api/recordatorios` sin secreto | ✅ 401 |
 ### Desarrollo, también en contenedor
 
 Creá `docker-compose.dev.yml`:
@@ -487,17 +555,20 @@ services:
     build:
       context: .
       target: deps        # la etapa con node_modules, sin build de producción
-    command: ["bun", "run", "dev", "--host", "0.0.0.0"]
+    command:
+      - sh
+      - -c
+      - bunx prisma generate && bun run dev --host 0.0.0.0 --port 8080 --strictPort
     volumes:
       - .:/app                       # el código, en vivo
       - /app/node_modules            # ← volumen anónimo, ver abajo
-    ports: ["8081:8081"]
+    ports: ["8081:8080"]             # HOST:CONTENEDOR — ver abajo
     env_file: .env
     depends_on:
       db: { condition: service_healthy }
 ```
 
-Tres cosas que hay que entender de eso:
+Cuatro cosas que hay que entender de eso:
 
 1. **El volumen anónimo sobre `node_modules` no es un detalle.** Sin esa línea,
    el bind mount de `.` tapa el `node_modules` del contenedor con el del host —
@@ -507,8 +578,25 @@ Tres cosas que hay que entender de eso:
 2. **Nada de `read_only: true` acá.** El servicio de producción lo tiene y hay
    que dejarlo; en desarrollo, Vite escribe su caché y lo necesita.
 
-3. `--host 0.0.0.0` es obligatorio: sin eso Vite escucha sólo en el loopback
-   **del contenedor** y desde el navegador del host no se llega.
+3. **El puerto es 8080, y las tres banderas del comando hacen falta.**
+
+   `--host 0.0.0.0`, sin el cual Vite escucha sólo en el loopback **del
+   contenedor** y desde el navegador del host no se llega.
+
+   `--port 8080`, que es el que configura el preset de Lovable. Acá estuvo
+   publicado el **8081** un rato, y eso era un bug silencioso: 8081 es a donde
+   Vite se corre **sólo si el 8080 está ocupado**, cosa que pasa en la máquina
+   de casa y no adentro de un contenedor limpio. O sea que el mapeo apuntaba a
+   un puerto donde no había nadie escuchando: pestaña en blanco, logs diciendo
+   que todo está bien.
+
+   `--strictPort`, que convierte eso en un error visible. Sin él, Vite se corre
+   al siguiente puerto libre en silencio y volvemos al mismo síntoma.
+
+4. **`bunx prisma generate` antes de arrancar, en cada `up`.** La etapa `deps`
+   sólo corre `bun install` con el `package.json`, sin el `schema.prisma` a la
+   vista, así que el postinstall de Prisma no genera nada. Sin esto, el primer
+   `import` de `@prisma/client` falla pidiendo exactamente eso.
 
 ### 🔴 En ese contenedor no existe `npx`
 
@@ -537,11 +625,12 @@ Dos cosas más que hay que resolver acá y no dejar para producción:
   `Dockerfile` —con el paquete `prisma` y la carpeta `prisma/`— y un servicio de
   compose que use esa etapa para los comandos. No arregles esto instalando
   Prisma en el host: ahí se cae el requisito entero de la sección.
-- **Alpine también es musl acá.** El arreglo recomendado de más arriba
-  (`node:22-slim`) cubre el runtime de producción, pero el contenedor de
-  desarrollo sigue en alpine. O le agregás
-  `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]` al `schema.prisma`,
-  o movés también el dev a una imagen Debian. Elegí una y dejala anotada.
+- ~~**Alpine también es musl acá.**~~ **Ya no es un problema** (20/8/2026). Esto
+  decía que el contenedor de desarrollo, al ser alpine, necesitaba su propio
+  `binaryTargets`. Con el compilador WASM de Prisma 7 no hay binario por
+  plataforma, así que da igual: el mismo cliente generado sirve en alpine y en
+  Debian. Verificado generando en `oven/bun:1-alpine` y consultando desde
+  `node:22-slim`.
 
 **Dejá estos comandos escritos en el `README.md`.** Si no están a mano, la
 próxima persona instala Prisma en el host "por esta vez" y el requisito se cae.
@@ -1396,8 +1485,13 @@ Cosas que parecen obvias y están mal. Cada una salió de leer el código.
 
 13. **En el contenedor de desarrollo no hay `npx`.** La etapa `deps` es
     `oven/bun:1-alpine` y las imágenes de bun no traen Node ni npm. Es `bunx`.
-    Está explicado en la sección 3, con las dos cosas que hay que resolver ahí
-    mismo (la CLI de Prisma bajo bun, y musl).
+    Está explicado en la sección 3. (La otra advertencia que había acá, sobre
+    musl, quedó sin efecto con Prisma 7 — ver la sección 3.)
+
+    ✅ La CLI de Prisma bajo bun **se probó y anda**: `bunx prisma validate`,
+    `generate`, `migrate diff` y `migrate deploy`, todos desde
+    `oven/bun:1-alpine`. No hace falta la etapa `tools` que se proponía como
+    salida.
 
 14. **El bloque nuevo de `no-restricted-imports` pisa al que ya está.** En flat
     config la regla no se suma, se reemplaza. Sin repetir la entrada de

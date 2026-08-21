@@ -23,27 +23,54 @@
 generator client {
   provider = "prisma-client-js"
 
-  // 🔴 LOS TRES HACEN FALTA. Prisma no es sólo JavaScript: lleva un motor
-  // nativo, y hay que bajar uno por cada sistema donde vaya a correr. Si falta
-  // el que corresponde, la imagen se construye igual y explota en la PRIMERA
-  // CONSULTA, en producción.
+  // ── binaryTargets: YA NO CORRESPONDE, y por eso está comentado ────────────
   //
-  //   native                     · Windows, para trabajar en la máquina de casa
-  //   linux-musl-openssl-3.0.x   · alpine — las etapas `deps` y `build` del
-  //                                Dockerfile son oven/bun:1-alpine, y ahí
-  //                                corre `prisma generate`
-  //   debian-openssl-3.0.x       · node:22-slim (bookworm) — la etapa `runtime`,
-  //                                que es DONDE CORRE LA APP DE VERDAD
+  // Esto decía:
   //
-  // El tercero es el que más fácil se olvida: `prisma generate` corre en alpine,
-  // donde "native" resuelve a musl, así que sin declararlo explícitamente el
-  // motor de debian nunca se baja y el que viaja en la imagen no sirve.
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+  //   binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+  //
+  // La idea era correcta para Prisma 5 y 6, donde el cliente llevaba un motor
+  // de consultas NATIVO —un binario de Rust, distinto por sistema operativo— y
+  // había que pedir explícitamente el de cada plataforma donde fuera a correr.
+  // De ahí salía también todo el cuidado con musl y con openssl en el
+  // Dockerfile.
+  //
+  // Prisma 7 cambió eso de raíz: el motor pasó a ser un compilador en WASM, que
+  // es el mismo archivo en todas las plataformas. Comprobado sobre lo que
+  // genera esta versión —`node_modules/.prisma/client/` tiene
+  // `query_compiler_fast_bg.wasm` y CERO binarios nativos—, así que declarar
+  // binaryTargets no baja nada y sólo confunde a quien lo lea.
+  //
+  // Lo que sí trajo el cambio es que el WASM arma el SQL pero no habla con la
+  // base: eso lo hace ahora un DRIVER ADAPTER, que va en el constructor.
+  //
+  //   import { PrismaPg } from "@prisma/adapter-pg";
+  //   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  //   const prisma  = new PrismaClient({ adapter });
+  //
+  // Sin adapter, `new PrismaClient()` tira "A driver adapter is required to
+  // connect to your database". Por eso el proyecto suma @prisma/adapter-pg y
+  // pg. Va a hacer falta al escribir src/lib/db.ts, en la Fase 5.
+  //
+  // ── Decisión pendiente, para cuando se escriba código de la app ───────────
+  // `prisma-client-js` es el generador viejo: escribe en node_modules y en 7
+  // quedó como legado. El nuevo es `prisma-client`, con un `output` explícito
+  // dentro de src/, y tiene una ventaja concreta acá: si el cliente vive en
+  // src/, lo empaqueta Nitro y la imagen de producción no necesita copiar nada
+  // de node_modules. Se deja el viejo por ahora porque funciona y está
+  // verificado; cambiarlo es una decisión de la Fase 5, no de este arreglo.
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+
+  // La URL se mudó a prisma.config.ts, en la raíz del proyecto.
+  //
+  // Prisma 7 ya no acepta `url` acá: la validación falla con P1012, "The
+  // datasource property `url` is no longer supported in schema files". Se deja
+  // comentada para que quede claro que no es un olvido y de dónde salió.
+  //
+  // url      = env("DATABASE_URL")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,7 +119,7 @@ enum media_kind {
 // La forma es la de Ecommerce_mm (model Customer): mail, contraseña bcrypt, y
 // los pares token/vencimiento.
 model users {
-  id       String @id @default(uuid()) @db.Uuid
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email    String @unique
   password String // bcrypt
 
@@ -137,7 +164,7 @@ model profiles {
 }
 
 model user_roles {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id    String   @db.Uuid
   role       app_role
   created_at DateTime @default(now()) @db.Timestamptz(6)
@@ -148,7 +175,7 @@ model user_roles {
 }
 
 model user_permissions {
-  id         String         @id @default(uuid()) @db.Uuid
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id    String         @db.Uuid
   permission app_permission
   created_at DateTime       @default(now()) @db.Timestamptz(6)
@@ -178,7 +205,7 @@ model client_notes {
 // traslado. El renombrado atómico de una categoría lo resuelve
 // rename_service_category (20260816000000), que actualiza las dos tablas juntas.
 model services {
-  id               String   @id @default(uuid()) @db.Uuid
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name             String
   description      String?
   category         String   @default("General")
@@ -197,7 +224,7 @@ model services {
 }
 
 model service_categories {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String   @unique
   created_at DateTime @default(now()) @db.Timestamptz(6)
 }
@@ -206,7 +233,7 @@ model service_categories {
 // por estados con posiciones repetidas. El orden desempata por created_at.
 // El comentario original está en 20260818010000.
 model service_media {
-  id         String     @id @default(uuid()) @db.Uuid
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   service_id String     @db.Uuid
   url        String
   kind       media_kind
@@ -214,6 +241,11 @@ model service_media {
   created_at DateTime   @default(now()) @db.Timestamptz(6)
 
   service services @relation(fields: [service_id], references: [id], onDelete: Cascade)
+
+  // Es exactamente el ORDER BY de sync_service_cover, el trigger que mantiene
+  // la portada del tratamiento. Estaba en 20260818010000 y se había perdido en
+  // el traslado: el trigger se migró y su índice no.
+  @@index([service_id, position, created_at])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,7 +253,7 @@ model service_media {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model professionals {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   // Atar una ficha a una cuenta lo hace SÓLO la dueña: sin ese candado,
   // cualquiera con el permiso 'team' se apunta una ficha ajena y pasa a leer los
   // teléfonos y las notas de esas clientas. Lo hace cumplir
@@ -242,7 +274,7 @@ model professionals {
 }
 
 model professional_services {
-  id              String @id @default(uuid()) @db.Uuid
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   professional_id String @db.Uuid
   service_id      String @db.Uuid
 
@@ -253,7 +285,7 @@ model professional_services {
 }
 
 model professional_schedules {
-  id              String   @id @default(uuid()) @db.Uuid
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   professional_id String   @db.Uuid
   weekday         Int
   // TIME sin zona: es hora de pared del centro. La comparación con starts_at,
@@ -271,7 +303,7 @@ model professional_schedules {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model appointments {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
   // NULL a propósito: son los turnos de invitada, que carga el centro por
   // teléfono para alguien sin cuenta. No es un dato faltante.
@@ -299,6 +331,19 @@ model appointments {
   // historial de turnos que lo usaron.
   service      services       @relation(fields: [service_id], references: [id], onDelete: Restrict)
   professional professionals? @relation(fields: [professional_id], references: [id], onDelete: SetNull)
+
+  // Los dos índices que appointments tenía desde la primera migración de
+  // Supabase. Hay que declararlos: Prisma NO crea índices sobre las claves
+  // foráneas en Postgres —a diferencia de lo que hace en MySQL—, así que sin
+  // esto no existirían.
+  //
+  //   starts_at · el calendario y la agenda, que siempre filtran por fecha
+  //   client_id · "mis turnos" de la clienta
+  //
+  // Los otros cuatro de esta tabla son parciales, y eso Prisma no lo sabe
+  // escribir: viven en 20260820000002_indices_parciales.
+  @@index([starts_at])
+  @@index([client_id])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -310,7 +355,7 @@ model appointments {
 // 'catalog' — agrupan insumos internos que no salen en el sitio
 // (20260814000000). Ver trampa #5.
 model products {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String
   brand      String?
   category   String   @default("Cremas")
@@ -328,7 +373,7 @@ model products {
 }
 
 model product_categories {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String   @unique
   created_at DateTime @default(now()) @db.Timestamptz(6)
 }
@@ -344,7 +389,7 @@ model product_costs {
 }
 
 model stock_movements {
-  id         String   @id @default(uuid()) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   product_id String   @db.Uuid
   quantity   Decimal  @db.Decimal(12, 2)
   reason     String?

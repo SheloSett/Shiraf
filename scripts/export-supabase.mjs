@@ -107,7 +107,9 @@ writeFileSync(join(raiz, "scripts", "usuarios.json"), JSON.stringify(usuarios, n
 
 console.log("―".repeat(30));
 console.log(`${String(total).padStart(3)}  TOTAL en 15 tablas`);
-console.log(`${String(usuarios.length).padStart(3)}  cuentas (en scripts/usuarios.json, fuera del repo)`);
+console.log(
+  `${String(usuarios.length).padStart(3)}  cuentas (en scripts/usuarios.json, fuera del repo)`,
+);
 
 writeFileSync(
   join(destino, "conteos.json"),

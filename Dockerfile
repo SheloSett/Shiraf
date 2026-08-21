@@ -13,10 +13,15 @@
 #    BUILD, no de runtime. Por eso entran como build args. Si sólo las pasás en
 #    `environment`, el frontend queda sin configurar y falla al arrancar.
 #
-# 3. Prisma NO es sólo JavaScript: lleva un motor nativo por plataforma. La
-#    etapa de build es alpine y la de runtime es debian, así que el motor que
-#    hace falta en runtime hay que pedirlo explícitamente en schema.prisma
-#    (binaryTargets). Está explicado ahí.
+# 3. Prisma 7 genera un compilador en WASM, no un binario nativo por
+#    plataforma. Eso simplifica bastante esta imagen y hay que saberlo, porque
+#    todo lo que se lee sobre dockerizar Prisma —binaryTargets, la pelea con
+#    musl, instalar openssl— es de la versión 6 para atrás y acá ya no aplica.
+#    El corolario práctico es que el cliente generado se puede copiar de una
+#    etapa a otra sin preocuparse por el sistema operativo de cada una.
+#
+#    Lo que sí cambió a cambio: el WASM arma el SQL pero no se conecta. De eso
+#    se encarga @prisma/adapter-pg, que es una dependencia normal.
 
 # ---------- deps ----------
 # bun porque bun.lock es el lockfile versionado del repo. Un package-lock.json
@@ -26,6 +31,21 @@ FROM oven/bun:1-alpine AS deps
 WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 RUN bun install --frozen-lockfile
+
+# ---------- prod-deps ----------
+# Las MISMAS dependencias pero sin las de desarrollo, para que la imagen final
+# no cargue con vite, eslint ni typescript.
+#
+# Existe esta etapa en vez de ir copiando paquetes sueltos por nombre desde la
+# etapa de build. Eso último se intentó y está mal: `pg` arrastra ocho
+# dependencias transitivas (pg-pool, pg-types, postgres-array, postgres-date…) y
+# la lista habría que mantenerla a mano. El día que una versión sume una novena,
+# el build sigue pasando y la app se cae al conectarse. El gestor de paquetes ya
+# sabe resolver eso; hay que dejarlo hacerlo.
+FROM oven/bun:1-alpine AS prod-deps
+WORKDIR /app
+COPY package.json bun.lock bunfig.toml ./
+RUN bun install --frozen-lockfile --production
 
 # ---------- build ----------
 FROM oven/bun:1-alpine AS build
@@ -52,23 +72,29 @@ RUN if [ -z "$VITE_CLOUDINARY_CLOUD_NAME" ]; then \
     fi
 
 # ⚠️ ANTES del build, no después: el código del servidor importa @prisma/client,
-# y ese paquete no existe hasta que generate lo escribe. Acá se bajan los tres
-# motores de binaryTargets, incluido el de debian que usa la etapa de runtime.
+# y ese paquete está vacío hasta que generate lo escribe.
 RUN bunx prisma generate
 
 RUN bun run build
 
 # ---------- runtime ----------
-# node:22-slim y no alpine, a propósito. Prisma sobre musl es un problema
-# clásico: hay que pelearse con la versión de openssl y el modo de fallar es
-# oscuro. Debian pesa unas decenas de MB más y ese problema no existe.
+# node:22-slim. La razón original era esquivar la pelea de Prisma con musl y
+# openssl en alpine; con el compilador WASM de Prisma 7 ese problema ya no
+# existe, así que alpine volvería a ser viable. Se deja slim igual: son unas
+# decenas de MB, y a cambio se evita reabrir una discusión ya cerrada.
 FROM node:22-slim AS runtime
 WORKDIR /app
 
-# Prisma necesita libssl para su motor de consultas. node:22-slim no la trae.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl \
- && rm -rf /var/lib/apt/lists/*
+# Acá iba la instalación de openssl:
+#
+#   RUN apt-get update \
+#    && apt-get install -y --no-install-recommends openssl \
+#    && rm -rf /var/lib/apt/lists/*
+#
+# Se comenta y no se borra para dejar constancia de por qué NO hace falta: era
+# para el motor nativo de Prisma ≤6. El WASM de la 7 no enlaza contra libssl, y
+# quien se conecta de verdad es `pg`, que es JavaScript puro. Verificado: el
+# cliente generado no trae ningún .so ni .node.
 
 ENV NODE_ENV=production \
     PORT=3000 \
@@ -76,15 +102,36 @@ ENV NODE_ENV=production \
 
 COPY --from=build --chown=node:node /app/.output ./.output
 
-# Las cuatro de Prisma, y cada una por un motivo distinto:
-#   .prisma y @prisma/client · para que la APP pueda consultar
-#   prisma y prisma/         · para que el servicio `migrate` del compose pueda
-#                              correr `migrate deploy`. Sin la carpeta prisma/ no
-#                              tiene migraciones que aplicar.
+# Lo de Prisma, y cada cosa por un motivo distinto:
+#
+#   .prisma/ y @prisma/client · el cliente generado, con el .wasm adentro. Es lo
+#                               que usa la APP para consultar.
+#   adapter-pg y pg           · quien abre la conexión de verdad. El WASM arma
+#                               el SQL y nada más; sin el adaptador,
+#                               `new PrismaClient()` ni siquiera se instancia.
+#   prisma/ y prisma.config   · para que el servicio `migrate` del compose pueda
+#                               correr `migrate deploy`. Sin la carpeta prisma/
+#                               no tiene migraciones que aplicar, y sin el
+#                               config no sabe a qué base conectarse — en 7 la
+#                               URL ya no vive en schema.prisma.
+# Las dependencias de producción resueltas por bun: entran pg y
+# @prisma/adapter-pg con todo lo que arrastran, y entra `prisma` —el CLI— que
+# está en `dependencies` y no en `devDependencies` justamente porque el servicio
+# `migrate` del compose lo necesita adentro de esta imagen.
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+
+# El cliente generado va DESPUÉS y pisa lo anterior: `bun install` deja
+# @prisma/client vacío —se llena recién con `prisma generate`, que corrió en la
+# etapa de build— y .prisma/ directamente no existe hasta entonces. Acá adentro
+# viaja el .wasm, que es el mismo archivo para cualquier sistema operativo.
 COPY --from=build --chown=node:node /app/node_modules/.prisma        ./node_modules/.prisma
 COPY --from=build --chown=node:node /app/node_modules/@prisma/client ./node_modules/@prisma/client
-COPY --from=build --chown=node:node /app/node_modules/prisma         ./node_modules/prisma
-COPY --from=build --chown=node:node /app/prisma                      ./prisma
+
+# Para el servicio `migrate`: las migraciones y, en Prisma 7, el config —que es
+# donde vive la URL de la base desde que schema.prisma dejó de aceptarla.
+COPY --from=build --chown=node:node /app/prisma           ./prisma
+COPY --from=build --chown=node:node /app/prisma.config.ts ./prisma.config.ts
+COPY --from=build --chown=node:node /app/package.json     ./package.json
 
 USER node
 EXPOSE 3000

@@ -77,3 +77,16 @@ package-lock.json
 #
 scripts/datos/
 scripts/usuarios.json
+
+# Los backups diarios de la base. El servicio pg-backup del docker-compose los
+# escribe acá dentro, montando ./backups como volumen.
+#
+# Por el mismo motivo que lo de arriba, y peor: un volcado de pg_dump no es una
+# parte de los datos, son TODOS —incluidas las cuentas y sus contraseñas
+# hasheadas—. Sin esta linea quedan sin trackear dentro de un repositorio
+# publico, esperando a que alguien haga `git add -A` sin mirar.
+#
+# En el VPS esta carpeta vive al lado del compose y nunca ve un git. Acá se
+# ignora igual, porque el compose de produccion se puede correr en cualquier
+# maquina para probarlo.
+backups/

@@ -15,7 +15,7 @@ CREATE TYPE "media_kind" AS ENUM ('image', 'video');
 
 -- CreateTable
 CREATE TABLE "users" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "email" TEXT NOT NULL,
     "password" TEXT NOT NULL,
     "reset_token" TEXT,
@@ -44,7 +44,7 @@ CREATE TABLE "profiles" (
 
 -- CreateTable
 CREATE TABLE "user_roles" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "role" "app_role" NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -54,7 +54,7 @@ CREATE TABLE "user_roles" (
 
 -- CreateTable
 CREATE TABLE "user_permissions" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID NOT NULL,
     "permission" "app_permission" NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -73,7 +73,7 @@ CREATE TABLE "client_notes" (
 
 -- CreateTable
 CREATE TABLE "services" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" TEXT NOT NULL,
     "description" TEXT,
     "category" TEXT NOT NULL DEFAULT 'General',
@@ -89,7 +89,7 @@ CREATE TABLE "services" (
 
 -- CreateTable
 CREATE TABLE "service_categories" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" TEXT NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -98,7 +98,7 @@ CREATE TABLE "service_categories" (
 
 -- CreateTable
 CREATE TABLE "service_media" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "service_id" UUID NOT NULL,
     "url" TEXT NOT NULL,
     "kind" "media_kind" NOT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE "service_media" (
 
 -- CreateTable
 CREATE TABLE "professionals" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "user_id" UUID,
     "full_name" TEXT NOT NULL,
     "specialty" TEXT,
@@ -125,7 +125,7 @@ CREATE TABLE "professionals" (
 
 -- CreateTable
 CREATE TABLE "professional_services" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "professional_id" UUID NOT NULL,
     "service_id" UUID NOT NULL,
 
@@ -134,7 +134,7 @@ CREATE TABLE "professional_services" (
 
 -- CreateTable
 CREATE TABLE "professional_schedules" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "professional_id" UUID NOT NULL,
     "weekday" INTEGER NOT NULL,
     "start_time" TIME(6) NOT NULL,
@@ -146,7 +146,7 @@ CREATE TABLE "professional_schedules" (
 
 -- CreateTable
 CREATE TABLE "appointments" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "client_id" UUID,
     "service_id" UUID NOT NULL,
     "professional_id" UUID,
@@ -168,7 +168,7 @@ CREATE TABLE "appointments" (
 
 -- CreateTable
 CREATE TABLE "products" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" TEXT NOT NULL,
     "brand" TEXT,
     "category" TEXT NOT NULL DEFAULT 'Cremas',
@@ -184,7 +184,7 @@ CREATE TABLE "products" (
 
 -- CreateTable
 CREATE TABLE "product_categories" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" TEXT NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -202,7 +202,7 @@ CREATE TABLE "product_costs" (
 
 -- CreateTable
 CREATE TABLE "stock_movements" (
-    "id" UUID NOT NULL,
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "product_id" UUID NOT NULL,
     "quantity" DECIMAL(12,2) NOT NULL,
     "reason" TEXT,
@@ -231,10 +231,19 @@ CREATE UNIQUE INDEX "user_permissions_user_id_permission_key" ON "user_permissio
 CREATE UNIQUE INDEX "service_categories_name_key" ON "service_categories"("name");
 
 -- CreateIndex
+CREATE INDEX "service_media_service_id_position_created_at_idx" ON "service_media"("service_id", "position", "created_at");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "professionals_user_id_key" ON "professionals"("user_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "professional_services_professional_id_service_id_key" ON "professional_services"("professional_id", "service_id");
+
+-- CreateIndex
+CREATE INDEX "appointments_starts_at_idx" ON "appointments"("starts_at");
+
+-- CreateIndex
+CREATE INDEX "appointments_client_id_idx" ON "appointments"("client_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "product_categories_name_key" ON "product_categories"("name");

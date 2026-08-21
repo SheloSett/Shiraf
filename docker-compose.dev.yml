@@ -19,8 +19,16 @@ services:
     volumes:
       - shiraf-pgdata-dev:/var/lib/postgresql/data
     # Publicado para poder abrir Prisma Studio o un cliente desde el host.
+    #
+    # 5434 y no 5432 del lado del HOST: en esta máquina el 5432 ya lo tiene el
+    # contenedor `my-database` de otro proyecto, y el 5433 lo usa `ecommerce_db`
+    # por exactamente el mismo motivo. Adentro de la red de compose sigue siendo
+    # 5432, así que el DATABASE_URL de abajo no cambia.
+    #
+    # Si en otra máquina hace falta otro, va por variable:
+    #   DB_PORT=5555 docker compose -f docker-compose.dev.yml up
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_PORT:-5434}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shiraf -d shiraf"]
       interval: 10s
@@ -35,10 +43,29 @@ services:
       # La etapa con node_modules, sin el build de producción. Es oven/bun.
       target: deps
     container_name: shiraf-app-dev
-    # --host 0.0.0.0 es obligatorio: sin eso Vite escucha sólo en el loopback
-    # DEL CONTENEDOR y desde el navegador del host no se llega. El síntoma es
-    # una pestaña que no carga, sin ningún error en los logs.
-    command: ["bun", "run", "dev", "--host", "0.0.0.0"]
+    # Tres cosas, y las tres hacen falta:
+    #
+    # --host 0.0.0.0 · sin esto Vite escucha sólo en el loopback DEL CONTENEDOR
+    #                  y desde el navegador del host no se llega.
+    # --port 8080    · es el puerto que configura el preset de Lovable. Acá
+    #                  estaba publicado el 8081, que es a donde Vite se corre
+    #                  SÓLO si el 8080 está ocupado — cosa que pasa en la
+    #                  máquina de casa y no adentro de un contenedor limpio. O
+    #                  sea que el mapeo apuntaba a un puerto donde no había
+    #                  nadie escuchando.
+    # --strictPort   · convierte el problema de arriba en un error visible. Sin
+    #                  esto, si el puerto estuviera ocupado Vite se corre al
+    #                  siguiente en silencio y volvemos a lo mismo: una pestaña
+    #                  que no carga y unos logs que dicen que todo está bien.
+    #
+    # `prisma generate` antes de arrancar, y en cada `up`: la etapa `deps` sólo
+    # corre `bun install` con el package.json, sin el schema.prisma a la vista,
+    # así que el postinstall de Prisma no genera nada. Sin esto, el primer
+    # import de @prisma/client falla pidiendo justamente esto.
+    command:
+      - sh
+      - -c
+      - bunx prisma generate && bun run dev --host 0.0.0.0 --port 8080 --strictPort
     volumes:
       # El código, en vivo.
       - .:/app
@@ -48,7 +75,23 @@ services:
       # arranca y el error no dice eso en ningún lado.
       - /app/node_modules
     ports:
-      - "8081:8081"
+      # HOST:CONTENEDOR, y son dos cosas distintas. Vale la pena entenderlo
+      # porque acá ya hubo un bug por confundirlas.
+      #
+      # El del CONTENEDOR es 8080 y no se elige: es el que configura el preset
+      # de Lovable en vite.config.ts, y adentro de un contenedor limpio siempre
+      # está libre, así que Vite se ata ahí.
+      #
+      # El del HOST se elige. Va 8081 porque en esta máquina el 8080 lo tiene
+      # tomado Docker Desktop, y publicarlo ahí falla al levantar.
+      #
+      # Decía "8081:8081", que estaba mal de las dos puntas: apuntaba a un
+      # puerto del contenedor donde no había nadie escuchando —Vite sólo usa el
+      # 8081 si el 8080 está ocupado, cosa que no pasa adentro del contenedor—.
+      # El síntoma era una pestaña en blanco con los logs diciendo que todo
+      # estaba bien.
+      #   - "8081:8081"
+      - "8081:8080"
     env_file: .env
     environment:
       # ⚠️ Pisa lo que diga el .env a propósito. Adentro de la red de compose el

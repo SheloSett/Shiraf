@@ -26,8 +26,12 @@ services:
     # Sólo loopback: la app le pega por la red interna de compose, donde el host
     # es `db`. Publicarlo acá es para poder abrir Prisma Studio o psql desde la
     # máquina; a internet no tiene que salir nunca.
+    #
+    # El puerto del host sale por variable porque no siempre está libre: en la
+    # máquina de desarrollo lo tienen otros proyectos. En el VPS, donde ésta es
+    # la única base, el 5432 por defecto está bien.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shiraf -d shiraf"]
       interval: 10s
@@ -87,8 +91,29 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?falta CLOUDINARY_API_SECRET en .env}
 
       # Mails: avisos de turno y recordatorios.
-      RESEND_API_KEY: ${RESEND_API_KEY:?falta RESEND_API_KEY en .env}
-      MAIL_FROM: ${MAIL_FROM:?falta MAIL_FROM en .env}
+      #
+      # Las tres van con `:-` y NO con `:?`, o sea que su ausencia no frena el
+      # arranque. Es a propósito y está para respetar una decisión que ya vive
+      # en el código: notifications.functions.ts trata las dos primeras como
+      # opcionales, con este comentario textual —
+      #
+      #   "Sin RESEND_API_KEY o sin MAIL_FROM no se rompe nada: los cambios de
+      #    estado siguen funcionando y el panel avisa que el mail no salió. Es
+      #    deliberado, para que se pueda trabajar sin tener el correo resuelto."
+      #
+      # Con `:?` el contenedor se negaba a levantar y esa tolerancia dejaba de
+      # existir. Peor: hoy están comentadas en el .env porque la cuenta de
+      # Resend todavía no se creó, así que el primer `docker compose up` moría
+      # acá, sin relación aparente con lo que se estaba probando.
+      #
+      # No es que no haya que configurarlas: hay que hacerlo antes de abrir el
+      # centro. Pero eso lo avisa el panel cuando un turno se confirma y el mail
+      # no sale, que es donde se entiende. No un compose que no arranca.
+      # Decian:
+      #   RESEND_API_KEY: ${RESEND_API_KEY:?falta RESEND_API_KEY en .env}
+      #   MAIL_FROM: ${MAIL_FROM:?falta MAIL_FROM en .env}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
       MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
       # El secreto que autoriza a POST /api/recordatorios, que dispara el cron
       # del VPS. Sin esto el endpoint responde 401 a todo.
