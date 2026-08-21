@@ -181,3 +181,48 @@ export type ProductoAdmin = {
 };
 
 export type RtaProductos = { productos: ProductoAdmin[] };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Equipo, desde el panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un horario con su id, que la pantalla necesita para poder editarlo. */
+export type HorarioConId = HorarioDeAgenda & { id: string };
+
+/**
+ * La ficha completa, como la ve quien tiene `team`.
+ *
+ * Incluye `user_id`, al revés que `ProfesionalPublica`: la pantalla lo usa para
+ * saber si ya se le dio acceso al panel. En el sitio público no va, porque diría
+ * qué profesional tiene cuenta.
+ */
+export type ProfesionalAdmin = {
+  id: string;
+  full_name: string;
+  specialty: string | null;
+  bio: string | null;
+  is_active: boolean;
+  user_id: string | null;
+  professional_services: {
+    id: string;
+    service_id: string;
+    services: { id: string; name: string };
+  }[];
+  professional_schedules: HorarioConId[];
+};
+
+export type RtaProfesionalesAdmin = { profesionales: ProfesionalAdmin[] };
+
+/** El selector de tratamientos del formulario del equipo. */
+export type RtaServiciosParaElegir = {
+  servicios: { id: string; name: string; category: string }[];
+};
+
+/**
+ * Turnos futuros por profesional.
+ *
+ * ⚠️ Viene **vacío** —y no con un error— para quien no tiene el permiso
+ * `appointments`. Es lo que pasaba con la RLS y la pantalla ya lo contempla: sin
+ * ese permiso el aviso simplemente no aparece.
+ */
+export type RtaTurnosProximos = { turnos: Record<string, number> };

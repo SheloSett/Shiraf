@@ -146,6 +146,13 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // Las fichas del equipo, sus tratamientos y sus horarios.
+      if (pathname.startsWith("/api/equipo/")) {
+        const { equipoRouter } = await import("./server/routes/equipo.routes");
+        const respuesta = await equipoRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

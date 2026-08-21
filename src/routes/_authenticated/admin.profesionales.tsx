@@ -28,7 +28,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiDelete, apiPost, apiPut } from "@/lib/api";
+import type {
+  RtaProfesionalesAdmin,
+  RtaServiciosParaElegir,
+  RtaTurnosProximos,
+} from "@/lib/api-tipos";
 import { useAccess } from "@/hooks/useAccess";
 import { WEEKDAYS } from "@/lib/shiraf";
 import { linkProfessionalAccount } from "@/lib/team";
@@ -94,16 +99,8 @@ function AdminProfessionals() {
 
   const team = useQuery({
     queryKey: ["admin-professionals"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professionals")
-        .select(
-          "id, full_name, specialty, bio, is_active, user_id, professional_services(id, service_id, services(id, name)), professional_schedules(id, weekday, start_time, end_time)",
-        )
-        .order("full_name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionalesAdmin>("/api/equipo/profesionales")).profesionales,
   });
 
   const services = useQuery({
@@ -117,15 +114,11 @@ function AdminProfessionals() {
     // Servicios sigue alcanzando a esta lista, que es lo que se quiere cuando
     // se crea o se borra un tratamiento.
     queryKey: ["admin-services", "picker"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, category")
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    // Endpoint propio y no /api/catalogo/servicios: ese pide el permiso
+    // `catalog` y esta pantalla la abre quien tiene `team`. El de equipo
+    // devuelve los publicados, y los despublicados sólo si además edita el
+    // catálogo — igual que hacía la policy.
+    queryFn: async () => (await api<RtaServiciosParaElegir>("/api/equipo/servicios")).servicios,
   });
 
   /**
@@ -143,20 +136,11 @@ function AdminProfessionals() {
    */
   const upcoming = useQuery({
     queryKey: ["professionals-upcoming"],
+    // El conteo lo hace la base. Vuelve como objeto —un Map no sobrevive a
+    // JSON— y se reconstruye acá, que es lo que espera upcomingFor().
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("appointments")
-        .select("professional_id")
-        .in("status", ["pending", "confirmed"])
-        .gte("starts_at", new Date().toISOString());
-      if (error) throw error;
-
-      const counts = new Map<string, number>();
-      for (const row of data ?? []) {
-        if (!row.professional_id) continue;
-        counts.set(row.professional_id, (counts.get(row.professional_id) ?? 0) + 1);
-      }
-      return counts;
+      const { turnos } = await api<RtaTurnosProximos>("/api/equipo/turnos-proximos");
+      return new Map(Object.entries(turnos));
     },
   });
 
@@ -178,57 +162,23 @@ function AdminProfessionals() {
         specialty: form.specialty.trim() || null,
         bio: form.bio.trim() || null,
         is_active: form.is_active,
+        // Los tratamientos y los horarios como quedaron. El servidor compara
+        // contra lo que hay y agrega, actualiza o saca lo que corresponda, todo
+        // en una transacción. Antes esto eran hasta seis pedidos sueltos desde
+        // el navegador —altas y bajas de vínculos, altas, cambios y bajas de
+        // horarios— y una falla en el medio dejaba la ficha a mitad de camino.
+        services: [...draftServices],
+        schedules: draftSchedules.map((s) => ({
+          ...(s.id ? { id: s.id } : {}),
+          weekday: s.weekday,
+          start_time: s.start_time,
+          end_time: s.end_time,
+        })),
       };
 
-      const original = team.data?.find((p) => p.id === editingId);
-      let professionalId = editingId;
-
-      if (professionalId) {
-        const { error } = await supabase
-          .from("professionals")
-          .update(payload)
-          .eq("id", professionalId);
-        if (error) throw error;
-      } else {
-        // Hace falta el id devuelto para poder colgarle tratamientos y horarios.
-        const { data, error } = await supabase
-          .from("professionals")
-          .insert(payload)
-          .select("id")
-          .single();
-        if (error) throw error;
-        professionalId = data.id;
-      }
-
-      // ── Tratamientos ──────────────────────────────────────────────────────
-      const existingLinks = new Map(
-        (original?.professional_services ?? []).map((ps) => [ps.service_id, ps.id]),
-      );
-
-      const servicesToAdd = [...draftServices].filter((id) => !existingLinks.has(id));
-      const linksToRemove = [...existingLinks.entries()]
-        .filter(([serviceId]) => !draftServices.has(serviceId))
-        .map(([, linkId]) => linkId);
-
-      if (servicesToAdd.length > 0) {
-        const { error } = await supabase.from("professional_services").insert(
-          servicesToAdd.map((serviceId) => ({
-            professional_id: professionalId,
-            service_id: serviceId,
-          })),
-        );
-        if (error) throw error;
-      }
-
-      if (linksToRemove.length > 0) {
-        const { error } = await supabase
-          .from("professional_services")
-          .delete()
-          .in("id", linksToRemove);
-        if (error) throw error;
-      }
-
-      // ── Horarios ──────────────────────────────────────────────────────────
+      // La validación del horario dado vuelta también está en el servidor: un
+      // pedido hecho a mano no pasa por este formulario. Acá se conserva para
+      // poder nombrar el día en el mensaje.
       const invalid = draftSchedules.find((s) => s.start_time >= s.end_time);
       if (invalid) {
         throw new Error(
@@ -236,59 +186,10 @@ function AdminProfessionals() {
         );
       }
 
-      const originalSchedules = original?.professional_schedules ?? [];
-      const keptScheduleIds = new Set(
-        draftSchedules.map((s) => s.id).filter((id): id is string => !!id),
-      );
-
-      const schedulesToAdd = draftSchedules.filter((s) => !s.id);
-      const schedulesToRemove = originalSchedules
-        .map((s) => s.id)
-        .filter((id) => !keptScheduleIds.has(id));
-
-      // Filas que ya existían y cambiaron de día u horario: se actualizan en vez
-      // de borrarse y recrearse, así conservan su id.
-      const schedulesToUpdate = draftSchedules.filter((s) => {
-        if (!s.id) return false;
-        const before = originalSchedules.find((o) => o.id === s.id);
-        if (!before) return false;
-        return (
-          before.weekday !== s.weekday ||
-          before.start_time.slice(0, 5) !== s.start_time ||
-          before.end_time.slice(0, 5) !== s.end_time
-        );
-      });
-
-      if (schedulesToAdd.length > 0) {
-        const { error } = await supabase.from("professional_schedules").insert(
-          schedulesToAdd.map((s) => ({
-            professional_id: professionalId,
-            weekday: s.weekday,
-            start_time: s.start_time,
-            end_time: s.end_time,
-          })),
-        );
-        if (error) throw error;
-      }
-
-      for (const s of schedulesToUpdate) {
-        const { error } = await supabase
-          .from("professional_schedules")
-          .update({
-            weekday: s.weekday,
-            start_time: s.start_time,
-            end_time: s.end_time,
-          })
-          .eq("id", s.id!);
-        if (error) throw error;
-      }
-
-      if (schedulesToRemove.length > 0) {
-        const { error } = await supabase
-          .from("professional_schedules")
-          .delete()
-          .in("id", schedulesToRemove);
-        if (error) throw error;
+      if (editingId) {
+        await apiPut(`/api/equipo/profesionales/${editingId}`, payload);
+      } else {
+        await apiPost("/api/equipo/profesionales", payload);
       }
     },
     onSuccess: async () => {
@@ -301,10 +202,7 @@ function AdminProfessionals() {
   });
 
   const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("professionals").delete().eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: (id: string) => apiDelete(`/api/equipo/profesionales/${id}`),
     onSuccess: async () => {
       await refresh();
       setDeleting(null);
@@ -369,13 +267,8 @@ function AdminProfessionals() {
   });
 
   const toggleActive = useMutation({
-    mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
-      const { error } = await supabase
-        .from("professionals")
-        .update({ is_active: value })
-        .eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: ({ id, value }: { id: string; value: boolean }) =>
+      apiPut(`/api/equipo/profesionales/${id}/activa`, { is_active: value }),
     onSuccess: refresh,
     onError: (e: Error) => toast.error(e.message),
   });

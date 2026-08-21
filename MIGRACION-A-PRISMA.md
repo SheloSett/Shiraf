@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — 9 de 47                   |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 29 archivos        |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1370,8 +1370,18 @@ donde son obligatorios. Como mínimo, uno por tabla sensible:
 
 ### Fase 6 — Las pantallas, una por una 🟡 **SEGUÍ ACÁ**
 
-47 archivos de `src/` hablan con Supabase. Se pasan **de a uno, con un commit
-por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
+Se pasan **de a uno, con un commit por pantalla**. No empieces la siguiente hasta
+que la anterior compile limpio.
+
+> **El número que sirve son 29**, no 47. Ese 47 contaba los archivos que
+> *mencionan* supabase, y varios sólo lo nombran en un comentario. Los que
+> realmente hay que tocar son los que lo **importan**:
+>
+> ```bash
+> grep -rl 'from "@/integrations/supabase' src --include=*.ts --include=*.tsx >   | grep -v '^src/integrations/supabase/'
+> ```
+>
+> Al 21/8/2026 son 29, con 10 pantallas ya pasadas.
 
 > #### ✅ Hecho: el paso 1, las 4 páginas públicas
 >
@@ -1436,6 +1446,32 @@ por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
 > El endpoint devuelve las URLs que dejaron de estar referenciadas **después** de
 > guardar; recién ahí la pantalla las borra. Al revés, una falla dejaría la
 > galería apuntando a archivos que ya no existen.
+>
+> #### ✅ Hecho: el paso 4, `admin.profesionales`
+>
+> Fichas del equipo, sus tratamientos y sus horarios, en `/api/equipo/*` con
+> permiso `team`. La reconciliación de vínculos y horarios pasó al servidor y a
+> una transacción, igual que la galería del catálogo: antes eran hasta seis
+> pedidos sueltos y una falla en el medio dejaba la ficha a mitad de camino.
+>
+> Dos cosas de esta pantalla son cruces entre permisos, y las dos se resolvieron
+> **replicando lo que hacía la policy**, no lo que sería más simple:
+>
+> 1. **El selector de tratamientos** no puede pedirle a `/api/catalogo/servicios`,
+>    que exige `catalog`: esta pantalla la abre quien tiene `team`, que es otro
+>    permiso a propósito. Tiene su propio endpoint, que muestra los publicados —y
+>    los despublicados sólo si además edita el catálogo—, que es exactamente lo
+>    que decía `published services authenticated`.
+>
+> 2. **El aviso de turnos futuros devuelve vacío, no 403**, para quien no tiene
+>    `appointments`. Con RLS ese conteo volvía vacío y el aviso no aparecía; está
+>    anotado en la pantalla como limitación conocida. Devolver los conteos igual
+>    le daría información de la agenda a alguien que no la tiene; devolver un 403
+>    mostraría un error donde antes no pasaba nada.
+>
+> **Esa es la pregunta a hacerse en cada pantalla que queda:** cuando algo se veía
+> vacío, ¿era porque no había datos, o porque la policy lo recortaba? Si era lo
+> segundo, el recorte va al controller.
 >
 > ##### 🔴 Dos candados que los tenía la RLS y ahora los tiene el código
 >
