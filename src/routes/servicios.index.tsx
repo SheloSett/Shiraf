@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Reveal } from "@/components/reveal";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
 import { formatMoney } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
@@ -81,16 +82,7 @@ function ServicesPage() {
 
   const services = useQuery({
     queryKey: ["services", "published"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, description, category, duration_minutes, price, image_url")
-        .eq("is_published", true)
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaServicios>("/api/publico/servicios")).servicios,
   });
 
   const grouped = useMemo(() => {

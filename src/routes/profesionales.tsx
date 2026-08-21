@@ -5,7 +5,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaProfesionalesConDetalle } from "@/lib/api-tipos";
 import { WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/profesionales")({
@@ -30,17 +31,8 @@ export const Route = createFileRoute("/profesionales")({
 function ProfessionalsPage() {
   const team = useQuery({
     queryKey: ["professionals", "full"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professionals")
-        .select(
-          "id, full_name, specialty, bio, is_active, professional_services(services(id, name)), professional_schedules(weekday, start_time, end_time)",
-        )
-        .eq("is_active", true)
-        .order("full_name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionalesConDetalle>("/api/publico/profesionales?detalle=1")).profesionales,
   });
 
   return (

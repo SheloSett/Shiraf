@@ -6,7 +6,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaProfesionalesConHorarios, RtaServicio } from "@/lib/api-tipos";
 import { imageUrl, videoPosterUrl, videoUrl } from "@/lib/cloudinary";
 import { formatMoney, WEEKDAYS } from "@/lib/shiraf";
 
@@ -45,34 +46,15 @@ function ServiceDetail() {
 
   const service = useQuery({
     queryKey: ["service", serviceId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select(
-          "id, name, description, category, duration_minutes, price, image_url, service_media(id, url, kind, position)",
-        )
-        .eq("id", serviceId)
-        .eq("is_published", true)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaServicio>(`/api/publico/servicios/${serviceId}`)).servicio,
   });
 
   const team = useQuery({
     queryKey: ["service-professionals", serviceId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professional_services")
-        .select(
-          "professionals!inner(id, full_name, specialty, bio, is_active, professional_schedules(weekday, start_time, end_time))",
-        )
-        .eq("service_id", serviceId);
-      if (error) throw error;
-      return (data ?? [])
-        .map((row) => row.professionals)
-        .filter((p): p is NonNullable<typeof p> => !!p && p.is_active);
-    },
+    // El filtro por is_active ahora lo hace el servidor, en la consulta.
+    queryFn: async () =>
+      (await api<RtaProfesionalesConHorarios>(`/api/publico/servicios/${serviceId}/profesionales`))
+        .profesionales,
   });
 
   /**

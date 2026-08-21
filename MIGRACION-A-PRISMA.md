@@ -724,7 +724,8 @@ git checkout -b migracion-prisma
 > ## 🚦 DÓNDE ESTAMOS — leé esto primero
 >
 > **Actualizado el 21/8/2026.** Las fases 0 a 4 están **hechas, aplicadas y
-> probadas contra un Postgres real**. Lo que falta es pasar la aplicación.
+> probadas contra un Postgres real**. Lo que falta es pasar la aplicación, y
+> **ya empezó**: las 4 páginas públicas están en Prisma.
 >
 > | Fase                       | Estado                                        |
 > | -------------------------- | --------------------------------------------- |
@@ -734,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | ⬜ **acá seguís** — 47 archivos                |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — 4 de 47, las públicas     |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1367,10 +1368,43 @@ donde son obligatorios. Como mínimo, uno por tabla sensible:
 
 ---
 
-### Fase 6 — Las pantallas, una por una ⬜ **EMPEZÁ ACÁ**
+### Fase 6 — Las pantallas, una por una 🟡 **SEGUÍ ACÁ**
 
 47 archivos de `src/` hablan con Supabase. Se pasan **de a uno, con un commit
 por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
+
+> #### ✅ Hecho: el paso 1, las 4 páginas públicas
+>
+> `index`, `servicios.index`, `servicios.$serviceId` y `profesionales` ya no
+> importan `supabase`. Con eso quedaron estrenadas tres piezas que **usan todas
+> las pantallas que siguen** — no las reinventes:
+>
+> | Pieza | Qué hace |
+> | --- | --- |
+> | `src/lib/api.ts` | El `fetch` con el manejo de error hecho. Un pedido que falla **tira**, para que react-query lo muestre como error y no como lista vacía — que es el bug que arregló `2fb6341`. |
+> | `src/lib/api-tipos.ts` | La forma de cada respuesta, **compartida por el controller y la pantalla**. Es lo que reemplaza al tipado que daba supabase-js. |
+> | `/api/publico/*` | Montado en `src/server.ts`, sin middleware. Es el único router público. |
+>
+> Y quedó verificado que **Prisma no entra en el bundle del navegador**: el
+> `grep` sobre `.output/public/` no encuentra ni `@prisma/client`, ni `bcryptjs`,
+> ni `jsonwebtoken`.
+>
+> ##### Dos cosas que aprendió este paso y valen para las 43 que faltan
+>
+> 1. 🔴 **`tsc` necesita más memoria que la que trae Node por defecto.** Con los
+>    tipos de Prisma en el proyecto, `tsc --noEmit` muere con
+>    *"Fatal process out of memory"* — un error que no nombra ningún archivo y
+>    hace pensar que hay un bucle infinito de tipos. No lo hay. Corré:
+>
+>    ```bash
+>    node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit
+>    ```
+>
+> 2. **La serialización rompe en silencio.** `supabase-js` entregaba `numeric`
+>    como número y `time` como `"09:00:00"`; Prisma entrega `Decimal` y `Date`.
+>    Si sale tal cual, `formatMoney()` escribe `[object Object]` y
+>    `.slice(0, 5)` explota. **Nada de eso lo detecta el compilador** si el tipo
+>    de la respuesta no está declarado — por eso existe `api-tipos.ts`.
 
 #### El patrón, y no hay otro
 
@@ -1458,11 +1492,13 @@ Así los errores aparecen donde hacen menos daño:
    pidiéndole la sesión a Supabase.
 
 4. **`appointments.price` está congelado a propósito** y la columna es `NOT
-NULL`. En Supabase lo completaba un trigger al insertar; **ese trigger no se
-   portó**, así que el controller que cree un turno tiene que llenarlo con el
-   precio del tratamiento **del momento de reservar**. Si lo dejás vacío, el
-   insert falla; si lo resolvés con un join a `services.price`, el historial
-   empieza a mentir cuando cambien los precios.
+   NULL`. En Supabase lo completaba un trigger al insertar. **Ese trigger ya
+   está portado**: es `validarTurno()`, en `src/server/services/turnos.service.ts`, que además
+   congela la duración y valida el horario. (El solape no: ése lo sigue
+   haciendo el trigger en la base, y tiene que quedar ahí — ver Fase 3.) El controller que cree un
+   turno **la llama a ella** en vez de armar el `price` por su cuenta. Si lo
+   resolvés con un join a `services.price`, el historial empieza a mentir
+   cuando cambien los precios.
 
 ---
 

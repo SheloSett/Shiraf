@@ -115,6 +115,15 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // El catálogo y el equipo: /api/publico/*. Sin sesión, como las policies
+      // `TO anon` que reemplaza. El filtro por is_published / is_active vive en
+      // el controller, que es donde se puede leer al lado de cada consulta.
+      if (pathname.startsWith("/api/publico/")) {
+        const { publicoRouter } = await import("./server/routes/publico.routes");
+        const respuesta = await publicoRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

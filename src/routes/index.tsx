@@ -8,7 +8,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaProfesionales, RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
 import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
 import { formatMoney } from "@/lib/shiraf";
@@ -35,17 +36,8 @@ export const Route = createFileRoute("/")({
 function Home() {
   const services = useQuery({
     queryKey: ["services", "published", "featured"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, description, category, duration_minutes, price, image_url")
-        .eq("is_published", true)
-        .order("category")
-        .order("price", { ascending: true })
-        .limit(6);
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (await api<RtaServicios>("/api/publico/servicios?orden=precio&limite=6")).servicios,
   });
 
   // El hover manda, pero antes de que el usuario toque nada mostramos el
@@ -58,15 +50,8 @@ function Home() {
 
   const professionals = useQuery({
     queryKey: ["professionals", "active", "home"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professionals")
-        .select("id, full_name, specialty, bio")
-        .eq("is_active", true)
-        .limit(3);
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionales>("/api/publico/profesionales?limite=3")).profesionales,
   });
 
   return (
