@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/mi-cuenta")({
    * mudó a /admin/cuenta.
    */
   beforeLoad: async ({ context }) => {
-    if (await isTeamAccount(context.queryClient, context.user.id)) {
+    if (await isTeamAccount(context.queryClient)) {
       throw redirect({ to: "/admin" });
     }
   },

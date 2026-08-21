@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost } from "@/lib/api";
+import { olvidarSesion, pedirSesion } from "@/lib/sesion";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { isTeamAccount } from "@/lib/roles";
 
@@ -51,8 +52,8 @@ function AuthPage() {
    * el espacio de clienta, sin nada suyo adentro y sin ninguna puerta visible al
    * panel. Había que saberse la URL /admin de memoria.
    */
-  async function goToMyPlace(userId: string) {
-    const team = await isTeamAccount(queryClient, userId);
+  async function goToMyPlace() {
+    const team = await isTeamAccount(queryClient);
     navigate({ to: team ? "/admin" : "/mi-cuenta" });
   }
 
@@ -61,9 +62,9 @@ function AuthPage() {
   // no llamando a goToMyPlace para no tener que declararla como dependencia:
   // es una función nueva en cada render y el efecto se volvería a disparar.
   useEffect(() => {
-    void supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session) return;
-      const team = await isTeamAccount(queryClient, data.session.user.id);
+    void pedirSesion(queryClient).then(async (sesion) => {
+      if (!sesion) return;
+      const team = await isTeamAccount(queryClient);
       navigate({ to: team ? "/admin" : "/mi-cuenta" });
     });
   }, [navigate, queryClient]);
@@ -71,13 +72,18 @@ function AuthPage() {
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      await apiPost("/api/auth/login", { email, password });
+      // La sesión vive en una cookie httpOnly, así que no hay nada que guardar
+      // acá: lo único que hace falta es tirar lo que react-query recuerde de la
+      // sesión anterior. Es lo que antes hacía onAuthStateChange.
+      await olvidarSesion(queryClient);
+      await goToMyPlace();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo ingresar.");
+    } finally {
+      setLoading(false);
     }
-    await goToMyPlace(data.user.id);
   }
 
   /**
@@ -94,9 +100,10 @@ function AuthPage() {
       return;
     }
     setLoading(true);
-    await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/recuperar`,
-    });
+    // No se mira si falla: la respuesta es siempre la misma exista o no la
+    // cuenta, y eso ya lo garantiza el servidor. Mostrar un error acá sería
+    // justamente la diferencia que se quiere evitar.
+    await apiPost("/api/auth/forgot-password", { email: email.trim() }).catch(() => {});
     setLoading(false);
     setRecoverySent(email.trim());
   }
@@ -104,31 +111,23 @@ function AuthPage() {
   async function signUp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: { full_name: fullName, phone },
-      },
-    });
-    setLoading(false);
-    if (error) {
-      toast.error(error.message);
+    try {
+      await apiPost("/api/auth/register", { email, password, fullName, phone });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo crear la cuenta.");
       return;
+    } finally {
+      setLoading(false);
     }
 
-    // Si el proyecto exige confirmar el mail, signUp devuelve el usuario pero
-    // `session` en null. Antes se anunciaba "Cuenta creada" igual y se navegaba
-    // a /mi-cuenta, que sin sesión rebota de vuelta a /auth: el mensaje mentía
-    // y el redirect no llevaba a ningún lado.
-    if (!data.session) {
-      setPendingEmail(email);
-      return;
-    }
-
-    toast.success("Cuenta creada. ¡Bienvenida a Shiraf!");
-    navigate({ to: "/mi-cuenta" });
+    // El alta NO deja la sesión abierta, y es a propósito: hasta que no confirma
+    // el mail no se le vinculan los turnos que había sacado como invitada,
+    // porque ese vínculo se busca POR MAIL. Sin confirmar, cualquiera se
+    // registraría con el mail de otra y vería sus turnos.
+    //
+    // Antes acá se preguntaba si vino sesión, porque con Supabase dependía de
+    // una casilla del panel. Ahora no depende de nada: nunca viene.
+    setPendingEmail(email);
   }
 
   return (

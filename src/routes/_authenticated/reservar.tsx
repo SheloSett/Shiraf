@@ -38,7 +38,7 @@ export const Route = createFileRoute("/_authenticated/reservar")({
    * simplemente ese formulario no es el suyo.
    */
   beforeLoad: async ({ context }) => {
-    if (await isTeamAccount(context.queryClient, context.user.id)) {
+    if (await isTeamAccount(context.queryClient)) {
       throw redirect({ to: "/admin" });
     }
   },

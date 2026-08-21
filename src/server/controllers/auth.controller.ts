@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/server/db";
+import { miFichaDeProfesional } from "@/server/services/agenda.service";
 import { json, type Ctx } from "@/server/http";
 import { cookieDeCierre, crearCookieDeSesion } from "@/server/middleware/auth.middleware";
 import { resetearIntentos } from "@/server/middleware/loginLimiter";
@@ -75,6 +76,15 @@ async function retrato(userId: string) {
     telefono: usuario.profile?.phone ?? null,
     roles: usuario.roles.map((r) => r.role as string),
     permisos: usuario.permissions.map((p) => p.permission as string),
+    // Va acá y no en una consulta aparte para que la pantalla no tenga que
+    // juntar su idea de quién sos con tres respuestas que pueden llegar
+    // desincronizadas. Antes esto era la RPC `my_professional_id`.
+    //
+    // ⚠️ Se pregunta con `miFichaDeProfesional` y no consultando `professionals`
+    // derecho, para que esto y `miAgenda()` contesten siempre lo mismo: la
+    // función incluye el `is_active`, así que una profesional dada de baja deja
+    // de ver la agenda en el acto.
+    professionalId: await miFichaDeProfesional(usuario.id),
   };
 }
 

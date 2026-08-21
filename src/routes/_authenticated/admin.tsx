@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
 import { usePendingAppointments } from "@/hooks/usePendingAppointments";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
@@ -126,7 +126,11 @@ function AdminLayout() {
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
-    await supabase.auth.signOut();
+    // El logout es un pedido al servidor porque la cookie es httpOnly: el
+    // navegador no puede borrarla solo. Si falla igual se navega al login —
+    // dejar a alguien atrapado adentro porque se cortó la red sería peor que
+    // una cookie que sigue viva un rato.
+    await apiPost("/api/auth/logout").catch(() => {});
     navigate({ to: "/auth", replace: true });
   }
 

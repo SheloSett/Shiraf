@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 29 archivos        |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 20 archivos        |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1381,7 +1381,8 @@ que la anterior compile limpio.
 > grep -rl 'from "@/integrations/supabase' src --include=*.ts --include=*.tsx >   | grep -v '^src/integrations/supabase/'
 > ```
 >
-> Al 21/8/2026 son 29, con 10 pantallas ya pasadas.
+> Al 21/8/2026 son 20: ya pasaron las públicas, el catálogo, el stock, el
+> equipo y **todo el bloque de sesión**.
 
 > #### ✅ Hecho: el paso 1, las 4 páginas públicas
 >
@@ -1446,6 +1447,53 @@ que la anterior compile limpio.
 > El endpoint devuelve las URLs que dejaron de estar referenciadas **después** de
 > guardar; recién ahí la pantalla las borra. Al revés, una falla dejaría la
 > galería apuntando a archivos que ya no existen.
+>
+> #### 🔴 Hecho fuera de orden: la sesión — y por qué hubo que adelantarla
+>
+> **El plan no tenía este paso, y sin él lo anterior no funcionaba.** Vale la
+> pena entender el error para no repetirlo en otra migración.
+>
+> Las pantallas convertidas piden `/api/*`, que lee la sesión de una **cookie
+> httpOnly** firmada con `JWT_SECRET`. Pero el login seguía siendo el de
+> Supabase, que deja su sesión en `localStorage` y la manda como header
+> `Authorization`. Son dos cosas distintas: **las cuatro pantallas del panel ya
+> convertidas devolvían 401 a todo**.
+>
+> No lo detectó nada —compilan, el build pasa, el lint está limpio— porque es un
+> desajuste de runtime entre dos mitades que nunca se ejecutaron juntas. Y no se
+> notó antes porque en esta máquina no hay base para probar.
+>
+> **La lección para el resto: convertir el auth ANTES que las pantallas que lo
+> necesitan, no después.** El orden que traía el plan —público, catálogo, stock,
+> equipo, y el auth recién en el paso 7 con `admin.cuenta`— dejaba todo el panel
+> sin poder probarse hasta el final.
+>
+> Lo que cambió, en una sola consulta:
+>
+> | Antes | Ahora |
+> | --- | --- |
+> | `supabase.auth.onAuthStateChange` + `getSession` en `useAuth` | `sesionQuery()` sobre `GET /api/auth/me` |
+> | `rolesQuery()` contra `user_roles` | viene en la misma respuesta |
+> | `useAccess` con 3 consultas (permisos + RPC `my_professional_id`) | ídem |
+>
+> Es lo que la trampa #2 decía en una línea —"se reemplazan por una sola
+> `getMe()`"— y en la práctica tocó nueve archivos.
+>
+> ##### Lo que reemplaza a `onAuthStateChange`
+>
+> Era un suscriptor: supabase-js avisaba solo cuando la sesión cambiaba. **Con
+> una cookie no hay a quién suscribirse.** En su lugar, entrar y salir llaman a
+> `olvidarSesion()`, que invalida la consulta. Lo que antes llegaba por un evento
+> ahora pasa en la línea de al lado — y se lee mejor.
+>
+> ##### ⚠️ Y esto quedó a medias, a propósito
+>
+> El endpoint `PUT /api/auth/password` **exige la contraseña actual**, como el
+> `changePassword` de `Ecommerce_mm`. La pantalla `mi-cuenta` sólo pide la nueva
+> dos veces, porque Supabase no pedía la actual teniendo sesión abierta. **Hay
+> que agregarle el campo** cuando se convierta esa pantalla. No relajes el
+> endpoint: pedir la actual es lo que evita que alguien que encuentra una sesión
+> abierta se apropie de la cuenta.
 >
 > #### ✅ Hecho: el paso 4, `admin.profesionales`
 >

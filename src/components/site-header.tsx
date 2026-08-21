@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 const links = [
@@ -39,7 +39,11 @@ export function SiteHeader() {
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
-    await supabase.auth.signOut();
+    // El logout es un pedido al servidor porque la cookie es httpOnly: el
+    // navegador no puede borrarla solo. Si falla igual se navega al login —
+    // dejar a alguien atrapado adentro porque se cortó la red sería peor que
+    // una cookie que sigue viva un rato.
+    await apiPost("/api/auth/logout").catch(() => {});
     navigate({ to: "/auth", replace: true });
   }
 

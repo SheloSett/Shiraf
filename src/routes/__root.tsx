@@ -135,14 +135,11 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
 
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
-      router.invalidate();
-      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
-    });
-    return () => data.subscription.unsubscribe();
-  }, [router, queryClient]);
+  // Acá había un suscriptor a onAuthStateChange que invalidaba el router y las
+  // consultas cuando la sesión cambiaba. Con una cookie no hay a quién
+  // suscribirse, y tampoco hace falta: entrar y salir son acciones nuestras, y
+  // las dos llaman a olvidarSesion() y navegan. Lo que antes llegaba por un
+  // evento ahora pasa en la línea de al lado.
 
   return (
     <QueryClientProvider client={queryClient}>
