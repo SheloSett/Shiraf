@@ -1,5 +1,7 @@
 import jwt from "jsonwebtoken";
 import { json, leerCookie, type Ctx, type Handler } from "@/server/http";
+import { accesoDe, exigirPermiso } from "@/server/services/authz.service";
+import type { Permission } from "@/lib/permissions";
 
 /**
  * Verifica la sesión y decide quién puede llamar qué.
@@ -103,3 +105,32 @@ export const adminMiddleware: Handler = (ctx: Ctx) => {
   }
   return undefined;
 };
+
+/**
+ * Exige un permiso concreto. Es el hermano fino de `adminMiddleware`.
+ *
+ * Se usa como una función, no como un valor, porque el permiso cambia por ruta:
+ *
+ *     categoriasRouter.post("/", authMiddleware, exigeMiddleware("catalog"), crear);
+ *
+ * ── POR QUÉ VA EN LA RUTA Y NO ADENTRO DEL CONTROLLER ─────────────────────
+ *
+ * Porque así el archivo de rutas se lee como el de `Ecommerce_mm`: abriendo
+ * veinte líneas se ve **quién puede hacer qué** en toda un área. Si el chequeo
+ * queda enterrado en el controller, para auditarlo hay que leer todo, y lo que
+ * se quiere poder responder de un vistazo es justamente esa pregunta.
+ *
+ * ⚠️ Va SIEMPRE después de `authMiddleware`, que es quien deja el `ctx.user`.
+ * Sin sesión no hay a quién preguntarle los permisos: por eso, si falta,
+ * contesta 401 —"no sé quién sos"— y no 403 —"sé quién sos y no podés"—.
+ *
+ * La regla de que la dueña pasa siempre no está acá: la aplica `puede()`, que
+ * es donde estaba en la base. Ver authz.service.ts.
+ */
+export function exigeMiddleware(permiso: Permission): Handler {
+  return async (ctx: Ctx) => {
+    if (!ctx.user) return json({ error: "No autorizado." }, 401);
+    exigirPermiso(await accesoDe(ctx.user.id), permiso);
+    return undefined;
+  };
+}

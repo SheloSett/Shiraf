@@ -109,9 +109,13 @@ export function createRouter(prefijo: string) {
 
         const ctx: Ctx = { req, url, params, body, cookies: [] };
 
-        for (const handler of ruta.handlers) {
-          const salida = await handler(ctx);
-          if (salida) return conCookies(salida, ctx.cookies);
+        try {
+          for (const handler of ruta.handlers) {
+            const salida = await handler(ctx);
+            if (salida) return conCookies(salida, ctx.cookies);
+          }
+        } catch (error) {
+          return conCookies(respuestaDeError(req, url, error), ctx.cookies);
         }
 
         // Ningún handler contestó: es un error de programación, no del cliente.
@@ -146,4 +150,44 @@ export function leerCookie(req: Request, nombre: string): string | null {
     if (parte.slice(0, corte).trim() === nombre) return decodeURIComponent(parte.slice(corte + 1));
   }
   return null;
+}
+
+/**
+ * Convierte un error en una respuesta.
+ *
+ * ── POR QUÉ ESTO TIENE QUE ESTAR ──────────────────────────────────────────
+ *
+ * Sin este catch, un error tirado por un controller sube hasta el try/catch de
+ * `src/server.ts`, que devuelve **la página HTML de error**. Para una llamada a
+ * la API eso es doblemente malo:
+ *
+ *   · la pantalla recibe HTML donde esperaba JSON, y el mensaje que ve la
+ *     persona termina siendo "El servidor contestó algo inesperado (500)";
+ *   · y sobre todo, **el status se pierde**. `ErrorDeAcceso` lleva un 403 y un
+ *     texto escrito para que se entienda —"No tenés el acceso necesario"— y
+ *     todo eso se convertía en un 500 genérico. O sea: a la empleada a la que
+ *     le falta una casilla la app le decía que estaba rota.
+ *
+ * Va en el router y no en cada controller por el mismo motivo por el que Express
+ * tiene error middleware: es el único lugar por el que pasan todas las rutas, y
+ * un `try/catch` por controller es uno que alguien se va a olvidar de poner.
+ *
+ * ── QUÉ SE LE CUENTA A QUIEN LLAMA ────────────────────────────────────────
+ *
+ * Sólo el mensaje de los errores que llevan `status` propio, que son los que
+ * escribimos nosotros para ser leídos (`ErrorDeAcceso`, `ErrorDeRegla`).
+ * Cualquier otro sale como "Error interno" y su detalle va al log del servidor
+ * y a ningún otro lado: un error de Prisma trae nombres de tablas y de columnas,
+ * y eso es un mapa de la base para quien esté probando la puerta.
+ */
+function respuestaDeError(req: Request, url: URL, error: unknown): Response {
+  const status = (error as { status?: unknown })?.status;
+
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    const mensaje = error instanceof Error ? error.message : "No se pudo completar.";
+    return json({ error: mensaje }, status);
+  }
+
+  console.error(`[router] ${req.method} ${url.pathname}`, error);
+  return json({ error: "Error interno del servidor." }, 500);
 }

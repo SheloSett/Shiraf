@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — 4 de 47, las públicas     |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — 7 de 47                   |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1389,7 +1389,37 @@ por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
 > `grep` sobre `.output/public/` no encuentra ni `@prisma/client`, ni `bcryptjs`,
 > ni `jsonwebtoken`.
 >
-> ##### Dos cosas que aprendió este paso y valen para las 43 que faltan
+> #### ✅ Hecho: el paso 2, las dos pantallas de categorías
+>
+> `admin.categorias-servicios` y `admin.categorias-productos`, en
+> `/api/categorias/*`. Estrenaron las dos piezas que faltaban para poder tocar
+> cualquier pantalla del panel:
+>
+> | Pieza | Qué hace |
+> | --- | --- |
+> | `exigeMiddleware("catalog")` | En `auth.middleware.ts`. El hermano fino de `adminMiddleware`: exige **un permiso concreto**, y se pone en la ruta para que el archivo de rutas siga diciendo quién puede qué. |
+> | El `catch` del router | En `http.ts`. Ver abajo — **esto estaba roto y no se notaba.** |
+>
+> ##### 🔴 El router no atrapaba ningún error
+>
+> `ErrorDeAcceso` lleva un 403 y un texto escrito para que se entienda; nadie lo
+> atrapaba. Subía hasta el `try/catch` de `src/server.ts`, que devuelve **la
+> página HTML de error**. Para una llamada a la API eso significaba dos cosas: la
+> pantalla recibía HTML donde esperaba JSON, y **el status se perdía**. O sea que
+> a la empleada a la que le falta una casilla, la app le decía *"Error interno
+> del servidor"*.
+>
+> Ahora lo atrapa `handle()`, que es el único lugar por el que pasan todas las
+> rutas. Los errores con `status` propio salen con su mensaje; cualquier otro
+> sale como "Error interno" y su detalle va sólo al log — un error de Prisma trae
+> nombres de tablas y columnas.
+>
+> ##### El permiso de las categorías de producto
+>
+> Es `stock`, **no `catalog`**. Los dos routers están en el mismo archivo justo
+> para que la diferencia se vea de un vistazo. Ver la trampa #5.
+>
+> ##### Dos cosas que aprendió este paso y valen para las 40 que faltan
 >
 > 1. 🔴 **`tsc` necesita más memoria que la que trae Node por defecto.** Con los
 >    tipos de Prisma en el proyecto, `tsc --noEmit` muere con
@@ -1400,7 +1430,12 @@ por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
 >    node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit
 >    ```
 >
-> 2. **La serialización rompe en silencio.** `supabase-js` entregaba `numeric`
+> 2. **La serialización rompe en silencio**, y no sólo con Prisma: la pantalla
+>    de categorías devolvía un `Map`, y **un `Map` sale de `JSON.stringify`
+>    como `{}`** — sin error y sin aviso. Viaja como objeto y se reconstruye del
+>    otro lado.
+>
+>    Con Prisma es lo mismo: `supabase-js` entregaba `numeric`
 >    como número y `time` como `"09:00:00"`; Prisma entrega `Decimal` y `Date`.
 >    Si sale tal cual, `formatMoney()` escribe `[object Object]` y
 >    `.slice(0, 5)` explota. **Nada de eso lo detecta el compilador** si el tipo

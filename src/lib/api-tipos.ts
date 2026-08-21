@@ -113,3 +113,21 @@ export type RtaServicio = { servicio: ServicioConGaleria };
 export type RtaProfesionales = { profesionales: ProfesionalPublica[] };
 export type RtaProfesionalesConHorarios = { profesionales: ProfesionalConHorarios[] };
 export type RtaProfesionalesConDetalle = { profesionales: ProfesionalConDetalle[] };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Categorías
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type Categoria = { id: string; name: string };
+
+export type RtaCategorias = { categorias: Categoria[] };
+
+/**
+ * Cuántos tratamientos (o productos) usa cada categoría, por nombre.
+ *
+ * ⚠️ Un objeto y no un `Map`, que es lo que la pantalla venía usando: los Map
+ * no sobreviven a `JSON.stringify` — salen como `{}`, sin error y sin aviso.
+ * La pantalla lo vuelve a convertir en Map para no tener que tocar el
+ * componente que lo consume.
+ */
+export type RtaUsoDeCategorias = { uso: Record<string, number> };

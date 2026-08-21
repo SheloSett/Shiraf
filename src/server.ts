@@ -124,6 +124,14 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // Las categorías del catálogo y del stock. Cada mitad pide su permiso,
+      // que se declara en el archivo de rutas.
+      if (pathname.startsWith("/api/categorias/")) {
+        const { categoriasRouter } = await import("./server/routes/categorias.routes");
+        const respuesta = await categoriasRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
