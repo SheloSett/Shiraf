@@ -34,7 +34,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiDelete, apiPost, apiPut } from "@/lib/api";
+import type { RtaCategorias, RtaMediaSacada, RtaServiciosAdmin } from "@/lib/api-tipos";
 import { formatMoney } from "@/lib/shiraf";
 import { imageUrl } from "@/lib/cloudinary";
 import { removeServiceMedia, uploadServiceMedia } from "@/lib/storage";
@@ -82,7 +83,6 @@ function AdminServices() {
    * borrar (las que estaban y ya no están) y qué archivos de Cloudinary hay que
    * tirar después, una vez que el guardado salió bien.
    */
-  const [originalMedia, setOriginalMedia] = useState<MediaItem[]>([]);
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   /** id del tratamiento en edición; null = alta nueva. */
@@ -95,7 +95,6 @@ function AdminServices() {
     setAddingCategory(false);
     setNewCategory("");
     setForm({ ...EMPTY_FORM });
-    setOriginalMedia([]);
   }
 
   /**
@@ -123,7 +122,6 @@ function AdminServices() {
   function openCreate() {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
-    setOriginalMedia([]);
     setOpen(true);
   }
 
@@ -152,7 +150,6 @@ function AdminServices() {
       price: Number(s.price),
       media,
     });
-    setOriginalMedia(media);
     setOpen(true);
   }
 
@@ -185,22 +182,14 @@ function AdminServices() {
 
   const categories = useQuery({
     queryKey: ["service-categories"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("service_categories")
-        .select("id, name")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaCategorias>("/api/categorias/servicios")).categorias,
   });
 
   // Alta de categoría sin salir del formulario: se crea, se refresca la lista y
   // queda elegida en el tratamiento que estabas cargando.
   const createCategory = useMutation({
     mutationFn: async (name: string) => {
-      const { error } = await supabase.from("service_categories").insert({ name: name.trim() });
-      if (error) throw error;
+      await apiPost("/api/categorias/servicios", { name: name.trim() });
       return name.trim();
     },
     onSuccess: async (name) => {
@@ -210,28 +199,17 @@ function AdminServices() {
       setAddingCategory(false);
       toast.success(`Categoría "${name}" creada.`);
     },
-    onError: (e: Error) =>
-      toast.error(
-        e.message.includes("duplicate") ? "Ya existe una categoría con ese nombre." : e.message,
-      ),
+    // El mensaje del nombre repetido lo arma el servidor, que es quien sabe que
+    // chocó contra el UNIQUE. Antes se adivinaba buscando "duplicate" adentro
+    // del error crudo de Postgres.
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const services = useQuery({
     queryKey: ["admin-services"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        // image_url sigue viniendo para la miniatura de la tabla: es la portada
-        // que mantiene el trigger, y evita tener que buscarla entre el embed en
-        // cada fila. service_media es para el formulario.
-        .select(
-          "id, name, category, description, duration_minutes, price, is_published, image_url, service_media(id, url, kind, position)",
-        )
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    // image_url sigue viniendo para la miniatura de la tabla: es la portada que
+    // mantiene el trigger. service_media es para el formulario.
+    queryFn: async () => (await api<RtaServiciosAdmin>("/api/catalogo/servicios")).servicios,
   });
 
   const save = useMutation({
@@ -245,74 +223,28 @@ function AdminServices() {
         description: form.description.trim() || null,
         duration_minutes: Number(form.duration_minutes),
         price: Number(form.price),
+        // La galería tal como quedó. Las nuevas no tienen id todavía.
+        media: form.media.map((m) => ({ ...(m.id ? { id: m.id } : {}), url: m.url, kind: m.kind })),
       };
 
-      let serviceId = editingId;
-      if (editingId) {
-        const { error } = await supabase.from("services").update(payload).eq("id", editingId);
-        if (error) throw error;
-      } else {
-        // .select().single() para quedarse con el id: las filas de la galería
-        // lo necesitan y en un alta todavía no existe.
-        const { data, error } = await supabase
-          .from("services")
-          .insert({ ...payload, is_published: true })
-          .select("id")
-          .single();
-        if (error) throw error;
-        serviceId = data.id;
+      // Un solo pedido. Antes esto eran hasta cuatro viajes sueltos desde el
+      // navegador —el tratamiento, las bajas de la galería, los cambios de
+      // posición y las altas— y si el segundo fallaba la galería quedaba a
+      // medio guardar. Ahora el servidor lo hace en una transacción.
+      if (!editingId) {
+        await apiPost("/api/catalogo/servicios", payload);
+        return;
       }
 
-      // ── Reconciliar la galería ──────────────────────────────────────────
-      // El formulario tiene la lista como quedó; la base tiene la de antes. Se
-      // resuelve en tres pasos y no borrando todo y reinsertando: eso le
-      // cambiaría el id a filas que no se tocaron y dispararía el trigger de
-      // portada una vez por elemento.
-      const keptIds = new Set(form.media.filter((m) => m.id).map((m) => m.id));
-      const removed = originalMedia.filter((m) => m.id && !keptIds.has(m.id));
-
-      if (removed.length > 0) {
-        const { error } = await supabase
-          .from("service_media")
-          .delete()
-          .in(
-            "id",
-            removed.map((m) => m.id!),
-          );
-        if (error) throw error;
-      }
-
-      // Dónde estaba cada una antes, para no mandar UPDATEs que no cambian nada.
-      const previousPosition = new Map(originalMedia.map((m, index) => [m.id, index]));
-
-      const toInsert: {
-        service_id: string;
-        url: string;
-        kind: "image" | "video";
-        position: number;
-      }[] = [];
-
-      for (const [position, item] of form.media.entries()) {
-        if (!item.id) {
-          toInsert.push({ service_id: serviceId!, url: item.url, kind: item.kind, position });
-        } else if (previousPosition.get(item.id) !== position) {
-          const { error } = await supabase
-            .from("service_media")
-            .update({ position })
-            .eq("id", item.id);
-          if (error) throw error;
-        }
-      }
-
-      if (toInsert.length > 0) {
-        const { error } = await supabase.from("service_media").insert(toInsert);
-        if (error) throw error;
-      }
+      const { sacadas } = await apiPut<RtaMediaSacada>(
+        `/api/catalogo/servicios/${editingId}`,
+        payload,
+      );
 
       // Los archivos de Cloudinary recién ahora, con todo lo demás guardado: si
       // algo de arriba fallara, la galería seguiría apuntando a archivos que ya
       // no existirían.
-      for (const item of removed) {
+      for (const item of sacadas) {
         await removeServiceMedia(item.url, item.kind);
       }
     },
@@ -328,23 +260,17 @@ function AdminServices() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      // Las URLs se leen ANTES de borrar: después las filas ya no están —
-      // service_media cae por CASCADE — y los archivos quedarían sin forma de
-      // encontrarse.
-      const media = services.data?.find((s) => s.id === id)?.service_media ?? [];
+      // El servidor devuelve las URLs DESPUÉS de que la baja salió bien. Puede
+      // no salir: appointments.service_id es ON DELETE RESTRICT, así que un
+      // tratamiento con turnos no se borra. Si mandáramos a borrar los archivos
+      // antes, en ese caso habríamos tirado la foto de un tratamiento vivo.
+      const { sacadas } = await apiDelete<RtaMediaSacada>(`/api/catalogo/servicios/${id}`);
 
-      const { error } = await supabase.from("services").delete().eq("id", id);
-      if (error) throw error;
-
-      // Y se borra DESPUÉS de que la baja salió bien: si el borrado del
-      // tratamiento fallara —pasa, porque appointments.service_id es ON DELETE
-      // RESTRICT— habríamos tirado la foto de un tratamiento que sigue vivo.
-      //
       // Antes esto no se hacía y el archivo quedaba huérfano para siempre. Con
       // Supabase Storage era 1 GB gratis y molestaba poco; ahora consume cuota
       // de Cloudinary, que en el plan gratuito es finita — y un video pesa
-      // mucho más que una foto, así que un huérfano cuesta bastante más.
-      for (const item of media) {
+      // mucho más que una foto.
+      for (const item of sacadas) {
         await removeServiceMedia(item.url, item.kind);
       }
     },
@@ -354,28 +280,14 @@ function AdminServices() {
       setDeleting(null);
       toast.success("Tratamiento eliminado.");
     },
-    // appointments.service_id es ON DELETE RESTRICT: la base frena el borrado si
-    // hay turnos con ese tratamiento. El mensaje crudo de Postgres no le dice
-    // nada a nadie, así que se traduce.
-    onError: (e: Error) => {
-      const hasAppointments =
-        e.message.includes("violates foreign key") || e.message.includes("23503");
-      toast.error(
-        hasAppointments
-          ? "No se puede eliminar: hay turnos con este tratamiento. Despublicalo en su lugar."
-          : e.message,
-      );
-    },
+    // La traducción del "hay turnos con este tratamiento" la hace el servidor,
+    // que es quien ve el código de error de Postgres. Acá ya llega en castellano.
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const togglePublish = useMutation({
-    mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
-      const { error } = await supabase
-        .from("services")
-        .update({ is_published: value })
-        .eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: ({ id, value }: { id: string; value: boolean }) =>
+      apiPut(`/api/catalogo/servicios/${id}/publicado`, { is_published: value }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-services"] });
       queryClient.invalidateQueries({ queryKey: ["services"] });

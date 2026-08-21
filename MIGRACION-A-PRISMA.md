@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — 7 de 47                   |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — 8 de 47                   |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1419,7 +1419,41 @@ por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
 > Es `stock`, **no `catalog`**. Los dos routers están en el mismo archivo justo
 > para que la diferencia se vea de un vistazo. Ver la trampa #5.
 >
-> ##### Dos cosas que aprendió este paso y valen para las 40 que faltan
+> #### ✅ Hecho: `admin.servicios` (el paso 3 va por la mitad)
+>
+> La primera pantalla con alta, baja y modificación. En `/api/catalogo/*`,
+> permiso `catalog`. Dos cosas que cambiaron de lugar y conviene saber:
+>
+> **La galería se reconcilia en el servidor, en una transacción.** Antes la
+> pantalla mandaba hasta cuatro pedidos sueltos —el tratamiento, las bajas, los
+> cambios de posición, las altas— y si el segundo fallaba, la galería quedaba a
+> medio guardar. Ahora va todo junto o no va nada. La lógica es la misma que
+> tenía la pantalla y por el mismo motivo: **no se borra todo para reinsertar**,
+> porque eso le cambiaría el id a filas que nadie tocó y dispararía el trigger de
+> portada una vez por elemento.
+>
+> **Los archivos de Cloudinary los sigue borrando la pantalla, y a propósito.**
+> El endpoint devuelve las URLs que dejaron de estar referenciadas **después** de
+> guardar; recién ahí la pantalla las borra. Al revés, una falla dejaría la
+> galería apuntando a archivos que ya no existen.
+>
+> ##### 🔴 Los mensajes de error de Postgres ya no llegan a la pantalla
+>
+> Esto vale para las 39 que faltan. La pantalla decidía qué decir mirando el
+> texto crudo del error:
+>
+> ```ts
+> e.message.includes("violates foreign key")  // → "hay turnos con este tratamiento"
+> e.message.includes("duplicate")             // → "ya existe una categoría así"
+> ```
+>
+> Eso **ya no funciona**: desde el paso 2 el router sólo deja pasar el texto de
+> los errores que escribimos nosotros; el resto sale como "Error interno". Si te
+> encontrás con un `includes` de esos, la traducción va **al controller**, que es
+> quien ve el código de Postgres (`P2003` clave foránea, `P2002` único) y puede
+> contestar con un 409 y una frase en castellano.
+>
+> ##### Dos cosas que aprendió este paso y valen para las 39 que faltan
 >
 > 1. 🔴 **`tsc` necesita más memoria que la que trae Node por defecto.** Con los
 >    tipos de Prisma en el proyecto, `tsc --noEmit` muere con

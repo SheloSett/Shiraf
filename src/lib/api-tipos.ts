@@ -131,3 +131,27 @@ export type RtaCategorias = { categorias: Categoria[] };
  * componente que lo consume.
  */
 export type RtaUsoDeCategorias = { uso: Record<string, number> };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catálogo desde el panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un tratamiento como lo ve la dueña: incluye los despublicados. */
+export type ServicioAdmin = ServicioPublico & {
+  is_published: boolean;
+  service_media: MediaDeServicio[];
+};
+
+export type RtaServiciosAdmin = { servicios: ServicioAdmin[] };
+
+/** Lo que manda el formulario. Las fotos nuevas todavía no tienen id. */
+export type MediaAGuardar = { id?: string; url: string; kind: "image" | "video" };
+
+/**
+ * Los archivos que dejaron de estar referenciados.
+ *
+ * Los devuelve el servidor **después** de guardar, para que la pantalla recién
+ * entonces los borre de Cloudinary. Al revés —borrar el archivo y después
+ * guardar— una falla dejaría la galería apuntando a archivos inexistentes.
+ */
+export type RtaMediaSacada = { sacadas: { url: string; kind: "image" | "video" }[] };

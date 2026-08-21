@@ -132,6 +132,13 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // El catálogo desde el panel: los tratamientos y su galería.
+      if (pathname.startsWith("/api/catalogo/")) {
+        const { catalogoRouter } = await import("./server/routes/catalogo.routes");
+        const respuesta = await catalogoRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
