@@ -139,6 +139,13 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // El stock: productos, costos y movimientos.
+      if (pathname.startsWith("/api/stock/")) {
+        const { stockRouter } = await import("./server/routes/stock.routes");
+        const respuesta = await stockRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

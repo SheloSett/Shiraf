@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — 8 de 47                   |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — 9 de 47                   |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1419,7 +1419,7 @@ por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
 > Es `stock`, **no `catalog`**. Los dos routers están en el mismo archivo justo
 > para que la diferencia se vea de un vistazo. Ver la trampa #5.
 >
-> #### ✅ Hecho: `admin.servicios` (el paso 3 va por la mitad)
+> #### ✅ Hecho: el paso 3, `admin.servicios` y `admin.productos`
 >
 > La primera pantalla con alta, baja y modificación. En `/api/catalogo/*`,
 > permiso `catalog`. Dos cosas que cambiaron de lugar y conviene saber:
@@ -1436,6 +1436,33 @@ por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
 > El endpoint devuelve las URLs que dejaron de estar referenciadas **después** de
 > guardar; recién ahí la pantalla las borra. Al revés, una falla dejaría la
 > galería apuntando a archivos que ya no existen.
+>
+> ##### 🔴 Dos candados que los tenía la RLS y ahora los tiene el código
+>
+> `admin.productos` dejó al descubierto lo que más importa vigilar en las 38 que
+> faltan: **cosas que la pantalla decidía porque atrás había una policy**.
+>
+> 1. **El costo de compra.** La pantalla preguntaba `can("stock_costs")` y, si
+>    daba que no, simplemente no hacía la segunda consulta. Eso alcanzaba porque
+>    la RLS frenaba a quien la hiciera igual. **Sin RLS, no consultar no es un
+>    candado**: un pedido hecho a mano no pasa por la pantalla. Ahora el permiso
+>    se mira en el controller, en la lectura y en la escritura. El
+>    `can("stock_costs")` de la pantalla queda, pero sólo para no mostrar un
+>    campo vacío.
+>
+>    (Y vale recordar por qué `product_costs` es una tabla aparte: **la RLS
+>    protege filas, no columnas**. Mientras el costo vivió en `products.cost`,
+>    esa casilla no cerraba nada. Migración `20260814010000`.)
+>
+> 2. **El delta de stock.** La pantalla leía el stock, restaba y mandaba el
+>    movimiento. Entre la lectura y el envío alguien podía descontar un consumo
+>    en cabina, y ese consumo se perdía. Ahora la resta la hace el servidor
+>    adentro de la transacción. Es la misma clase de problema por la que
+>    `apply_stock_movement` se quedó en SQL.
+>
+> Y una tercera que es la trampa #1 del final: `created_by` sale de la sesión,
+> **nunca del cuerpo del pedido**. Antes la pantalla lo mandaba con
+> `supabase.auth.getUser()`.
 >
 > ##### 🔴 Los mensajes de error de Postgres ya no llegan a la pantalla
 >

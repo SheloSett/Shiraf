@@ -155,3 +155,29 @@ export type MediaAGuardar = { id?: string; url: string; kind: "image" | "video" 
  * guardar— una falla dejaría la galería apuntando a archivos inexistentes.
  */
 export type RtaMediaSacada = { sacadas: { url: string; kind: "image" | "video" }[] };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stock
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un producto del depósito.
+ *
+ * `cost` viene en `null` por dos motivos distintos que la pantalla sí sabe
+ * distinguir —porque conoce el permiso— pero el tipo no: o no hay costo cargado,
+ * o quien pregunta no tiene `stock_costs`. **El servidor no dice cuál de los
+ * dos**, y es a propósito: contestar "hay un costo pero no te lo muestro" ya es
+ * contar algo.
+ */
+export type ProductoAdmin = {
+  id: string;
+  name: string;
+  brand: string | null;
+  category: string;
+  unit: string;
+  stock: number;
+  min_stock: number;
+  cost: number | null;
+};
+
+export type RtaProductos = { productos: ProductoAdmin[] };
