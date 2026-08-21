@@ -349,3 +349,30 @@ export type RtaDisponibilidad = {
   schedules: HorarioDeAgenda[];
   busy: { starts_at: string; duration_minutes: number }[];
 };
+
+export type RtaClientasParaElegir = {
+  clientas: { id: string; full_name: string | null; phone: string | null }[];
+};
+
+/** Los tratamientos del formulario del panel: vienen TODOS, con la marca. */
+export type RtaServiciosParaTurno = {
+  servicios: {
+    id: string;
+    name: string;
+    category: string;
+    duration_minutes: number;
+    price: number;
+    is_published: boolean;
+  }[];
+};
+
+/** A qué turnos alcanza corregir los datos de una invitada. */
+export type RtaAlcanceInvitada = { ids: string[] };
+
+/** Cuántos turnos tocó la operación. */
+export type RtaCorreccion = { count: number };
+
+/** Una empleada, con sus accesos tildados. */
+export type RtaEmpleadas = {
+  empleadas: { id: string; full_name: string; phone: string | null; permissions: string[] }[];
+};

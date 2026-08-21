@@ -20,7 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPut } from "@/lib/api";
+import type { RtaClientasParaElegir, RtaCorreccion } from "@/lib/api-tipos";
 import { cn } from "@/lib/utils";
 
 export type GuestToLink = { name: string; phone: string | null };
@@ -55,27 +56,19 @@ export function LinkGuestDialog({
   const clients = useQuery({
     queryKey: ["appointment-form", "clients"],
     enabled: !!guest,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, phone")
-        .order("full_name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaClientasParaElegir>("/api/turnos/clientas")).clientas,
   });
 
   const client = clients.data?.find((c) => c.id === clientId);
 
   const link = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.rpc("link_guest_appointments", {
-        _phone: guest!.phone!,
-        _client_id: clientId!,
-      });
-      if (error) throw error;
-      return data ?? 0;
-    },
+    mutationFn: async () =>
+      (
+        await apiPut<RtaCorreccion>("/api/turnos/invitada/vincular", {
+          phone: guest!.phone!,
+          clientId: clientId!,
+        })
+      ).count,
     onSuccess: async (count) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-appointments"] }),

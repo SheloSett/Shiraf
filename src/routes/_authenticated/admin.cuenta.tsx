@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPut } from "@/lib/api";
+import type { RtaMiCuenta } from "@/lib/api-tipos";
+import { useAuth } from "@/hooks/useAuth";
 import { passwordProblem } from "@/lib/password";
 import { permissionLabel, PERMISSIONS } from "@/lib/permissions";
 import { useAccess } from "@/hooks/useAccess";
@@ -35,20 +37,18 @@ function TeamAccountPage() {
   const queryClient = useQueryClient();
   const { isAdmin, permissions } = useAccess();
   const [fullName, setFullName] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordAgain, setNewPasswordAgain] = useState("");
+  // El mail sale de la sesión, que ya lo trae: era el único motivo por el que
+  // esta pantalla llamaba a supabase.auth.getUser().
+  const { user } = useAuth();
 
   const profile = useQuery({
     queryKey: ["my-team-profile"],
     queryFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .eq("id", auth.user!.id)
-        .maybeSingle();
-      if (error) throw error;
-      return { ...data, email: auth.user!.email ?? "" };
+      const { ficha } = await api<RtaMiCuenta>("/api/mi-cuenta");
+      return { ...ficha, email: user?.email ?? "" };
     },
   });
 
@@ -57,14 +57,14 @@ function TeamAccountPage() {
   }, [profile.data]);
 
   const saveName = useMutation({
-    mutationFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from("profiles")
-        .update({ full_name: fullName })
-        .eq("id", auth.user!.id);
-      if (error) throw error;
-    },
+    // Se mandan también el teléfono y la nota como están: el endpoint guarda la
+    // ficha entera, y omitirlos los borraría.
+    mutationFn: () =>
+      apiPut("/api/mi-cuenta", {
+        full_name: fullName,
+        phone: profile.data?.phone ?? "",
+        notes: profile.data?.notes ?? "",
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-team-profile"] });
       toast.success("Nombre actualizado.");
@@ -76,10 +76,13 @@ function TeamAccountPage() {
     mutationFn: async () => {
       const problem = passwordProblem(newPassword, newPasswordAgain);
       if (problem) throw new Error(problem);
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
+      // Hace falta la contraseña ACTUAL, que Supabase no pedía teniendo sesión
+      // abierta. Evita que alguien que se encuentra una sesión abierta —la compu
+      // del centro, sin ir más lejos— se apropie de la cuenta.
+      await apiPut("/api/auth/password", { currentPassword, newPassword });
     },
     onSuccess: () => {
+      setCurrentPassword("");
       setNewPassword("");
       setNewPasswordAgain("");
       toast.success("Contraseña actualizada.");
@@ -131,6 +134,16 @@ function TeamAccountPage() {
           <p className="text-sm leading-relaxed text-muted-foreground sm:col-span-2">
             Si entraste con una contraseña que te pasaron, cambiala por una que sepas sólo vos.
           </p>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="current-pass">Tu contraseña actual</Label>
+            <Input
+              id="current-pass"
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+            />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="new-pass">Contraseña nueva</Label>
             <Input
@@ -160,7 +173,10 @@ function TeamAccountPage() {
             <Button
               onClick={() => changePassword.mutate()}
               disabled={
-                changePassword.isPending || newPasswordAgain.length === 0 || problem !== null
+                changePassword.isPending ||
+                currentPassword.length === 0 ||
+                newPasswordAgain.length === 0 ||
+                problem !== null
               }
             >
               {changePassword.isPending ? "Cambiando…" : "Cambiar contraseña"}

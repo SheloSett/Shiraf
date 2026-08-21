@@ -1,9 +1,16 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { accesoDe, exigirPoderAtarFicha, puede } from "@/server/services/authz.service";
+import {
+  accesoDe,
+  exigirAdmin,
+  exigirPoderAtarFicha,
+  puede,
+} from "@/server/services/authz.service";
+import { PERMISSION_VALUES, type Permission } from "@/lib/permissions";
 import { comoHora, horaDesdeTexto } from "@/server/serializar";
 import type {
+  RtaEmpleadas,
   RtaProfesionalesAdmin,
   RtaServiciosParaElegir,
   RtaTurnosProximos,
@@ -364,4 +371,82 @@ export async function vincularCuenta(ctx: Ctx) {
   });
 
   return json({ ok: true });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Las empleadas y sus accesos — SÓLO LA DUEÑA
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Quienes tienen el rol `staff`, con su ficha y sus accesos.
+ *
+ * Antes eran TRES consultas encadenadas desde el navegador —los roles, después
+ * los profiles de esos ids, después sus permisos— porque no había forma de
+ * joinear desde PostgREST sin una vista. Acá es un include.
+ */
+export async function listarEmpleadas(ctx: Ctx) {
+  // ⚠️ El chequeo va acá y no en la ruta, igual que en cambiarPermiso: la lista
+  // dice quién trabaja en el centro y qué accesos tiene cada una, y eso es cosa
+  // de la dueña. Sin esta línea alcanzaba con tener sesión.
+  exigirAdmin(await accesoDe(ctx.user!.id));
+
+  const cuentas = await prisma.users.findMany({
+    where: { roles: { some: { role: "staff" } } },
+    select: {
+      id: true,
+      profile: { select: { full_name: true, phone: true } },
+      permissions: { select: { permission: true } },
+    },
+  });
+
+  const empleadas = cuentas
+    .map((c) => ({
+      id: c.id,
+      full_name: c.profile?.full_name ?? "Sin nombre",
+      phone: c.profile?.phone ?? null,
+      permissions: c.permissions.map((p) => p.permission as string),
+    }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name, "es"));
+
+  return json({ empleadas } satisfies RtaEmpleadas);
+}
+
+/**
+ * Tilda o destilda un acceso.
+ *
+ * 🔴 **Repartir accesos es del ROL admin, no de un permiso.** Era la policy
+ * `admin grants permissions`, y el motivo está en su comentario: si fuera un
+ * permiso, quien lo tuviera podría ampliarse a sí mismo cualquier otro. **Ningún
+ * permiso se amplía a sí mismo.**
+ */
+export async function cambiarPermiso(ctx: Ctx) {
+  exigirAdmin(await accesoDe(ctx.user!.id));
+
+  const userId = ctx.params["id"];
+  const permiso = ctx.body["permission"];
+  const dar = ctx.body["grant"];
+
+  if (!userId) return json({ error: "Falta la cuenta." }, 400);
+  if (typeof permiso !== "string") return json({ error: "Falta el acceso." }, 400);
+  if (typeof dar !== "boolean") return json({ error: "Falta si se da o se saca." }, 400);
+  if (!esPermiso(permiso)) return json({ error: "Ese acceso no existe." }, 400);
+
+  if (dar) {
+    // Sin error si ya lo tenía: tildar dos veces es la misma intención.
+    await prisma.user_permissions.createMany({
+      data: [{ user_id: userId, permission: permiso }],
+      skipDuplicates: true,
+    });
+  } else {
+    await prisma.user_permissions.deleteMany({
+      where: { user_id: userId, permission: permiso },
+    });
+  }
+
+  return json({ ok: true });
+}
+
+/** ¿Es uno de los siete accesos que existen? El enum de la base ya no valida por sí solo. */
+function esPermiso(valor: string): valor is Permission {
+  return (PERMISSION_VALUES as readonly string[]).includes(valor);
 }

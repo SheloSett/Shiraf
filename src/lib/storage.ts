@@ -1,4 +1,3 @@
-import { supabase } from "@/integrations/supabase/client";
 import { publicIdFromUrl } from "@/lib/cloudinary";
 import { deleteImage, signImageUpload } from "@/lib/cloudinary.functions";
 
@@ -211,9 +210,11 @@ export async function removeServiceMedia(
     return;
   }
 
-  // Foto vieja, todavía en Supabase Storage.
-  const path = servicePathFromUrl(url);
-  if (!path) return;
-  const { error } = await supabase.storage.from(SERVICE_IMAGES_BUCKET).remove([path]);
-  if (error) console.warn("[storage] no se pudo borrar la imagen anterior:", error.message);
+  // Acá había una rama para las fotos viejas que seguían en Supabase Storage.
+  // Se va con la migración: ese bucket deja de existir, y con él las 4 policies
+  // sobre storage.objects que lo protegían.
+  //
+  // Si quedara alguna foto vieja apuntando ahí, su URL simplemente deja de
+  // resolver. No se borra el archivo porque ya no hay a quién pedírselo, y
+  // tampoco importa: el bucket entero se va.
 }

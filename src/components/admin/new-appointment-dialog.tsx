@@ -23,7 +23,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TeamTag } from "@/components/admin/team-tag";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPost } from "@/lib/api";
+import type {
+  RtaClientasParaElegir,
+  RtaDisponibilidad,
+  RtaProfesionalesConHorarios,
+  RtaServiciosParaTurno,
+} from "@/lib/api-tipos";
 import { useTeamMemberIds } from "@/hooks/useTeamMemberIds";
 import { buildSlots, formatMoney, toDateKey, WEEKDAYS } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
@@ -115,43 +121,23 @@ export function NewAppointmentDialog({
   const clients = useQuery({
     queryKey: ["appointment-form", "clients"],
     enabled: open,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, phone")
-        .order("full_name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaClientasParaElegir>("/api/turnos/clientas")).clientas,
   });
 
   const services = useQuery({
     queryKey: ["appointment-form", "services"],
     enabled: open,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, category, duration_minutes, price, is_published")
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    // Vienen los despublicados también, con la marca: el centro puede cargar un
+    // turno de un tratamiento que todavía no está en el sitio.
+    queryFn: async () => (await api<RtaServiciosParaTurno>("/api/turnos/servicios")).servicios,
   });
 
   const professionals = useQuery({
     queryKey: ["appointment-form", "professionals", serviceId],
     enabled: open && !!serviceId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professional_services")
-        .select("professionals!inner(id, full_name, specialty, is_active)")
-        .eq("service_id", serviceId!);
-      if (error) throw error;
-      return (data ?? [])
-        .map((row) => row.professionals)
-        .filter((p): p is NonNullable<typeof p> => !!p && p.is_active);
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionalesConHorarios>(`/api/publico/servicios/${serviceId}/profesionales`))
+        .profesionales,
   });
 
   /**
@@ -179,33 +165,14 @@ export function NewAppointmentDialog({
   const availability = useQuery({
     queryKey: ["appointment-form", "availability", professionalId, dateKey],
     enabled: open && !!professionalId && !!date,
+    // El mismo endpoint que usa la clienta al reservar: los horarios de la
+    // profesional y los ratos ocupados, sin decir de quién es cada turno.
     queryFn: async () => {
       const day = new Date(date!);
       day.setHours(0, 0, 0, 0);
-      const next = new Date(day);
-      next.setDate(next.getDate() + 1);
-
-      const [schedules, busy] = await Promise.all([
-        supabase
-          .from("professional_schedules")
-          .select("weekday, start_time, end_time")
-          .eq("professional_id", professionalId!),
-        supabase.rpc("professional_busy_slots", {
-          _professional_id: professionalId!,
-          _from: day.toISOString(),
-          _to: next.toISOString(),
-        }),
-      ]);
-      if (schedules.error) throw schedules.error;
-      if (busy.error) throw busy.error;
-
-      return {
-        schedules: schedules.data ?? [],
-        busy: (busy.data ?? []).map((row) => ({
-          starts_at: row.slot_start,
-          duration_minutes: row.slot_minutes,
-        })),
-      };
+      return api<RtaDisponibilidad>(
+        `/api/reservar/disponibilidad?profesional=${professionalId}&fecha=${day.toISOString()}`,
+      );
     },
   });
 
@@ -248,28 +215,23 @@ export function NewAppointmentDialog({
 
   const create = useMutation({
     mutationFn: async () => {
-      // duration_minutes y price los pisa el trigger validate_appointment con
-      // los del catálogo; se manda la duración igual para no romper el tipo
-      // generado, que la tiene como obligatoria.
-      const { error } = await supabase.from("appointments").insert({
-        // Una cosa o la otra, nunca las dos: el trigger descarta los datos de
-        // invitada si viene client_id, pero mandar sólo lo que corresponde deja
-        // la intención clara desde acá.
+      // Sin duration_minutes ni price: los fija validarTurno() leyéndolos del
+      // catálogo, igual que antes los pisaba el trigger. Y sin status: nace
+      // confirmado porque lo carga el centro.
+      await apiPost("/api/turnos", {
+        // Una cosa o la otra, nunca las dos.
         ...(who === "registrada"
-          ? { client_id: clientId! }
+          ? { client_id: clientId }
           : {
               guest_name: guestName.trim(),
               guest_phone: guestPhone.trim() || null,
               guest_email: guestEmail.trim() || null,
             }),
-        service_id: serviceId!,
-        professional_id: professionalId!,
+        service_id: serviceId,
+        professional_id: professionalId,
         starts_at: startsAt!.toISOString(),
-        duration_minutes: service!.duration_minutes,
-        status: "confirmed",
         client_notes: notes.trim() || null,
       });
-      if (error) throw error;
     },
     onSuccess: async () => {
       await Promise.all([

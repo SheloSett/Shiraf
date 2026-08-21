@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaServicios } from "@/lib/api-tipos";
 import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
 
 export const Route = createFileRoute("/contacto")({
@@ -41,16 +42,7 @@ function ContactPage() {
   // el nombre exacto del servicio en vez de una descripción aproximada.
   const services = useQuery({
     queryKey: ["services", "published", "contacto"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, category")
-        .eq("is_published", true)
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaServicios>("/api/publico/servicios")).servicios,
   });
 
   function openWhatsapp(event: React.FormEvent) {

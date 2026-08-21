@@ -1,9 +1,20 @@
 import type { appointment_status } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { miAgenda } from "@/server/services/agenda.service";
+import { miAgenda, vincularTurnosDeInvitada } from "@/server/services/agenda.service";
+import { accesoDe } from "@/server/services/authz.service";
+import { validarTurno } from "@/server/services/turnos.service";
 import { comoNumero } from "@/server/serializar";
-import type { RtaCalendario, RtaMiAgenda, RtaPendientes, RtaTurnos } from "@/lib/api-tipos";
+import type {
+  RtaAlcanceInvitada,
+  RtaCalendario,
+  RtaClientasParaElegir,
+  RtaCorreccion,
+  RtaMiAgenda,
+  RtaPendientes,
+  RtaServiciosParaTurno,
+  RtaTurnos,
+} from "@/lib/api-tipos";
 
 /**
  * Los turnos, desde el panel. Permiso `appointments`.
@@ -191,4 +202,180 @@ export async function miAgendaDeHoy(ctx: Ctx) {
       client_is_guest: t.esInvitada,
     })),
   } satisfies RtaMiAgenda);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cargar un turno desde el panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Las clientas con cuenta, para el buscador del formulario. */
+export async function clientasParaElegir() {
+  const fichas = await prisma.profiles.findMany({
+    select: { id: true, full_name: true, phone: true },
+    orderBy: { full_name: "asc" },
+  });
+  return json({ clientas: fichas } satisfies RtaClientasParaElegir);
+}
+
+/**
+ * Los tratamientos, para el selector del formulario.
+ *
+ * Vienen TODOS, publicados y despublicados, con la marca. Es a proposito y no un
+ * descuido del filtro: el centro puede cargarle a alguien un turno de un
+ * tratamiento que todavia no esta en el sitio. validarTurno() lo permite
+ * explicitamente para quien tiene el permiso, y la pantalla muestra el aviso.
+ */
+export async function serviciosParaTurno() {
+  const servicios = await prisma.services.findMany({
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      duration_minutes: true,
+      price: true,
+      is_published: true,
+    },
+    orderBy: [{ category: "asc" }, { name: "asc" }],
+  });
+  return json({
+    servicios: servicios.map((s) => ({ ...s, price: comoNumero(s.price) })),
+  } satisfies RtaServiciosParaTurno);
+}
+
+function textoODefault(valor: unknown): string | null {
+  return typeof valor === "string" && valor.trim() !== "" ? valor.trim() : null;
+}
+
+/**
+ * Alta de un turno desde el panel, para una clienta con cuenta o para una
+ * invitada.
+ *
+ * Nace `confirmed` y no `pending`: lo esta cargando el centro, no hay nada que
+ * confirmar. El precio y la duracion los fija validarTurno(), igual que en la
+ * reserva de la clienta.
+ */
+export async function crear(ctx: Ctx) {
+  const serviceId = ctx.body["service_id"];
+  const profesionalId = ctx.body["professional_id"];
+  const cuando = ctx.body["starts_at"];
+  const clienteId = ctx.body["client_id"];
+
+  if (typeof serviceId !== "string" || typeof cuando !== "string") {
+    return json({ error: "Faltan datos del turno." }, 400);
+  }
+  const starts_at = new Date(cuando);
+  if (Number.isNaN(starts_at.getTime())) return json({ error: "Ese horario no se entiende." }, 400);
+
+  const nombre = typeof ctx.body["guest_name"] === "string" ? ctx.body["guest_name"].trim() : "";
+  const esInvitada = typeof clienteId !== "string" || !clienteId;
+
+  // El CHECK `appointments_identifies_someone` lo frenaria igual, pero el
+  // mensaje de Postgres no le dice nada a nadie.
+  if (esInvitada && !nombre) return json({ error: "Poné al menos el nombre." }, 400);
+
+  const validado = await validarTurno(await accesoDe(ctx.user!.id), {
+    service_id: serviceId,
+    professional_id: typeof profesionalId === "string" ? profesionalId : null,
+    starts_at,
+  });
+
+  const creado = await prisma.appointments.create({
+    data: {
+      // Una cosa o la otra, nunca las dos.
+      ...(esInvitada
+        ? {
+            guest_name: nombre,
+            guest_phone: textoODefault(ctx.body["guest_phone"]),
+            // En minuscula: es como compara el vinculo automatico cuando le pasa
+            // los turnos a su cuenta. Guardarlo con mayusculas haria que ese
+            // traspaso dependiera de como se escribio el dia que se cargo.
+            guest_email: textoODefault(ctx.body["guest_email"])?.toLowerCase() ?? null,
+          }
+        : { client_id: clienteId as string }),
+      service_id: serviceId,
+      professional_id: typeof profesionalId === "string" ? profesionalId : null,
+      starts_at,
+      status: "confirmed",
+      client_notes: textoODefault(ctx.body["client_notes"]),
+      ...validado,
+    },
+    select: { id: true },
+  });
+
+  return json({ id: creado.id });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los turnos de invitada
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A que turnos alcanza corregir los datos de una invitada.
+ *
+ * El filtro se hace en JavaScript y no con un `where`, y hay un motivo concreto:
+ * la comparacion tiene que ser insensible a mayusculas —asi compara el vinculo
+ * automatico— y en Postgres eso sale por ILIKE, DONDE EL GUION BAJO ES UN
+ * COMODIN de un caracter. Los mails llevan guiones bajos. Son pocas filas y el
+ * filtro exacto vale mas que la consulta prolija.
+ */
+async function turnosDeLaInvitada(email: string): Promise<string[]> {
+  const candidatos = await prisma.appointments.findMany({
+    where: { client_id: null, guest_email: { not: null } },
+    select: { id: true, guest_email: true },
+  });
+  return candidatos
+    .filter((a) => (a.guest_email ?? "").trim().toLowerCase() === email)
+    .map((a) => a.id);
+}
+
+export async function alcanceDeInvitada(ctx: Ctx) {
+  const email = (ctx.url.searchParams.get("email") ?? "").trim().toLowerCase();
+  if (!email) return json({ ids: [] } satisfies RtaAlcanceInvitada);
+  return json({ ids: await turnosDeLaInvitada(email) } satisfies RtaAlcanceInvitada);
+}
+
+/**
+ * Corrige los datos de una invitada.
+ *
+ * El conjunto a tocar SE RECALCULA ACA y no se recibe: si la pantalla mandara la
+ * lista de ids, alguien podria reescribirle los datos de invitada a cualquier
+ * turno. Sin mail, el alcance es un turno solo.
+ */
+export async function corregirInvitada(ctx: Ctx) {
+  const appointmentId = ctx.body["appointmentId"];
+  const crudo = typeof ctx.body["originalEmail"] === "string" ? ctx.body["originalEmail"] : "";
+  const emailOriginal = crudo.trim().toLowerCase();
+
+  const nombre = typeof ctx.body["name"] === "string" ? ctx.body["name"].trim() : "";
+  if (!nombre) return json({ error: "Poné un nombre." }, 400);
+
+  const unico = typeof appointmentId === "string" && appointmentId ? [appointmentId] : [];
+  const ids = emailOriginal === "" ? unico : await turnosDeLaInvitada(emailOriginal);
+
+  if (ids.length === 0) {
+    return json({ error: "No se pudo determinar qué turnos corregir. Probá de nuevo." }, 400);
+  }
+
+  const { count } = await prisma.appointments.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      guest_name: nombre,
+      guest_phone: textoODefault(ctx.body["phone"]),
+      guest_email: textoODefault(ctx.body["email"])?.toLowerCase() ?? null,
+    },
+  });
+
+  return json({ count } satisfies RtaCorreccion);
+}
+
+/** Le pasa a una clienta con cuenta los turnos que saco como invitada. */
+export async function vincularInvitada(ctx: Ctx) {
+  const telefono = ctx.body["phone"];
+  const clientaId = ctx.body["clientId"];
+  if (typeof telefono !== "string" || typeof clientaId !== "string") {
+    return json({ error: "Faltan el teléfono o la clienta." }, 400);
+  }
+
+  const count = await vincularTurnosDeInvitada(telefono, clientaId);
+  return json({ count } satisfies RtaCorreccion);
 }

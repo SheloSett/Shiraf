@@ -3,9 +3,11 @@ import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middle
 import {
   activar,
   borrar,
+  cambiarPermiso,
   crear,
   editar,
   listar,
+  listarEmpleadas,
   serviciosParaElegir,
   turnosProximos,
   vincularCuenta,
@@ -42,3 +44,9 @@ equipoRouter.delete("/profesionales/:id", ...soloEquipo, borrar);
 // Ponerle exigeMiddleware("team") sería el error exacto que esta ruta tiene que
 // evitar — `team` es lo que tiene quien haría el abuso. Ver vincularCuenta.
 equipoRouter.put("/vinculo", authMiddleware, vincularCuenta);
+
+// Las empleadas y sus accesos. Mismo caso: el candado es `admin` y va adentro
+// del controller — repartir accesos no se delega a un permiso, porque quien lo
+// tuviera podría ampliarse a sí mismo cualquier otro.
+equipoRouter.get("/empleadas", authMiddleware, listarEmpleadas);
+equipoRouter.put("/empleadas/:id/permiso", authMiddleware, cambiarPermiso);

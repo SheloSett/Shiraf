@@ -12,7 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPut } from "@/lib/api";
+import type { RtaAlcanceInvitada, RtaCorreccion } from "@/lib/api-tipos";
 
 export type GuestToEdit = {
   appointmentId: string;
@@ -104,17 +105,15 @@ function EditGuestForm({ guest, onDone }: { guest: GuestToEdit; onDone: () => vo
   const targets = useQuery({
     queryKey: ["guest-siblings", originalEmail],
     enabled: originalEmail !== "",
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("appointments")
-        .select("id, guest_email")
-        .is("client_id", null)
-        .not("guest_email", "is", null);
-      if (error) throw error;
-      return (data ?? [])
-        .filter((a) => (a.guest_email ?? "").trim().toLowerCase() === originalEmail)
-        .map((a) => a.id);
-    },
+    // El filtro insensible a mayúsculas se hace del lado del servidor, y sigue
+    // siendo en JavaScript: en Postgres saldría por ILIKE, donde el guión bajo
+    // es un comodín — y los mails llevan guiones bajos.
+    queryFn: async () =>
+      (
+        await api<RtaAlcanceInvitada>(
+          `/api/turnos/invitada/alcance?email=${encodeURIComponent(originalEmail)}`,
+        )
+      ).ids,
   });
 
   // Sin mail, el alcance es este turno y se sabe sin preguntarle nada a la base.
@@ -129,20 +128,18 @@ function EditGuestForm({ guest, onDone }: { guest: GuestToEdit; onDone: () => vo
         throw new Error("No se pudo determinar qué turnos corregir. Probá de nuevo.");
       }
 
-      const { data, error } = await supabase
-        .from("appointments")
-        .update({
-          guest_name: name.trim(),
-          guest_phone: phone.trim() || null,
-          // En minúscula: es como compara claim_guest_appointments() cuando le
-          // pasa los turnos a su cuenta. Guardarlo con mayúsculas haría que ese
-          // traspaso dependiera de cómo se escribió el día que se cargó.
-          guest_email: email.trim().toLowerCase() || null,
-        })
-        .in("id", ids)
-        .select("id");
-      if (error) throw error;
-      return data?.length ?? 0;
+      // No se manda la lista de ids: el servidor la recalcula. Si viajara desde
+      // acá, alguien podría reescribirle los datos de invitada a cualquier turno.
+      // El pasaje a minúscula del mail también lo hace el servidor, porque es
+      // como compara el vínculo automático al pasarle los turnos a su cuenta.
+      const { count } = await apiPut<RtaCorreccion>("/api/turnos/invitada", {
+        appointmentId: guest.appointmentId,
+        originalEmail,
+        name: name.trim(),
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+      });
+      return count;
     },
     onSuccess: async (count) => {
       await Promise.all([

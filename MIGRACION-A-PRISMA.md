@@ -735,11 +735,11 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 9 archivos         |
-> | 7 · Deploy al VPS          | ⬜                                            |
+> | 6 · Las pantallas          | ✅ ningún archivo importa Supabase            |
+> | **7 · Deploy al VPS**      | ⬜ **acá seguís**                             |
 > | 8 · Limpieza               | ⬜                                            |
 >
-> **El sitio TODAVÍA corre sobre Supabase.** Las 47 pantallas de `src/routes/` y
+> **El sitio ya NO usa Supabase.** Las 47 pantallas de `src/routes/` y
 > `src/components/` le siguen hablando. La base nueva existe, tiene los datos y
 > el backend sabe autenticar — pero nada de la interfaz la usa aún. Por eso no
 > se puede borrar nada de Supabase hasta terminar la Fase 6.
@@ -1368,12 +1368,21 @@ donde son obligatorios. Como mínimo, uno por tabla sensible:
 
 ---
 
-### Fase 6 — Las pantallas, una por una 🟡 **SEGUÍ ACÁ**
+### Fase 6 — Las pantallas, una por una ✅ HECHA
 
 Se pasan **de a uno, con un commit por pantalla**. No empieces la siguiente hasta
 que la anterior compile limpio.
 
-> **El número que sirve son 29**, no 47. Ese 47 contaba los archivos que
+> ✅ **Terminada el 21/8/2026.** `grep -rl 'from "@/integrations/supabase' src`
+> no devuelve ningún archivo fuera de esa carpeta, el build pasa y en el bundle
+> del navegador no queda nada de `supabase-js`, ni de Prisma, ni de bcrypt, ni de
+> jsonwebtoken.
+>
+> ⚠️ Lo único que sigue apareciendo en el bundle es el **valor** de
+> `VITE_SUPABASE_URL`, porque Vite hornea todas las `VITE_*` del `.env` las use
+> alguien o no. Se va cuando esas variables salgan del `.env`, en la Fase 8.
+>
+> **El número que servía eran 29**, no 47. Ese 47 contaba los archivos que
 > *mencionan* supabase, y varios sólo lo nombran en un comentario. Los que
 > realmente hay que tocar son los que lo **importan**:
 >

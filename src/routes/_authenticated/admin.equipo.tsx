@@ -26,7 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPut } from "@/lib/api";
+import type { RtaEmpleadas, RtaProfesionalesAdmin } from "@/lib/api-tipos";
 import { linkProfessionalAccount } from "@/lib/team";
 import { createEmployee, deleteEmployee } from "@/lib/team.functions";
 import {
@@ -122,38 +123,14 @@ function AdminTeam() {
   const team = useQuery({
     queryKey: ["admin-team"],
     enabled: isAdmin,
-    queryFn: async () => {
-      const { data: roles, error } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .eq("role", "staff");
-      if (error) throw error;
-
-      const ids = (roles ?? []).map((r) => r.user_id);
-      if (ids.length === 0) return [];
-
-      const [profiles, permissions] = await Promise.all([
-        supabase.from("profiles").select("id, full_name, phone").in("id", ids),
-        supabase.from("user_permissions").select("user_id, permission").in("user_id", ids),
-      ]);
-      if (profiles.error) throw profiles.error;
-      if (permissions.error) throw permissions.error;
-
-      const byUser = new Map<string, Permission[]>();
-      for (const row of permissions.data ?? []) {
-        byUser.set(row.user_id, [...(byUser.get(row.user_id) ?? []), row.permission as Permission]);
-      }
-
-      return ids.map((id) => {
-        const profile = (profiles.data ?? []).find((p) => p.id === id);
-        return {
-          id,
-          full_name: profile?.full_name ?? "Sin nombre",
-          phone: profile?.phone ?? null,
-          permissions: byUser.get(id) ?? [],
-        };
-      });
-    },
+    // Antes esto eran TRES consultas encadenadas —los roles, después los
+    // profiles de esos ids, después sus permisos— porque no había forma de
+    // joinear sin una vista. Ahora es una.
+    queryFn: async () =>
+      (await api<RtaEmpleadas>("/api/equipo/empleadas")).empleadas.map((e) => ({
+        ...e,
+        permissions: e.permissions as Permission[],
+      })),
   });
 
   // Las fichas de profesional, para poder atarle una a una cuenta. La ficha es
@@ -163,14 +140,8 @@ function AdminTeam() {
   const professionals = useQuery({
     queryKey: ["admin-team-professionals"],
     enabled: isAdmin,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professionals")
-        .select("id, full_name, specialty, user_id, is_active")
-        .order("full_name");
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionalesAdmin>("/api/equipo/profesionales")).profesionales,
   });
 
   const link = useMutation({
@@ -256,19 +227,7 @@ function AdminTeam() {
       permission: Permission;
       grant: boolean;
     }) => {
-      if (grant) {
-        const { error } = await supabase
-          .from("user_permissions")
-          .insert({ user_id: userId, permission });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from("user_permissions")
-          .delete()
-          .eq("user_id", userId)
-          .eq("permission", permission);
-        if (error) throw error;
-      }
+      await apiPut("/api/equipo/empleadas/" + userId + "/permiso", { permission, grant });
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-team"] }),
     onError: (e: Error) => toast.error(e.message),

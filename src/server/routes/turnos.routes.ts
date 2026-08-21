@@ -1,11 +1,17 @@
 import { createRouter } from "@/server/http";
 import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middleware";
 import {
+  alcanceDeInvitada,
   calendario,
   cambiarEstado,
+  clientasParaElegir,
+  corregirInvitada,
+  crear,
   listar,
   miAgendaDeHoy,
   pendientes,
+  serviciosParaTurno,
+  vincularInvitada,
 } from "@/server/controllers/turnos.controller";
 
 /**
@@ -27,6 +33,16 @@ turnosRouter.get("/", ...gestionarTurnos, listar);
 turnosRouter.get("/pendientes", ...gestionarTurnos, pendientes);
 turnosRouter.get("/calendario", ...gestionarTurnos, calendario);
 turnosRouter.put("/:id/estado", ...gestionarTurnos, cambiarEstado);
+turnosRouter.post("/", ...gestionarTurnos, crear);
+
+// El formulario de «Nuevo turno».
+turnosRouter.get("/clientas", ...gestionarTurnos, clientasParaElegir);
+turnosRouter.get("/servicios", ...gestionarTurnos, serviciosParaTurno);
+
+// Los turnos de invitada: corregir sus datos y pasárselos a una cuenta.
+turnosRouter.get("/invitada/alcance", ...gestionarTurnos, alcanceDeInvitada);
+turnosRouter.put("/invitada", ...gestionarTurnos, corregirInvitada);
+turnosRouter.put("/invitada/vincular", ...gestionarTurnos, vincularInvitada);
 
 // Sólo sesión: el alcance lo pone la sesión, no un permiso.
 turnosRouter.get("/mi-agenda", authMiddleware, miAgendaDeHoy);
