@@ -37,12 +37,12 @@ que volver a discutirla, hay que ejecutarla bien.**
 Lo que sí cambia el plan es entender dónde está el riesgo, que no es donde
 parece:
 
-| | Riesgo |
-| --- | --- |
-| Reescribir 30 `.from()` en llamadas Prisma | Bajo. Es tedio mecánico. |
-| Mover los datos | **Casi nulo.** Son 87 filas en total. |
-| Reemplazar el auth | Medio. Hay 4 usuarios; se recrean a mano. |
-| **Reemplazar las 39 policies RLS** | **Alto. Acá es donde se filtran datos.** |
+|                                            | Riesgo                                    |
+| ------------------------------------------ | ----------------------------------------- |
+| Reescribir 30 `.from()` en llamadas Prisma | Bajo. Es tedio mecánico.                  |
+| Mover los datos                            | **Casi nulo.** Son 87 filas en total.     |
+| Reemplazar el auth                         | Medio. Hay 4 usuarios; se recrean a mano. |
+| **Reemplazar las 39 policies RLS**         | **Alto. Acá es donde se filtran datos.**  |
 
 Todo el documento está organizado alrededor de proteger esa última fila.
 
@@ -111,6 +111,7 @@ delicado de todos y el costo es un mensaje de WhatsApp a dos clientas.
 - **4 enums**: `app_role`, `app_permission`, `appointment_status`, `media_kind`
 
 > ### ⚠️ Cómo NO contar las policies
+>
 > Contar los `CREATE POLICY` de `supabase/migrations/` da **61**, y está mal: 26
 > de esas fueron dropeadas y recreadas después, así que el número mezcla
 > versiones vivas con versiones muertas. `appointments` es el caso más claro —
@@ -150,12 +151,12 @@ más que uno técnicamente más prolijo pero ajeno.
 Lo que se copia de ahí es **la separación en capas**, que es lo que hace que ese
 backend se lea fácil:
 
-| En `Ecommerce_mm` | Qué hace | En Shiraf |
-| --- | --- | --- |
-| `routes/x.routes.js` | Flaco. Dice **quién puede llamar qué** y nada más | `server/routes/x.routes.ts` |
-| `controllers/x.controller.js` | La lógica y Prisma | `server/controllers/x.controller.ts` |
-| `middleware/auth.middleware.js` | Verifica el JWT, pone `req.user` | `server/middleware/auth.middleware.ts` |
-| `services/email.service.js` | Lo transversal: mails, cron | `server/services/` |
+| En `Ecommerce_mm`               | Qué hace                                          | En Shiraf                              |
+| ------------------------------- | ------------------------------------------------- | -------------------------------------- |
+| `routes/x.routes.js`            | Flaco. Dice **quién puede llamar qué** y nada más | `server/routes/x.routes.ts`            |
+| `controllers/x.controller.js`   | La lógica y Prisma                                | `server/controllers/x.controller.ts`   |
+| `middleware/auth.middleware.js` | Verifica el JWT, pone `req.user`                  | `server/middleware/auth.middleware.ts` |
+| `services/email.service.js`     | Lo transversal: mails, cron                       | `server/services/`                     |
 
 Mirá `backend/src/routes/category.routes.js`: son 20 líneas, ningún `if`, ningún
 Prisma. Sólo el mapeo y los middlewares. **Ese es el patrón a repetir.**
@@ -237,6 +238,7 @@ se achica muchísimo.
 Pero eso vale **sólo si se respeta una regla, sin excepciones**:
 
 > ### 🔴 LA REGLA
+>
 > **Ningún archivo de `src/routes/` ni de `src/components/` importa Prisma,
 > nunca.** El acceso a la base vive únicamente bajo `src/server/`, y toda función
 > que las pantallas puedan llamar empieza verificando la sesión y el permiso.
@@ -249,27 +251,27 @@ En la Fase 1 se instala un lint que lo hace cumplir. No es opcional.
 
 ### Las piezas
 
-| Pieza | Elección | Por qué |
-| --- | --- | --- |
-| Base | **Postgres 17** en Docker | Lo que ya corre en Supabase; evita sorpresas de versión |
-| ORM | **Prisma** | Lo pedido, y lo que usa `Ecommerce_mm` |
-| API | **`createServerFn`** de TanStack Start | Ya está en el proyecto |
-| Auth | **JWT propio**: `jsonwebtoken` + `bcryptjs` | Es el de `Ecommerce_mm`. Copiar un mecanismo probado y propio, en vez de sumar una librería que no se usa en ningún otro lado |
-| Mails | **Resend** (sin cambios) | Ya está escrito en `notifications.functions.ts` |
-| Imágenes | **Cloudinary** (sin cambios) | Ya migrado, no depende de Supabase |
-| Backups | **`prodrigestivill/postgres-backup-local`** | Ya corre en `Ecommerce_mm` con rotación configurada. No escribir un cron a mano |
+| Pieza    | Elección                                    | Por qué                                                                                                                       |
+| -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Base     | **Postgres 17** en Docker                   | Lo que ya corre en Supabase; evita sorpresas de versión                                                                       |
+| ORM      | **Prisma**                                  | Lo pedido, y lo que usa `Ecommerce_mm`                                                                                        |
+| API      | **`createServerFn`** de TanStack Start      | Ya está en el proyecto                                                                                                        |
+| Auth     | **JWT propio**: `jsonwebtoken` + `bcryptjs` | Es el de `Ecommerce_mm`. Copiar un mecanismo probado y propio, en vez de sumar una librería que no se usa en ningún otro lado |
+| Mails    | **Resend** (sin cambios)                    | Ya está escrito en `notifications.functions.ts`                                                                               |
+| Imágenes | **Cloudinary** (sin cambios)                | Ya migrado, no depende de Supabase                                                                                            |
+| Backups  | **`prodrigestivill/postgres-backup-local`** | Ya corre en `Ecommerce_mm` con rotación configurada. No escribir un cron a mano                                               |
 
 ### Sobre el auth: se copia el de `Ecommerce_mm`
 
 **No hay que diseñar nada acá. Está resuelto en el otro proyecto y hay que ir a
 copiarlo.** Los archivos a leer, en este orden:
 
-| Archivo de `Ecommerce_mm` | Qué sacar de ahí |
-| --- | --- |
-| `backend/src/middleware/auth.middleware.js` | `authMiddleware` (verifica el JWT), `adminMiddleware`, `customerMiddleware` |
-| `backend/src/routes/customer.routes.js` | El mapa completo: `register`, `login`, `forgot-password`, `reset-password`, `/me`, `/me/password` |
-| `backend/src/controllers/customer.controller.js` | `register`, `customerLogin`, `forgotPassword` (línea 621), `resetPassword` (652) |
-| `backend/src/middleware/loginLimiter.js` | El limitador de intentos |
+| Archivo de `Ecommerce_mm`                        | Qué sacar de ahí                                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `backend/src/middleware/auth.middleware.js`      | `authMiddleware` (verifica el JWT), `adminMiddleware`, `customerMiddleware`                       |
+| `backend/src/routes/customer.routes.js`          | El mapa completo: `register`, `login`, `forgot-password`, `reset-password`, `/me`, `/me/password` |
+| `backend/src/controllers/customer.controller.js` | `register`, `customerLogin`, `forgotPassword` (línea 621), `resetPassword` (652)                  |
+| `backend/src/middleware/loginLimiter.js`         | El limitador de intentos                                                                          |
 
 El mecanismo de recuperación de contraseña, que es lo único delicado, ya está
 bien hecho ahí y se copia tal cual:
@@ -350,12 +352,12 @@ imagen fija la versión y deja de depender de qué tiene puesto cada máquina.
 
 ### Los contenedores
 
-| Servicio | Imagen | Para qué |
-| --- | --- | --- |
-| `db` | `postgres:17` | La base. Volumen nombrado, sólo loopback. |
-| `migrate` | la del proyecto | Corre `prisma migrate deploy` **una vez** y termina. |
-| `app` | la del proyecto | El sitio. |
-| `pg-backup` | `prodrigestivill/postgres-backup-local` | El backup diario. **Copiado de `Ecommerce_mm`.** |
+| Servicio    | Imagen                                  | Para qué                                             |
+| ----------- | --------------------------------------- | ---------------------------------------------------- |
+| `db`        | `postgres:17`                           | La base. Volumen nombrado, sólo loopback.            |
+| `migrate`   | la del proyecto                         | Corre `prisma migrate deploy` **una vez** y termina. |
+| `app`       | la del proyecto                         | El sitio.                                            |
+| `pg-backup` | `prodrigestivill/postgres-backup-local` | El backup diario. **Copiado de `Ecommerce_mm`.**     |
 
 ### El backup ya está resuelto en el otro proyecto
 
@@ -364,23 +366,23 @@ un servicio que lo hace, con rotación configurada y probada. Se copia con los
 nombres cambiados:
 
 ```yaml
-  pg-backup:
-    image: prodrigestivill/postgres-backup-local:17
-    container_name: shiraf-backup
-    restart: unless-stopped
-    depends_on:
-      db: { condition: service_healthy }
-    environment:
-      POSTGRES_HOST: db
-      POSTGRES_DB: shiraf
-      POSTGRES_USER: shiraf
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
-      SCHEDULE: "59 23 * * *"
-      BACKUP_KEEP_DAYS: 7
-      BACKUP_KEEP_WEEKS: 4
-      BACKUP_KEEP_MONTHS: 6
-    volumes:
-      - ./backups:/backups
+pg-backup:
+  image: prodrigestivill/postgres-backup-local:17
+  container_name: shiraf-backup
+  restart: unless-stopped
+  depends_on:
+    db: { condition: service_healthy }
+  environment:
+    POSTGRES_HOST: db
+    POSTGRES_DB: shiraf
+    POSTGRES_USER: shiraf
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+    SCHEDULE: "59 23 * * *"
+    BACKUP_KEEP_DAYS: 7
+    BACKUP_KEEP_WEEKS: 4
+    BACKUP_KEEP_MONTHS: 6
+  volumes:
+    - ./backups:/backups
 ```
 
 ⚠️ La etiqueta de la imagen tiene que coincidir con la versión de Postgres: el
@@ -396,18 +398,18 @@ migrando la misma base a la vez— y además mezcla dos responsabilidades. Un
 servicio de un solo uso lo resuelve y compose sabe encadenarlo:
 
 ```yaml
-  migrate:
-    image: shiraf-app:latest
-    depends_on:
-      db: { condition: service_healthy }
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
-    restart: "no"
+migrate:
+  image: shiraf-app:latest
+  depends_on:
+    db: { condition: service_healthy }
+  environment:
+    DATABASE_URL: ${DATABASE_URL}
+  command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+  restart: "no"
 
-  app:
-    depends_on:
-      migrate: { condition: service_completed_successfully }
+app:
+  depends_on:
+    migrate: { condition: service_completed_successfully }
 ```
 
 ⚠️ Ese `command` **sólo funciona si la imagen lleva adentro el paquete `prisma`
@@ -459,16 +461,16 @@ Consecuencias, todas a favor:
 #### Lo que sí cambió a cambio: hace falta un driver adapter
 
 El WASM arma el SQL pero **no se conecta a la base**. Eso lo hace ahora un
-*driver adapter*, en el constructor:
+_driver adapter_, en el constructor:
 
 ```ts
 import { PrismaPg } from "@prisma/adapter-pg";
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma  = new PrismaClient({ adapter });
+const prisma = new PrismaClient({ adapter });
 ```
 
-Sin él, `new PrismaClient()` **ni siquiera se instancia**: tira *"A driver
-adapter is required to connect to your database"*. Por eso el proyecto suma
+Sin él, `new PrismaClient()` **ni siquiera se instancia**: tira _"A driver
+adapter is required to connect to your database"_. Por eso el proyecto suma
 `@prisma/adapter-pg` y `pg` como dependencias normales.
 
 #### Y otra cosa que Prisma 7 rompió: la URL salió de `schema.prisma`
@@ -532,13 +534,14 @@ que `generate` lo escribe.
 
 No es teoría: se construyó la imagen y se corrió todo contra un Postgres real.
 
-| Qué | Resultado |
-| --- | --- |
-| `docker build` | ✅ |
-| `migrate deploy` **desde la imagen de producción** | ✅ las 3 migraciones |
-| `PrismaClient` + adapter consultando desde la imagen | ✅ |
-| La app arranca y responde 200 | ✅ |
-| `POST /api/recordatorios` sin secreto | ✅ 401 |
+| Qué                                                  | Resultado            |
+| ---------------------------------------------------- | -------------------- |
+| `docker build`                                       | ✅                   |
+| `migrate deploy` **desde la imagen de producción**   | ✅ las 3 migraciones |
+| `PrismaClient` + adapter consultando desde la imagen | ✅                   |
+| La app arranca y responde 200                        | ✅                   |
+| `POST /api/recordatorios` sin secreto                | ✅ 401               |
+
 ### Desarrollo, también en contenedor
 
 Creá `docker-compose.dev.yml`:
@@ -549,20 +552,20 @@ services:
     extends:
       file: docker-compose.yml
       service: db
-    ports: ["127.0.0.1:5432:5432"]   # para poder abrir Prisma Studio
+    ports: ["127.0.0.1:5432:5432"] # para poder abrir Prisma Studio
 
   app:
     build:
       context: .
-      target: deps        # la etapa con node_modules, sin build de producción
+      target: deps # la etapa con node_modules, sin build de producción
     command:
       - sh
       - -c
       - bunx prisma generate && bun run dev --host 0.0.0.0 --port 8080 --strictPort
     volumes:
-      - .:/app                       # el código, en vivo
-      - /app/node_modules            # ← volumen anónimo, ver abajo
-    ports: ["8081:8080"]             # HOST:CONTENEDOR — ver abajo
+      - .:/app # el código, en vivo
+      - /app/node_modules # ← volumen anónimo, ver abajo
+    ports: ["8081:8080"] # HOST:CONTENEDOR — ver abajo
     env_file: .env
     depends_on:
       db: { condition: service_healthy }
@@ -682,6 +685,7 @@ Perder tiempo acá es el error más caro, porque además rompe cosas que hoy and
   un commit aparte, no mezclado con un cambio de lógica.
 
 > ### ⚠️ Mudar archivos y cambiarles el contenido, nunca en el mismo commit
+>
 > Los tres `*.functions.ts` de hoy terminan bajo `src/server/`, y varios `lib/`
 > también. Es tentador aprovechar el viaje y reescribirlos de paso. **No lo
 > hagas**: si algo se rompe, un diff que mueve y edita a la vez no deja ver qué
@@ -716,6 +720,28 @@ git checkout -b migracion-prisma
 ```
 
 ---
+
+> ## 🚦 DÓNDE ESTAMOS — leé esto primero
+>
+> **Actualizado el 21/8/2026.** Las fases 0 a 4 están **hechas, aplicadas y
+> probadas contra un Postgres real**. Lo que falta es pasar la aplicación.
+>
+> | Fase                       | Estado                                        |
+> | -------------------------- | --------------------------------------------- |
+> | 0 · Red de seguridad       | ✅ los datos exportados                       |
+> | 1 · Postgres + esquema     | ✅ la base levanta y se sincroniza            |
+> | 2 · Auth                   | ✅ login, registro, recuperar, confirmar mail |
+> | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
+> | 4 · Los datos              | ✅ 91 filas cargadas                          |
+> | **5 · Permisos en código** | ⬜ **acá seguís**                             |
+> | 6 · Las pantallas          | ⬜ 47 archivos                                |
+> | 7 · Deploy al VPS          | ⬜                                            |
+> | 8 · Limpieza               | ⬜                                            |
+>
+> **El sitio TODAVÍA corre sobre Supabase.** Las 47 pantallas de `src/routes/` y
+> `src/components/` le siguen hablando. La base nueva existe, tiene los datos y
+> el backend sabe autenticar — pero nada de la interfaz la usa aún. Por eso no
+> se puede borrar nada de Supabase hasta terminar la Fase 6.
 
 ### Fase 0 — Red de seguridad ✅ HECHA
 
@@ -777,19 +803,20 @@ aparece en `git status`.
 > teoría: la base se levanta, se migra y responde. Todo lo de abajo se corrió
 > contra un Postgres real.
 >
-> | | |
-> | --- | --- |
-> | ✅ `prisma/schema.prisma` | 16 modelos, 4 enums. `prisma validate` pasa |
-> | ✅ `prisma/migrations/20260820000000_esquema_inicial/` | 286 líneas: 16 tablas, 9 índices únicos, 15 FK |
-> | ✅ `docker-compose.yml` | `db` → `migrate` → `app`, más `pg-backup`. YAML verificado |
-> | ✅ `docker-compose.dev.yml` | Con el volumen anónimo y el `--host 0.0.0.0` |
-> | ✅ `Dockerfile` | Runtime a `node:22-slim`, las 4 copias de Prisma, sin Supabase |
-> | ✅ `.env.example` | Las 4 variables nuevas, y las de Supabase marcadas como de salida |
-> | ✅ Aplicarlo a una base | **Hecho.** 3 migraciones, 17 tablas, 4 enums, 3 triggers, 7 índices, 1 CHECK |
+> |                                                        |                                                                              |
+> | ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+> | ✅ `prisma/schema.prisma`                              | 16 modelos, 4 enums. `prisma validate` pasa                                  |
+> | ✅ `prisma/migrations/20260820000000_esquema_inicial/` | 286 líneas: 16 tablas, 9 índices únicos, 15 FK                               |
+> | ✅ `docker-compose.yml`                                | `db` → `migrate` → `app`, más `pg-backup`. YAML verificado                   |
+> | ✅ `docker-compose.dev.yml`                            | Con el volumen anónimo y el `--host 0.0.0.0`                                 |
+> | ✅ `Dockerfile`                                        | Runtime a `node:22-slim`, las 4 copias de Prisma, sin Supabase               |
+> | ✅ `.env.example`                                      | Las 4 variables nuevas, y las de Supabase marcadas como de salida            |
+> | ✅ Aplicarlo a una base                                | **Hecho.** 3 migraciones, 17 tablas, 4 enums, 3 triggers, 7 índices, 1 CHECK |
+
 | ✅ `prisma.config.ts` | Prisma 7 ya no acepta `url` en el schema |
 | ✅ `docker build` + `migrate deploy` desde la imagen | Verificado |
 | ✅ `docker compose -f docker-compose.dev.yml up` | Sirve en `localhost:8081` |
->
+
 > #### 🔴 Lo primero en la máquina con Docker, antes que nada
 >
 > ```bash
@@ -868,7 +895,7 @@ aparece en `git status`.
 
 3. **Generá el esquema por introspección, no a mano.** Apuntá
    `DATABASE_URL` a la base **de Supabase** (Project Settings → Database →
-   Connection string, modo *session*) y corré:
+   Connection string, modo _session_) y corré:
 
    ```bash
    bunx prisma db pull
@@ -928,7 +955,28 @@ limpio, y `bunx prisma studio` muestra las 15 tablas vacías.
 
 ---
 
-### Fase 2 — Auth
+### Fase 2 — Auth ✅ HECHA
+
+> **Hecha el 20/8/2026 y probada contra la base propia**, con los datos reales.
+> Vive en `src/server/`: `routes/auth.routes.ts`, `controllers/auth.controller.ts`,
+> `middleware/auth.middleware.ts`, `middleware/loginLimiter.ts`,
+> `services/email.service.ts`.
+>
+> Lo que se ejercitó: login con contraseña mala y con mail inexistente (401 con
+> el **mismo** mensaje, no filtra quién existe), login bueno, cookie `HttpOnly`
+>
+> - `SameSite=Lax`, `/me` con y sin cookie, el limiter (diez 401 y después 429,
+>   exacto), el ciclo `forgot → reset → login` con token de un solo uso, cambiar
+>   contraseña, logout, y **registro + confirmar mail traspasando un turno de
+>   invitada** a la cuenta.
+>
+> Tres diferencias deliberadas con `Ecommerce_mm`, explicadas en los archivos:
+> cookie en vez de header `Bearer` (Shiraf renderiza en el servidor), el JWT
+> **no** lleva los permisos (allá van adentro y el token dura 7 días), y un solo
+> `PrismaClient` (allá hay 19, uno por controller).
+>
+> De paso destrabó el bloqueo viejo de las plantillas de mail: salieron de
+> `supabase/emails/` a `emails/` y las manda Resend.
 
 La fase más delicada. **Hacela entera antes de tocar una sola pantalla de
 datos.**
@@ -990,22 +1038,22 @@ lista la sección 2.** Esta fase es en un 80% copiar de ahí.
    archivo queda, cada llamada a una server function sigue pidiéndole la sesión a
    Supabase — o falla, cuando Supabase ya no esté.
 
-   Los dos archivos de auth dicen arriba *"This file is automatically generated.
-   Do not edit it directly"*: son de Lovable. **Borralos, no los edites**, así
+   Los dos archivos de auth dicen arriba _"This file is automatically generated.
+   Do not edit it directly"_: son de Lovable. **Borralos, no los edites**, así
    nadie los regenera encima.
 
 5. Reemplazá los 26 `supabase.auth.*`. El mapeo, contra las rutas nuevas:
 
-   | Supabase | Shiraf, después |
-   | --- | --- |
-   | `signInWithPassword` | `POST /api/auth/login` |
-   | `signUp` | `POST /api/auth/register` |
-   | `signOut` | `POST /api/auth/logout` (borra la cookie) |
-   | `getUser` / `getSession` (14 usos) | Una sola server function `getMe()`, cacheada con react-query |
-   | `onAuthStateChange` | Ya no existe. Al entrar y al salir, invalidá la query de `getMe` |
-   | `updateUser` (contraseña) | `PUT /api/auth/password` — el `changePassword` del ecommerce |
-   | `resetPasswordForEmail` | `POST /api/auth/forgot-password` |
-   | `getClaims` | Ya no existe: la sesión se lee en el servidor |
+   | Supabase                           | Shiraf, después                                                  |
+   | ---------------------------------- | ---------------------------------------------------------------- |
+   | `signInWithPassword`               | `POST /api/auth/login`                                           |
+   | `signUp`                           | `POST /api/auth/register`                                        |
+   | `signOut`                          | `POST /api/auth/logout` (borra la cookie)                        |
+   | `getUser` / `getSession` (14 usos) | Una sola server function `getMe()`, cacheada con react-query     |
+   | `onAuthStateChange`                | Ya no existe. Al entrar y al salir, invalidá la query de `getMe` |
+   | `updateUser` (contraseña)          | `PUT /api/auth/password` — el `changePassword` del ecommerce     |
+   | `resetPasswordForEmail`            | `POST /api/auth/forgot-password`                                 |
+   | `getClaims`                        | Ya no existe: la sesión se lee en el servidor                    |
 
    ⚠️ **`onAuthStateChange` es el que no tiene traducción directa** y aparece 3
    veces. Era un suscriptor: Supabase avisaba solo cuando cambiaba la sesión. Con
@@ -1049,10 +1097,12 @@ turnos de invitada **no** aparecen en el historial.
 
 ---
 
-### Fase 3 — Triggers y funciones: qué sobrevive en SQL 🟡 LOS TRIGGERS SÍ, LAS RPC NO
+### Fase 3 — Triggers y funciones ✅ COMPLETA
 
-> **Estado al 20/8/2026.** La migración a mano está escrita **y aplicada y
-> probada**: `prisma/migrations/20260820000001_reglas_que_se_quedan_en_sql/`.
+> **Completa al 21/8/2026, las dos mitades.**
+>
+> **Lo que se queda en SQL** vive ahora en `prisma/sql/reglas.sql` y lo aplica
+> `scripts/post-push.mjs` después de cada `db push`.
 > Se verificó que los tres hacen lo suyo contra un Postgres real — la portada
 > sigue a la primera foto y cae a la siguiente al borrarla, un turno encimado se
 > rechaza, y el stock suma y resta.
@@ -1062,18 +1112,28 @@ turnos de invitada **no** aparecen en el historial.
 > textuales; lo único que se sacó fue `SECURITY DEFINER`, que estaba para saltear
 > la RLS y acá no hay RLS que saltear.
 >
-> **Falta todavía**: las 8 RPC de más abajo, que son la otra mitad de la fase.
+> **Las 8 RPC ya están portadas** a `src/server/services/`:
+> `agenda.service.ts` (miAgenda, miFichaDeProfesional, horariosOcupados,
+> normalizarTelefono, vincularTurnosDeInvitada, idsDelEquipo),
+> `catalogo.service.ts` (los dos renombrados atómicos) y `authz.service.ts`
+> (accesoDe, puede, exigirPermiso, exigirAdmin, que reemplazan a `has_role` y
+> `has_permission`). Las ocho se probaron contra la base con los datos reales.
+>
+> ⚠️ `miAgenda()` **no toma** un `professionalId`: el alcance sale del `userId`
+> de la sesión. Es la misma regla que tenía `my_agenda()` en Postgres, y está
+> ahí para que nadie pueda pedir la agenda de otra persona. No la "hagas
+> reusable".
 
 **No traduzcas los 15 triggers a código.** Tres tienen que quedarse en la base, y
 el motivo importa.
 
 #### Se quedan como SQL (van en una migración de Prisma con `--create-only`)
 
-| Trigger / función | Por qué NO puede ir a código |
-| --- | --- |
+| Trigger / función           | Por qué NO puede ir a código                                                                                                                                                                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `check_appointment_overlap` | **Condición de carrera.** "Consultar si el horario está libre" y después "insertar" son dos operaciones: entre una y otra entra otra reserva. La base lo resuelve dentro de la misma transacción. En código es un bug que aparece justo el sábado a la mañana. |
-| `apply_stock_movement` | Ídem: el saldo de stock se actualiza atómicamente con el movimiento. |
-| `sync_service_cover` | Mantiene `services.image_url` igual a la primera imagen de la galería. Es un invariante de datos, no una regla de negocio: vale aunque alguien escriba por fuera de la app. |
+| `apply_stock_movement`      | Ídem: el saldo de stock se actualiza atómicamente con el movimiento.                                                                                                                                                                                           |
+| `sync_service_cover`        | Mantiene `services.image_url` igual a la primera imagen de la galería. Es un invariante de datos, no una regla de negocio: vale aunque alguien escriba por fuera de la app.                                                                                    |
 
 Prisma soporta SQL a mano: `bunx prisma migrate dev --create-only` y pegás el
 cuerpo. Copialos de `20260813020000`, `20260805165256` y `20260818010000`.
@@ -1085,23 +1145,23 @@ portada—, no la de permisos, que va a `permission.middleware.ts` en la Fase 5.
 
 #### Se vuelven código
 
-| Origen | Destino |
-| --- | --- |
-| 7 × `update_updated_at_column` | `@updatedAt` de Prisma (Fase 1) |
-| `handle_new_user`, `claim_guest_appointments` | El register y la confirmación de mail (Fase 2) |
-| `enforce_appointment_client_scope`, `validate_appointment`, `guard_professional_account_link` | `permission.middleware.ts` (Fase 5) |
+| Origen                                                                                        | Destino                                        |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 7 × `update_updated_at_column`                                                                | `@updatedAt` de Prisma (Fase 1)                |
+| `handle_new_user`, `claim_guest_appointments`                                                 | El register y la confirmación de mail (Fase 2) |
+| `enforce_appointment_client_scope`, `validate_appointment`, `guard_professional_account_link` | `permission.middleware.ts` (Fase 5)            |
 
 #### Las 8 RPC
 
-| RPC | Reemplazo |
-| --- | --- |
-| `professional_busy_slots` | **Dejala en SQL.** Es una consulta con generación de series; en Prisma queda peor. `$queryRaw`. |
-| `my_agenda` | Server function con Prisma. ⚠️ Hoy la seguridad la da que **no toma parámetro** de profesional: el alcance sale de `auth.uid()`. **Mantené eso**: sacá el id de la sesión, nunca de un argumento. |
-| `my_professional_id` | Consulta trivial. Ojo con `is_active`. |
-| `team_member_ids` | Consulta trivial. |
-| `rename_service_category`, `rename_product_category` | `prisma.$transaction`. El renombrado tiene que ser atómico — ver `20260816000000`. |
-| `link_guest_appointments` | `updateMany`. Reusá `normalize_phone`: se queda como función SQL o se reescribe en TS, pero **una sola vez**. |
-| `has_role`, `has_permission` | `permission.middleware.ts`. |
+| RPC                                                  | Reemplazo                                                                                                                                                                                         |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `professional_busy_slots`                            | **Dejala en SQL.** Es una consulta con generación de series; en Prisma queda peor. `$queryRaw`.                                                                                                   |
+| `my_agenda`                                          | Server function con Prisma. ⚠️ Hoy la seguridad la da que **no toma parámetro** de profesional: el alcance sale de `auth.uid()`. **Mantené eso**: sacá el id de la sesión, nunca de un argumento. |
+| `my_professional_id`                                 | Consulta trivial. Ojo con `is_active`.                                                                                                                                                            |
+| `team_member_ids`                                    | Consulta trivial.                                                                                                                                                                                 |
+| `rename_service_category`, `rename_product_category` | `prisma.$transaction`. El renombrado tiene que ser atómico — ver `20260816000000`.                                                                                                                |
+| `link_guest_appointments`                            | `updateMany`. Reusá `normalize_phone`: se queda como función SQL o se reescribe en TS, pero **una sola vez**.                                                                                     |
+| `has_role`, `has_permission`                         | `permission.middleware.ts`.                                                                                                                                                                       |
 
 **Verificación:** `bunx prisma migrate deploy` corre limpio contra la base nueva
 y los tres triggers figuran en `pg_trigger`. Todavía no hay datos ni pantallas
@@ -1109,7 +1169,17 @@ que probar: esta fase se verifica en la base y nada más.
 
 ---
 
-### Fase 4 — Cargar los datos
+### Fase 4 — Cargar los datos ✅ HECHA
+
+> **Hecha el 20/8/2026.** `prisma/seed.ts` carga las 91 filas (las 87 de
+> Supabase más las 4 cuentas, que ahora viven en `users`). Es idempotente.
+>
+> **Se apartó del plan en una cosa, y es mejor:** se conservan los UUID
+> originales en vez de crear cuentas nuevas y traducir ids. El `id` es nuestro,
+> no de Supabase, así que ninguna clave foránea necesita mapeo.
+>
+> Las 4 cuentas quedaron con una contraseña imposible de acertar. Se les pone
+> una desde "recuperar contraseña", que ya funciona.
 
 87 filas. Escribí `prisma/seed.ts` que lea lo exportado en la Fase 0.
 
@@ -1166,234 +1236,241 @@ que conservar el precio que tenían, no el del catálogo de hoy.
 
 ---
 
-### Fase 5 — Las 39 policies se vuelven código
+### 🖥️ Si estás en la máquina SIN Docker
 
-**La fase de la que depende que esto no termine en una filtración de datos.**
+La Fase 5 y buena parte de la 6 **se pueden hacer enteras sin Docker**, porque
+son escribir código. Lo que no se puede es probarlo contra la base: eso espera a
+la máquina que sí lo tiene.
 
-Antes de empezar, corré la consulta a `pg_policies` de la sección 1 y compará
-contra las tablas de acá. Si difieren, gana la base — estas listas salen de
-reconstruir el historial de migraciones, que es exacto salvo que alguien haya
-tocado algo a mano en el SQL Editor.
+**Puesta a punto, una vez:**
 
-1. Escribí `src/server/middleware/permission.middleware.ts` con las tres
-   primitivas, que reemplazan a `has_role()` y `has_permission()`. Es el
-   equivalente de `adminMiddleware` / `customerMiddleware` del ecommerce, con la
-   diferencia de que Shiraf tiene permisos finos además de roles:
+```bash
+npm install
+npx prisma generate      # ← IMPRESCINDIBLE, y no necesita base
+```
 
-   ```ts
-   export async function getAccess(userId: string): Promise<Access>
-   export async function requirePermission(userId: string, p: Permission): Promise<void>
-   export async function requireAdmin(userId: string): Promise<void>
-   ```
+`prisma generate` sólo lee `prisma/schema.prisma` y escribe el cliente en
+`node_modules`. Sin esto, **todos** los `import { prisma }` tiran error de tipos
+y `tsc` se llena de rojo que no tiene nada que ver con lo que estás escribiendo.
+No pide `DATABASE_URL` ni conexión.
 
-   **Respetá la regla que ya existe en la base**: el admin pasa siempre, sin
-   mirar la tabla de permisos. Está explicada en `src/hooks/useAccess.ts` y en
-   `src/lib/permissions.ts`; no la reinventes.
+**Lo que sí podés correr:**
 
-2. Recorré las **35 policies de `public`** una por una. Acá está la lista
-   completa: nombre, operación, la regla que hace cumplir, y **la migración donde
-   está la versión vigente** — que es de la única de la que hay que copiar.
+| Comando            | Qué te dice                                    |
+| ------------------ | ---------------------------------------------- |
+| `npx tsc --noEmit` | que los tipos cierran — es el que más vale acá |
+| `npx eslint .`     | formato y la regla de importaciones prohibidas |
+| `npm run build`    | que compila entero                             |
 
-   **Tildá cada renglón a medida que lo traducís.** Esta lista es el entregable
-   de la fase: si al final quedó alguna sin tildar, hay una puerta abierta.
+**Lo que NO podés correr, y no hay que intentar arreglarlo:** `docker compose`,
+`prisma db push`, `prisma studio`, el seed, y cualquier prueba con `curl` contra
+`/api/*`. Todo eso necesita la base.
 
-   #### `appointments` (5) — lo más sensible
-   | Op | Policy | Regla | Vigente en |
-   | --- | --- | --- | --- |
-   | SELECT | `read appointments` | `client_id = uid` **o** permiso `appointments` | `20260813070000` |
-   | UPDATE | `update appointments` | ídem, en `using` y en `with check` | `20260813070000` |
-   | INSERT | `staff create appointments` | permiso `appointments` | `20260813070000` |
-   | INSERT | `clients create own appointments` | `client_id = uid`. **La más vieja y sigue viva** | `20260805164122` |
-   | DELETE | `delete appointments` | permiso `appointments` | `20260813070000` |
+> ⚠️ **No instales Postgres en el host para poder probar.** Es tentador y rompe
+> el requisito de que lo único instalado sea Docker — que es de la dueña, no una
+> convención. Escribí el código, dejalo compilando limpio, y probalo en la otra
+> máquina.
 
-   #### `profiles` (3) — teléfonos
-   | Op | Policy | Regla | Vigente en |
-   | --- | --- | --- | --- |
-   | SELECT | `read profiles` | `uid = id` **o** `clients_contact` **o** `appointments` ← ver trampa #4 | `20260813070000` |
-   | UPDATE | `update profiles` | `uid = id` **o** `clients_contact` | `20260813070000` |
-   | INSERT | `own profile insert` | `uid = id` | `20260805164122` |
+**Cómo dejarlo listo para probar allá.** Anotá al final de cada sesión qué
+quedó sin ejercitar, con esta forma:
 
-   #### `client_notes` (3) — notas clínicas
-   | Op | Policy | Regla | Vigente en |
-   | --- | --- | --- | --- |
-   | SELECT | `read client notes` | `client_id = uid` **o** `clients_notes` | `20260814010000` |
-   | INSERT | `write client notes` | ídem | `20260814010000` |
-   | UPDATE | `update client notes` | ídem | `20260814010000` |
+```
+SIN PROBAR (necesita Docker):
+  · POST /api/servicios          → crear y editar un tratamiento
+  · GET  /api/turnos?estado=...  → el filtro por estado
+```
 
-   #### `user_roles` (3) y `user_permissions` (3) — el reparto de accesos
-   | Op | Policy | Regla | Vigente en |
-   | --- | --- | --- | --- |
-   | SELECT | `read own roles` | `user_id = uid` **o** rol admin | `20260805164122` |
-   | INSERT | `admin assigns non-admin roles` | rol admin **y** `role <> 'admin'` | `20260813070000` |
-   | DELETE | `admin removes non-admin roles` | ídem | `20260813070000` |
-   | SELECT | `read permissions` | `user_id = uid` **o** rol admin | `20260813070000` |
-   | INSERT | `admin grants permissions` | **rol** admin, no permiso | `20260813070000` |
-   | DELETE | `admin revokes permissions` | ídem | `20260813070000` |
-
-   ⚠️ Repartir accesos es del **rol** `admin` y no de un permiso, a propósito:
-   ningún permiso se amplía a sí mismo. No lo conviertas en `requirePermission`.
-
-   #### Catálogo — `services` (3), `service_media` (3), `service_categories` (1)
-   | Op | Policy | Regla | Vigente en |
-   | --- | --- | --- | --- |
-   | SELECT | `published services anon` | `is_published` | `20260805165527` |
-   | SELECT | `published services authenticated` | `is_published` **o** `catalog` | `20260813070000` |
-   | ALL | `manage services` | `catalog` | `20260813070000` |
-   | SELECT | `published service media anon` | el service del que cuelga está publicado | `20260818010000` |
-   | SELECT | `published service media authenticated` | `catalog` **o** el service está publicado | `20260818010000` |
-   | ALL | `manage service media` | `catalog` | `20260818010000` |
-   | ALL | `manage service categories` | `catalog` | `20260813070000` |
-
-   #### Equipo — `professionals` (3), `professional_services` (2), `professional_schedules` (2)
-   | Op | Policy | Regla | Vigente en |
-   | --- | --- | --- | --- |
-   | SELECT | `active professionals anon` | `is_active` | `20260805165527` |
-   | SELECT | `active professionals authenticated` | `is_active` **o** `team` | `20260813070000` |
-   | ALL | `manage professionals` | `team` | `20260813070000` |
-   | SELECT | `professional services public` | `true` — anon y authenticated | `20260805164122` |
-   | ALL | `manage professional services` | `team` | `20260813070000` |
-   | SELECT | `schedules public` | `true` — anon y authenticated | `20260805164122` |
-   | ALL | `manage schedules` | `team` | `20260813070000` |
-
-   #### Stock — `products` (1), `stock_movements` (1), `product_categories` (1), `product_costs` (1)
-   | Op | Policy | Regla | Vigente en |
-   | --- | --- | --- | --- |
-   | ALL | `manage products` | `stock` | `20260813070000` |
-   | ALL | `manage stock movements` | `stock` | `20260813070000` |
-   | ALL | `manage product categories` | `stock` ← **no `catalog`**, ver trampa #5 | `20260814000000` |
-   | ALL | `manage product costs` | `stock_costs` — costos de compra | `20260814010000` |
-
-   ⚠️ Ninguna de estas cuatro tiene policy de lectura pública: el stock no sale
-   en el sitio. Al pasarlas a código, la server function tiene que exigir el
-   permiso **también para leer**.
-
-   **Copiá esta tabla a un archivo aparte del repo** con una columna más: en qué
-   server function quedó cada chequeo. Es lo que va a permitir auditar después.
-
-3. Las **4** policies de `storage.objects` (`servicios lectura publica`,
-   `servicios alta`, `servicios cambio`, `servicios baja`) **se descartan**: el
-   bucket de Supabase Storage muere con la migración y las fotos nuevas ya van a
-   Cloudinary.
-
-4. **Los 3 triggers de autorización pasan a código** y hay que leerlos antes,
-   porque encierran decisiones que no son obvias:
-   - `enforce_appointment_client_scope` — qué puede tocar una clienta de su
-     propio turno. **Leé `20260819000000` antes**: esta función ya se rompió una
-     vez por reescribirla desde una copia vieja.
-   - `validate_appointment` — turno en el futuro, dentro del horario, con
-     precio congelado.
-   - `guard_professional_account_link` — sólo la dueña ata una ficha a una
-     cuenta. Sin esto, cualquiera con `team` se apunta una ficha ajena y lee los
-     teléfonos y las notas de esas clientas.
-
-**Verificación:** escribí tests. Es la única fase donde son obligatorios. Como
-mínimo, por cada tabla sensible: *"una clienta pide los turnos de otra y recibe
-vacío"*, *"una staff sin `clients_notes` pide una nota clínica y recibe null"*,
-*"una staff con `team` intenta atarse una ficha y recibe error"*.
+Es lo que evita que se dé por bueno algo que sólo se sabe que compila.
 
 ---
 
-### Fase 6 — Los datos, pantalla por pantalla
+### Fase 5 — Los permisos, en código ⬜ **EMPEZÁ ACÁ**
 
-Recién ahora se tocan las 30 `.from()`.
+**Es la fase de la que depende que esto no termine en una filtración de datos.**
+Mientras la base era Supabase, quien decidía qué veía cada persona era Postgres,
+con 39 policies. Si el código se olvidaba un chequeo, la base lo frenaba igual.
+Eso ya no existe: `src/server/db.ts` es dueño de todo y no le pregunta a nadie.
 
-**Hacelo de a una pantalla, con commit por pantalla.** El orden sugerido va de
-menos a más riesgo, para que los errores aparezcan donde hacen menos daño:
+**La buena noticia: la mitad ya está hecha.** `src/server/services/authz.service.ts`
+tiene las cuatro primitivas y reemplaza a `has_role()` y `has_permission()`:
 
-1. Páginas públicas — `servicios.index`, `servicios.$serviceId`,
-   `profesionales`, `index` (sólo lectura, sin sesión)
-2. `admin.categorias-servicios`, `admin.categorias-productos`
+```ts
+const acceso = await accesoDe(ctx.user!.id); // roles + permisos + ficha
+puede(acceso, "catalog"); // → boolean
+exigirPermiso(acceso, "catalog"); // tira ErrorDeAcceso (403)
+exigirAdmin(acceso); // sólo la dueña
+```
+
+**Lo que falta es la tabla de traducción.** Recorré las 39 policies **una por
+una** y anotá dónde quedó el chequeo de cada una. No lo hagas de memoria: la
+lista completa, con el nombre y la regla de cada una, está más arriba en este
+mismo documento.
+
+Creá `src/server/PERMISOS.md` con esta forma, y completalo a medida que escribas
+cada controller:
+
+```
+| Policy (Supabase)              | Tabla         | Regla                          | Dónde quedó                          |
+| ------------------------------ | ------------- | ------------------------------ | ------------------------------------ |
+| read appointments              | appointments  | propio OR permiso appointments | turnos.controller.ts → listar()      |
+| clients read own appointments  | appointments  | client_id = uid                | turnos.controller.ts → misTurnos()   |
+| manage service media           | service_media | permiso catalog                | servicios.controller.ts → guardar()  |
+```
+
+Sin esa tabla no hay forma de auditar después si quedó algo sin cubrir, y con 39
+reglas **algo va a quedar sin cubrir**.
+
+**Las cuatro tablas donde un olvido duele de verdad**, por si hay que priorizar:
+
+| Tabla           | Por qué                                                                         |
+| --------------- | ------------------------------------------------------------------------------- |
+| `client_notes`  | **Notas clínicas**: alergias, embarazos, antecedentes. Permiso `clients_notes`. |
+| `profiles`      | Los teléfonos de las clientas. Lee `clients_contact` **o** `appointments`.      |
+| `appointments`  | 9 policies. Una clienta ve **sólo** los suyos.                                  |
+| `product_costs` | Costos de compra. Permiso `stock_costs`.                                        |
+
+**Dos reglas que vienen de la base y no se tocan:**
+
+1. **La dueña pasa siempre**, sin mirar la tabla de permisos. Ya está adentro de
+   `puede()`.
+2. **Ningún permiso se amplía a sí mismo.** Quien tiene `team` no puede atarse
+   una ficha de profesional ajena — eso lo garantizaba el trigger
+   `guard_professional_account_link`, que **todavía no está portado**. Va en el
+   controller de Equipo: al escribir `professionals.user_id`, `exigirAdmin()`.
+
+**Verificación (para cuando haya Docker):** escribí tests. Es la única fase
+donde son obligatorios. Como mínimo, uno por tabla sensible:
+
+- una clienta pide los turnos de otra → vacío
+- una staff sin `clients_notes` pide una nota clínica → null
+- una staff con `team` intenta atarse una ficha → error
+
+---
+
+### Fase 6 — Las pantallas, una por una ⬜
+
+47 archivos de `src/` hablan con Supabase. Se pasan **de a uno, con un commit
+por pantalla**. No empieces la siguiente hasta que la anterior compile limpio.
+
+#### El patrón, y no hay otro
+
+Para cada pantalla, tres archivos:
+
+```ts
+// 1. src/server/controllers/<area>.controller.ts   — la lógica y Prisma
+export async function listarServicios(ctx: Ctx) {
+  const acceso = await accesoDe(ctx.user!.id);
+  exigirPermiso(acceso, "catalog"); // ← PRIMERO el permiso
+  const servicios = await prisma.services.findMany({ include: { media: true } });
+  return json({ servicios }); // ← después la consulta
+}
+
+// 2. src/server/routes/<area>.routes.ts          — flaco, sin un solo if
+export const serviciosRouter = createRouter("/api/servicios");
+serviciosRouter.get("/", authMiddleware, listarServicios);
+
+// 3. src/routes/... (la pantalla)                — cambia SÓLO el queryFn
+const servicios = useQuery({
+  queryKey: ["admin-services"], // ← NO le cambies el nombre
+  queryFn: async () => {
+    const r = await fetch("/api/servicios");
+    if (!r.ok) throw new Error((await r.json()).error);
+    return (await r.json()).servicios;
+  },
+});
+```
+
+Y engancharlo en `src/server.ts`, al lado de `/api/auth/`:
+
+```ts
+if (pathname.startsWith("/api/servicios/")) {
+  const { serviciosRouter } = await import("./server/routes/servicios.routes");
+  const r = await serviciosRouter.handle(request);
+  if (r) return r;
+}
+```
+
+#### El orden, de menos a más riesgo
+
+Así los errores aparecen donde hacen menos daño:
+
+1. **Páginas públicas** — `servicios.index`, `servicios.$serviceId`,
+   `profesionales`, `index`. Sólo lectura, sin sesión. Son las más fáciles y
+   sirven para estrenar el patrón.
+2. `admin.categorias-servicios`, `admin.categorias-productos` — ya tenés
+   `catalogo.service.ts` con el renombrado atómico hecho.
 3. `admin.servicios`, `admin.productos`
 4. `admin.profesionales`
 5. `admin.clientes`, `mi-cuenta`
 6. `admin.turnos`, `admin.index` (calendario), `reservar`
-7. `admin.equipo`, `admin.cuenta`, `admin.mi-agenda` — las de permisos
+7. `admin.equipo`, `admin.cuenta`, **`admin.mi-agenda`** — `agenda.service.ts`
+   ya tiene `miAgenda()` lista
 
-Para cada pantalla:
+#### Lo que ya está resuelto y no hay que reescribir
 
-**Dos archivos por pantalla, como en el ecommerce**: la ruta flaca y el
-controlador con la lógica.
+`src/server/services/` tiene las 8 funciones de la base portadas y probadas.
+**Usalas, no las reimplementes:**
 
-```ts
-// src/server/routes/catalogo.routes.ts
-// Flaco a propósito: dice quién puede llamar qué y nada más.
-// Es el equivalente de category.routes.js del ecommerce.
-export const listarServicios = createServerFn({ method: "GET" })
-  .middleware([requireAuth, requirePermission("catalog")])
-  .handler(({ context }) => catalogo.listarServicios(context.userId));
-```
+| Necesitás                                  | Llamá a                                    |
+| ------------------------------------------ | ------------------------------------------ |
+| Los turnos de la profesional conectada     | `miAgenda(userId, dias)`                   |
+| Su ficha, para saber si tiene agenda       | `miFichaDeProfesional(userId)`             |
+| Los horarios libres de `/reservar`         | `horariosOcupados(proId, desde, hasta)`    |
+| Renombrar una categoría (atómico)          | `renombrarCategoriaDeServicio(id, nombre)` |
+| Vincular una invitada por teléfono         | `vincularTurnosDeInvitada(tel, clientaId)` |
+| Esconder al equipo de la lista de clientas | `idsDelEquipo()`                           |
 
-```ts
-// src/server/controllers/catalogo.controller.ts
-// Acá vive Prisma y la lógica. Ningún chequeo de permiso: para llegar
-// hasta acá ya pasó por el middleware.
-export function listarServicios(userId: string) {
-  return prisma.service.findMany({ include: { serviceMedia: true } });
-}
-```
+#### Las cuatro trampas de esta fase
 
-⚠️ **El chequeo de permiso va en la ruta, no adentro del controlador.** Es lo que
-hace `category.routes.js` con `authMiddleware, adminMiddleware`, y la ventaja es
-la misma: abriendo un solo archivo de 20 líneas ves quién puede hacer qué en toda
-un área. Si el chequeo queda enterrado en el controlador, para auditarlo hay que
-leer todo.
+1. **No renombres ninguna `queryKey`.** Hay invalidaciones cruzadas entre
+   pantallas que se rompen en silencio. Ya pasó una vez: `admin-professionals`
+   contra `admin-team-professionals`, arreglado en `f36b9e5`. Si querés
+   ordenarlas, después y en un commit aparte.
 
-⚠️ **Si una pantalla necesita algo que ninguna ruta expone, se agrega una ruta.**
-No se llama al controlador desde la pantalla. Ese es el atajo que rompe la
-separación entera, y el lint no lo ve.
+2. **Los 26 `supabase.auth.*` se reemplazan por una sola `getMe()`** cacheada con
+   react-query. `onAuthStateChange` (3 usos) **no tiene traducción directa**: al
+   entrar y al salir, invalidá la query de `getMe` y listo.
 
-El `useQuery` de la pantalla cambia sólo el `queryFn`. **Las `queryKey` se
-mantienen exactamente iguales** — hay invalidaciones cruzadas entre pantallas
-que se rompen en silencio si les cambiás el nombre. (Ver `admin-professionals`
-vs `admin-team-professionals`, que ya causó un bug.)
+3. 🔴 **Borrá `src/integrations/supabase/auth-attacher.ts` y su línea en
+   `src/start.ts`.** Es fácil no verlo porque no aparece buscando `.from(` ni
+   `.rpc(`. Hoy le pega el header `Authorization` a cada llamada al servidor;
+   con la cookie `httpOnly` eso ya no hace falta, y si queda, cada llamada sigue
+   pidiéndole la sesión a Supabase.
 
-`requirePermission` ya existe: lo escribiste en la Fase 5. Si te encontrás
-inventándolo acá, estás haciendo las fases en el orden viejo.
-
-**Verificación por pantalla:** entrar con la cuenta admin **y** con la staff, y
-comprobar que cada una ve lo que le toca. Esto recién tiene sentido porque la
-base ya tiene los datos de la Fase 4: contra una base vacía las dos cuentas ven
-lo mismo —nada— y la verificación pasa sin comprobar nada.
-
-**Verificación final de la fase, una sola vez:** construí y buscá
-`@prisma/client` en el bundle del navegador. No tiene que aparecer. El lint de la
-Fase 1 no ve los imports indirectos; esto sí.
+4. **`appointments.price` está congelado a propósito** y la columna es `NOT
+NULL`. En Supabase lo completaba un trigger al insertar; **ese trigger no se
+   portó**, así que el controller que cree un turno tiene que llenarlo con el
+   precio del tratamiento **del momento de reservar**. Si lo dejás vacío, el
+   insert falla; si lo resolvés con un join a `services.price`, el historial
+   empieza a mentir cuando cambien los precios.
 
 ---
 
-### Fase 7 — Deploy en el VPS
+### Fase 7 — Deploy al VPS ⬜
 
-1. `docker compose up -d`. Ya está casi todo en el `docker-compose.yml`; sumá
-   `DATABASE_URL` al servicio `app`, sacá las tres `SUPABASE_*` y agregá el
-   servicio `migrate` de un solo uso (sección 3), para que la cadena quede
-   `db` → `migrate` → `app`.
-2. Las variables que **siguen igual**: las 4 de Cloudinary, `RESEND_API_KEY`,
-   `MAIL_FROM`, `MAIL_REPLY_TO`, `REMINDERS_SECRET`.
-3. Las que **desaparecen**: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
-   `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PROJECT_ID` y sus cuatro gemelas
-   `VITE_*`.
-4. Las que **aparecen**: `DATABASE_URL`, `POSTGRES_PASSWORD`,
-   `JWT_SECRET`, `APP_URL` (para armar los links de los mails).
-5. **El cron de recordatorios cambia de lugar.** Hoy es `pg_cron` adentro de
-   Supabase. Pasa al cron del sistema en el VPS; el comando exacto ya está en
-   `supabase/emails/README.md`, al final:
+Casi todo está armado. Lo que falta es correrlo allá.
+
+1. `docker compose up -d` levanta la cadena `db → migrate → app`, más
+   `pg-backup`. El servicio `migrate` hace `db push` y después `post-push.mjs`,
+   que **verifica** que los triggers, el CHECK y los 4 índices parciales
+   quedaron puestos, y corta la cadena si falta alguno.
+2. **Variables nuevas** en el `.env` del VPS: `POSTGRES_PASSWORD`,
+   `DATABASE_URL`, `JWT_SECRET`, `APP_URL`. Las de `SUPABASE_*` se van.
+3. **El cron de recordatorios** deja `pg_cron` y pasa al cron del sistema:
 
    ```
    0 10 * * *  curl -fsS -X POST https://shiraf.com.ar/api/recordatorios -H "Authorization: Bearer $REMINDERS_SECRET"
    ```
 
-   Ese es a las 10 de Buenos Aires, no en UTC — se acabó la conversión.
+   A las 10 de Buenos Aires, no en UTC — se acabó la conversión.
 
-6. **Backups.** Hasta acá los hacía Supabase. Ahora son tuyos, y **no hay nada
-   que escribir**: es el servicio `pg-backup` de la sección 3, copiado de
-   `Ecommerce_mm`. Levanta con el resto del compose.
-
-   Lo único que hay que agregar es **la copia fuera del VPS**. Un backup que vive
-   en el mismo disco que la base te salva de un borrado accidental, no de que se
-   muera el disco. Fijate cómo está resuelto en el ecommerce y hacé lo mismo.
-
-   **Y probá una restauración.** Un backup que nunca se restauró es una carpeta
-   con archivos, no un backup.
+4. **El backup ya está** (`pg-backup`, rotación 7/4/6, igual que en el
+   ecommerce). Lo que falta es **una copia fuera del VPS**: un backup en el
+   mismo disco que la base no es un backup. Y **restauralo una vez** para
+   comprobar que sirve.
+5. **Cargar los datos**: `db:seed` con los JSON, y después ponerle contraseña a
+   las 4 cuentas desde "recuperar contraseña" — quedaron con una imposible de
+   acertar a propósito.
 
 ---
 
@@ -1521,6 +1598,7 @@ Cosas que parecen obvias y están mal. Cada una salió de leer el código.
 Antes de dar la migración por terminada, con cada rol:
 
 **Dueña (admin)**
+
 - [ ] Entra al panel y ve las 8 secciones
 - [ ] Confirma, cancela y marca realizado un turno
 - [ ] Carga un turno de invitada por teléfono y le corrige los datos
@@ -1530,17 +1608,20 @@ Antes de dar la migración por terminada, con cada rol:
 - [ ] Le da acceso al panel a una profesional y ata la ficha
 
 **Empleada (staff, con «Gestionar turnos»)**
+
 - [ ] **Confirma un turno** ← el bug de `20260818030000`, no lo repitas
 - [ ] **No** ve Equipo
 - [ ] **No** ve las notas clínicas si no tiene `clients_notes`
 - [ ] **No** puede atarse una ficha de profesional
 
 **Profesional (ficha vinculada, sin permisos)**
+
 - [ ] Entra y ve **sólo** «Mi agenda»
 - [ ] Ve el teléfono y las notas clínicas **sólo de sus** turnos
 - [ ] **No** ve la agenda del centro
 
 **Clienta**
+
 - [ ] Se registra, recibe el mail de confirmación **en castellano**
 - [ ] Si tenía turnos de invitada con ese mail, aparecen en su historial
 - [ ] Reserva un turno y el centro recibe el aviso
@@ -1548,6 +1629,7 @@ Antes de dar la migración por terminada, con cada rol:
 - [ ] Recupera la contraseña
 
 **Docker** — el requisito de la sección 3
+
 - [ ] `docker compose -f docker-compose.dev.yml up` levanta base y app, y el
       sitio abre en el navegador del host
 - [ ] El código se edita en el host y **recarga solo** adentro del contenedor
@@ -1561,12 +1643,14 @@ Antes de dar la migración por terminada, con cada rol:
 - [ ] Los comandos de Prisma quedaron escritos en el `README.md`, con `bunx`
 
 **Las policies** — la fase de la que depende que no se filtren datos
+
 - [ ] La tabla de traducción de la Fase 5 está en el repo, con las **35** de
       `public` tildadas y la ruta donde quedó cada chequeo
 - [ ] `@prisma/client` **no** aparece en el bundle del navegador
 - [ ] `auth-attacher.ts` está borrado y su línea sacada de `src/start.ts`
 
 **La forma** — que se lea como `Ecommerce_mm`, que es para lo que se eligió
+
 - [ ] Todo lo de servidor vive bajo `src/server/`, en `routes` / `controllers` /
       `middleware` / `services`
 - [ ] Los archivos de `routes/` son flacos: mapeo y middlewares, sin Prisma
@@ -1577,6 +1661,7 @@ Antes de dar la migración por terminada, con cada rol:
       pedido, así un acceso tildado en el panel vale al instante
 
 **Sistema**
+
 - [ ] `POST /api/recordatorios` sin secreto → 401
 - [ ] Con el secreto → procesa los turnos del día siguiente
 - [ ] El cron del VPS está puesto y probado
