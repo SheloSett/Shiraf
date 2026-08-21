@@ -1,7 +1,26 @@
 # Shiraf en Docker
 
-La app corre como un único contenedor sin estado que habla con Supabase. No
-guarda nada en disco: todos los datos viven en Supabase.
+Cuatro contenedores. Antes era uno solo que le hablaba a Supabase; desde el
+21/8/2026 la base es propia y viaja acá adentro.
+
+```
+db  ──sano──>  migrate  ──termina bien──>  app
+└── pg-backup
+```
+
+| Servicio    | Qué hace                                                                 |
+| ----------- | ------------------------------------------------------------------------ |
+| `db`        | Postgres 17. **El único que guarda algo**, en el volumen `shiraf-pgdata` |
+| `migrate`   | Sincroniza el esquema y aplica las reglas SQL. Corre una vez y se apaga  |
+| `app`       | El sitio. Sin estado, `read_only`, publica en `127.0.0.1:3000`           |
+| `pg-backup` | Volcado diario a `./backups`, rotación 7/4/6                             |
+
+**`migrate` es el que hay que mirar si algo no arranca.** Hace `prisma db push`
+y después `scripts/post-push.mjs`, que vuelve a poner los 3 triggers, el `CHECK`
+de turnos, `normalize_phone` y los 4 índices parciales — y **verifica que estén**.
+Si falta alguno sale con error y `app` no llega a levantar. Es a propósito: sin
+el CHECK, la base acepta turnos sin dueño y eso no se ve hasta que alguien mira
+la agenda.
 
 ## Requisitos
 
@@ -13,7 +32,15 @@ curl -fsSL https://get.docker.com | sh
 
 ## Levantar
 
-Con el `.env` presente en la raíz (ya trae las 6 variables):
+Con el `.env` presente en la raíz. Las que no pueden faltar son
+`POSTGRES_PASSWORD`, `JWT_SECRET`, `APP_URL` y las cuatro de Cloudinary — el
+compose corta el arranque si alguna no está. Ver `.env.example`.
+
+**Para desarrollo** hay un compose aparte, con el código montado en vivo:
+
+```sh
+docker compose -f docker-compose.dev.yml up     # http://localhost:8081
+```
 
 ```sh
 docker compose up -d --build
@@ -74,19 +101,51 @@ de Lovable. Los dos destinos conviven porque el override vive sólo acá.
 **Las variables `VITE_*` son de build, no de runtime.** Vite las reemplaza por su
 valor literal dentro del bundle del navegador cuando compila. Por eso van como
 `args` en el compose y no como `environment`. Si las movés a `environment`, la
-imagen igual se construye pero la app rompe en el navegador con
-`Missing Supabase environment variable(s)`. Cambiar de proyecto Supabase exige
+imagen igual se construye pero el sitio queda **sin una sola foto**, que es un
+síntoma que tarda en atribuirse al build.
+
+Hoy sobrevive **una sola**: `VITE_CLOUDINARY_CLOUD_NAME`. Cambiarla exige
 reconstruir la imagen, no alcanza con reiniciar el contenedor.
 
-Las `SUPABASE_*` sin prefijo sí son de runtime: las lee el cliente del lado
-servidor durante el SSR.
+⚠️ Docker **ignora en silencio** cualquier build arg que el Dockerfile no
+declare con `ARG`. Ese fue un bug real: el compose mandaba el cloud name, el
+Dockerfile no lo declaraba, y la imagen se venía armando con el valor vacío.
 
-## Si más adelante self-hosteás Supabase
+El resto —`DATABASE_URL`, `JWT_SECRET`, `APP_URL`, las de Cloudinary del lado
+servidor, `RESEND_API_KEY`, `REMINDERS_SECRET`— son de runtime y van en
+`environment`.
 
-La app usa **sólo auth + PostgREST** — nada de storage, realtime, edge functions
-ni RPC. Así que no necesitás el stack completo de Supabase (~10 contenedores):
-alcanza con `postgres`, `gotrue`, `postgrest` y `kong`, que rondan 1,5 GB de RAM.
+## La base: backups y restauración
 
-Del lado de la app el cambio es sólo apuntar `VITE_SUPABASE_URL` a tu dominio y
-reconstruir. Lo que hay que resolver del otro lado es el SMTP para los mails de
-confirmación y reseteo de contraseña, y los backups de Postgres.
+El contenedor `pg-backup` deja un `.sql.gz` diario en `./backups`, con rotación
+de 7 diarios, 4 semanales y 6 mensuales. Es el mismo que usa `Ecommerce_mm`.
+
+⚠️ **Dos cosas que hay que hacer y no las hace el contenedor:**
+
+1. **Copiar los backups fuera del VPS.** Un backup en el mismo disco que la base
+   no es un backup: si se pierde el disco, se pierden los dos.
+2. **Restaurar uno, al menos una vez.** Un backup que nunca se restauró es una
+   suposición, no una copia de seguridad.
+
+```sh
+# restaurar sobre una base vacía
+gunzip -c backups/shiraf-2026-08-21.sql.gz | docker exec -i shiraf-db psql -U shiraf -d shiraf
+```
+
+**A mano, cuando haga falta:**
+
+```sh
+docker exec shiraf-db pg_dump -U shiraf shiraf | gzip > shiraf-$(date +%F).sql.gz
+```
+
+## Tocar el esquema
+
+Se edita `prisma/schema.prisma` y se sincroniza. **Nunca `db push` solo** — sin
+el post-push la base queda sin las reglas:
+
+```sh
+docker compose run --rm app sh -c   "node node_modules/prisma/build/index.js db push && node scripts/post-push.mjs"
+```
+
+En el VPS eso ya pasa solo en cada `docker compose up`, porque es lo que hace el
+servicio `migrate`.

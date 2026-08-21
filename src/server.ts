@@ -19,7 +19,7 @@ type ServerEntry = {
  * un chat— y esto le manda mails a clientas reales. Que haga falta un POST no es
  * seguridad (el secreto es la seguridad), es evitar que se ejecute por accidente.
  *
- * Cómo programarlo está en supabase/emails/README.md.
+ * Cómo programarlo está en emails/README.md.
  */
 const REMINDERS_PATH = "/api/recordatorios";
 

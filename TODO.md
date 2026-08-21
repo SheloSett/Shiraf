@@ -1,202 +1,70 @@
 # Pendientes de Shiraf
 
-## 📍 Dónde quedé — 18/8/2026
+## 📍 Dónde quedé — 21/8/2026
 
-### 🔴 LO PRIMERO EN LA OTRA PC: completar el `.env`
+### La migración a base propia está hecha
 
-**Las 14 migraciones están corridas.** No hay nada que aplicar en la base.
+El proyecto salió de Supabase. Corre sobre **Postgres 17 propio en Docker**, con
+Prisma y un backend en `src/server/`. Las fases 0 a 6 del plan están hechas y
+probadas contra la base con los datos reales.
 
-Pero el `.env` **no viaja por el repo**, y esta tanda sumó cuatro variables
-nuevas que antes no existían. Sin ellas el sitio levanta igual, así que el error
-no aparece hasta que alguien confirma un turno y el mail no sale. Copiarlas de
-[`.env.example`](.env.example) y completarlas:
+Todo el detalle —incluido qué se decidió y por qué— está en
+[`MIGRACION-A-PRISMA.md`](MIGRACION-A-PRISMA.md). Lo que sigue acá es sólo lo
+que queda por hacer.
 
-| Variable | Para qué | Si falta |
-| --- | --- | --- |
-| `RESEND_API_KEY` | mandar los mails de turno | el panel avisa "por mail no salió" |
-| `MAIL_FROM` | el remitente, de un dominio verificado en Resend | ídem |
-| `MAIL_REPLY_TO` | a dónde contesta la clienta | contesta a `MAIL_FROM` |
-| `REMINDERS_SECRET` | la llave de `POST /api/recordatorios` | el endpoint responde 401 a todo |
+### 🔴 Fase 7 — el VPS. Es lo único bloqueante.
 
-⚠️ **El Gmail del centro no sirve como `MAIL_FROM`**: Google no deja que otro
-proveedor firme por sus dominios y Resend rechaza el envío. Va en
-`MAIL_REPLY_TO`. Todo el detalle en
-[`supabase/emails/README.md`](supabase/emails/README.md).
+Nada de esto se corrió todavía en el servidor.
 
-### 🟡 Lo que falta probar en pantalla (nada de esto se probó todavía)
+- [ ] `docker compose up -d` en el VPS. Levanta `db → migrate → app` más el
+      contenedor de backups.
+- [ ] Completar el `.env` de allá. Las que no pueden faltar:
+      `POSTGRES_PASSWORD`, `JWT_SECRET`, `APP_URL`, las cuatro de Cloudinary y
+      `REMINDERS_SECRET`. El compose corta el arranque si falta alguna.
+- [ ] Cargar los datos con `db:seed` y ponerle contraseña a las 4 cuentas desde
+      "recuperar contraseña" — quedaron con una imposible de acertar a propósito.
+- [ ] **El cron de recordatorios.** Deja `pg_cron` y pasa al cron del sistema:
 
-Las tres funcionalidades del 18/8 están escritas, compilan y tienen la migración
-corrida, pero **ninguna se usó contra la base**. Es lo primero que conviene
-hacer:
+      0 10 * * *  curl -fsS -X POST https://shiraf.com.ar/api/recordatorios -H "Authorization: Bearer $REMINDERS_SECRET"
 
-- [ ] **Mi agenda** (ver más abajo). Vincular una ficha, entrar con esa cuenta y
-      que aparezcan los turnos.
-- [ ] **Galería de tratamientos.** Subir varias fotos y un video a un
-      tratamiento, reordenarlas, y ver que la portada del catálogo sea la
-      primera imagen.
-- [ ] **Avisos por mail.** Confirmar un turno y ver si llega. Necesita el `.env`
-      de arriba. El recordatorio además necesita la tarea programada.
+          A las 10 de Buenos Aires, no en UTC. Se acabó la conversión.
 
-### ✅ Agenda de la profesional — migración corrida (18/8/2026)
+- [ ] **Restaurar un backup, una vez.** Un backup que nunca se restauró es una
+      suposición. Y sacar una copia fuera del VPS: en el mismo disco no sirve.
 
-`20260818020000_professional_agenda.sql` ya está aplicada.
+### 🟡 Lo que falta probar en pantalla, con una persona usándolo
 
-**Falta el paso a mano, una sola vez por profesional.** Hay dos caminos, según
-de dónde vengas:
+La app se ejercitó por HTTP contra la base real —los 61 endpoints, el login, las
+páginas— pero **nadie hizo clic en nada**. Es lo primero que conviene hacer:
 
-- **No tiene cuenta todavía** → **Profesionales**, en su tarjeta, botón
-  **"Darle acceso"**: pide sólo mail y contraseña —el nombre sale de la ficha—,
-  crea la cuenta y la ata en un solo paso.
-- **Ya tiene cuenta** (o querés vincularte la tuya) → **Equipo**, en su tarjeta,
-  elegir la **ficha de profesional** en el desplegable.
+- [ ] Entrar con cada rol y recorrer su panel: dueña, empleada, profesional.
+- [ ] Cargar un turno, confirmarlo, cancelarlo.
+- [ ] Subir una foto y un video a un tratamiento, reordenar la galería.
+- [ ] Reservar como clienta desde `/reservar`.
+- [ ] Registrarse con el mail de una invitada y ver que se le pasen sus turnos.
 
-Sin ese paso no se rompe nada: simplemente no le aparece la sección.
+### 🟢 Dos cosas que se destrabaron solas al migrar
 
-Sin probar todavía en pantalla.
+- **Las plantillas de mail en castellano.** Supabase no las dejaba editar sin
+  SMTP propio y a la clienta le llegaba un mail en inglés. Ahora las manda la
+  app por Resend desde [`emails/`](emails/). Sigue faltando la cuenta de Resend
+  y verificar `shiraf.com.ar` — ver más abajo.
+- **Las migraciones a mano.** Se acabó copiar SQL en el editor web: el esquema
+  se sincroniza con `npm run db:sync`.
 
----
+### ⬜ Fase 8 — limpieza. Hecha, salvo el último paso.
 
-**Fuera de eso, la segunda PC está lista.** Rama bajada, `.env` completo —las 11
-variables, Supabase y Cloudinary—, dev server en `http://localhost:8080/`.
+Ya se borró `src/integrations/supabase/`, se desinstaló el paquete, las
+variables quedaron comentadas en el `.env` y estos documentos están al día. Las
+migraciones viejas se mudaron a
+[`docs/historia-supabase/`](docs/historia-supabase/LEEME.md) — **no se borran**:
+son la única documentación de por qué existe cada regla.
 
-### ✅ 1. Migración de `team_member_ids` — corrida (18/8/2026)
-
-`20260818000000_team_member_ids.sql` está aplicada y probada en pantalla: en
-Clientes el equipo ya no aparece, y en el buscador de "Nuevo turno" sí, marcado.
-
-Verificado además contra la base: la función devuelve `42501` a `anon`, o sea que
-existe y el `REVOKE` la deja sólo para gente logueada.
-
-### ✅ 2. El `.env` está completo (18/8/2026)
-
-Las 11 variables cargadas y verificadas contra los dos servicios: Supabase
-responde, y la API de Cloudinary acepta las credenciales y ya lista fotos en
-`shiraf/servicios/`.
-
-Acordarse de que **el `.env` no viaja por el repo**: en una máquina nueva hay que
-volver a armarlo desde `.env.example`.
-
-Nota menor: Node acá es v20.20.2 y una dependencia pide ≥22.12, así que
-`npm install` tira un warning `EBADENGINE`. **No es bloqueante** — el build
-compila igual. Actualizar Node cuando haya un rato.
-
-### ✅ 3. La migración de doble reserva — corrida (18/8/2026)
-
-`20260813020000_prevent_double_booking.sql` ya está aplicada en la base. Con eso
-quedan andando `professional_busy_slots()` (los horarios vuelven a aparecer en
-el panel y en `/reservar`) y `trg_check_appointment_overlap` (la base ya rechaza
-dos turnos encimados con la misma profesional).
-
-Pendiente de probarlo a mano en cuanto esté el `.env`.
-
-**No falta ninguna: las 14 están corridas** (las tres del 18/8, confirmadas por
-la dueña esa misma tarde). Lo que falta ahora es probarlas en pantalla, no
-aplicarlas.
-
-| Migración                                     | Estado                               |
-| --------------------------------------------- | ------------------------------------ |
-| `20260813000000` product_categories           | ✅                                   |
-| `20260813010000` service_categories           | ✅                                   |
-| `20260813020000` prevent_double_booking       | ✅ (corrida el 18/8)                 |
-| `20260813030000` service_images_bucket        | ✅ (bucket `servicios`)              |
-| `20260813040000` appointment_rules            | ✅ (`appointments.price`)            |
-| `20260813060000` add_staff_role               | ✅ (enum `staff`)                    |
-| `20260813070000` permissions                  | ✅ (`user_permissions`)              |
-| `20260814010000` split_sensitive_columns      | ✅ (`client_notes`, `product_costs`) |
-| `20260816000000` rename_category_atomic       | ✅                                   |
-| `20260816010000` / `20260816020000` invitadas | ✅ (`guest_*`, `normalize_phone`)    |
-| `20260818000000` team_member_ids              | ✅ (corrida el 18/8)                 |
-| `20260818010000` service_media                | ✅ (corrida el 18/8)                 |
-| `20260818020000` professional_agenda          | ✅ (corrida el 18/8)                 |
-| `20260818030000` appointment_reminders        | ✅ (corrida el 18/8)                 |
-
-### ✅ 4. Todo pusheado
-
-`panel-solo-para-el-equipo` está en `origin` con upstream y árbol limpio. Al
-18/8 a la noche incluye todo lo de esa fecha: el equipo separado de las clientas,
-los datos de contacto reales, el cierre del home, la galería de tratamientos, los
-avisos por mail y la agenda de la profesional. `origin/main` está al día también.
-
-**El merge a `main` sería fast-forward** (la rama tiene los 8 commits de `main`
-más los suyos, y `main` no tiene ninguno que la rama no tenga):
-
-```
-git checkout main
-git merge panel-solo-para-el-equipo
-git push origin main
-```
-
-Sin `--rebase` ni `--squash`: Lovable sincroniza `main` y perdería el historial.
-Conviene esperar a probar todo lo de la semana con el `.env` puesto, porque son
-cambios grandes y ninguno se probó a fondo todavía.
-
-### ✅ Las tandas: ninguna quedó a medias
-
-Las cuatro se entregaron completas en código, y con la migración del 18/8 no
-queda nada pendiente de aplicar en la base.
-
-- **Tanda 0** — higiene: `.gitattributes`, `.env` fuera del repo
-- **Tanda 1** — reglas de turnos: validación, alcance por clienta, precio
-  congelado _(el `prevent_double_booking` es de acá)_
-- **Tanda 2** — el panel carga turnos + recuperar y cambiar contraseña
-- **Tanda 3** — los 5 bugs medianos (detalle más abajo)
-
-### 🟢 Panel de la profesional — hecho y con la migración corrida (18/8)
-
-Cada profesional entra al panel y ve **"Mi agenda"**: sus próximos turnos con el
-tratamiento, el día, la hora, la clienta, su teléfono y sus notas clínicas. Sólo
-lectura — no confirma, no cancela, no mueve nada.
-
-**La pieza que faltaba** era el vínculo: `professionals.user_id` existía desde la
-primera migración y nunca se había escrito, así que la ficha de la profesional y
-la cuenta con la que entra eran dos cosas sueltas. Ahora se atan desde Equipo.
-
-Tres decisiones que conviene no perder de vista:
-
-- **No es un permiso.** No hay casilla que tildar: se gana atando la ficha y se
-  pierde desactivándola. Por eso es el único nivel de acceso que la dueña no
-  pasa automáticamente — si ella también atiende, hay que vincularle su ficha.
-- **El teléfono y las notas clínicas los ve** (decisión del centro, 18/8). Las
-  notas son las que evitan aplicar algo contraindicado. Sólo de **sus** clientas
-  y sólo de los turnos que tiene por delante: `my_agenda()` no sabe devolver otra
-  cosa.
-- **Vincular la ficha lo puede hacer sólo la dueña**, por trigger en la base.
-  Sin ese candado, cualquiera con "Gestionar profesionales" podía apuntarse una
-  ficha ajena y quedarse leyendo los teléfonos y las notas de esas clientas.
-
-Lo que queda para cuando el centro lo pida:
-
-- [ ] ¿Puede **confirmar** sus propios turnos? Hoy no. Eso necesita una policy de
-      UPDATE sobre `appointments`, y conviene pensarla entonces: confirmar es
-      responderle a una clienta, y hoy esa respuesta la da el centro.
-- [ ] ¿Ve lo que **ya hizo**? Hoy la lista es sólo para adelante. Un historial
-      propio es otra pantalla, no un filtro más.
-
-### 🟠 Hecho el 18/8, TODAVÍA SIN COMMITEAR
-
-- **El equipo ya no se confunde con las clientas.** El buscador de "Nuevo turno"
-  y la pantalla de Clientes listaban `profiles` sin filtro, así que las empleadas
-  y la dueña aparecían como clientas. Se resuelve distinto en cada pantalla, a
-  propósito:
-  - **Clientes** no las muestra. Es la base comercial y una empleada con 0 turnos
-    ensucia la lectura.
-  - **Nuevo turno** sí, con etiqueta «Equipo» y ordenadas al final: una empleada
-    también se atiende y hay que poder cargarle el turno.
-- **`SLOT_BUFFER_MINUTES` pasó a 10**, por decisión del centro.
-- Se arregló el warning de hidratación que salía en cada carga (`__root.tsx`).
-- `.env.example`: la `SUPABASE_SERVICE_ROLE_KEY` estaba comentada con un "todavía
-  no hace falta" que ya era falso — la usan `team.functions.ts` y
-  `client.server.ts` para el alta y la baja de empleadas.
-
-### ✅ Hecho el 17/8, ya commiteado en la rama
-
-- La cuenta del centro entra al panel y no a la tienda; `/mi-cuenta` y
-  `/reservar` la desvían. Se agregó `/admin/cuenta` (contraseña + accesos) y
-  "Cerrar sesión" adentro del panel.
-- Los turnos se **encadenan** en vez de caer en una grilla de 30 minutos.
-- En "Nuevo turno" la hora **se elige de una lista**; el campo libre quedó detrás
-  de "Cargar fuera de horario".
-- Un error al pedir los horarios ya no se lee como "no hay turnos".
+- [ ] **No pausar el proyecto de Supabase todavía.** Es el único rollback
+      verdadero. Recién cuando el nuevo lleve **dos semanas andando** en el VPS,
+      y con un `pg_dump` completo guardado fuera.
+- [ ] Antes de pausarlo: resubir las fotos que sigan en Supabase Storage. Se ven
+      bien igual, pero son el último hilo que ata el proyecto viejo.
 
 ---
 
@@ -268,74 +136,41 @@ Pendiente de esto, nada. Queda anotado para producción:
 
 ---
 
-## 🔴 Set SMTP en Supabase para cambiar los templates de email
+## 🟡 Mails: falta la cuenta de Resend
 
-### El paso cero — ya contestado (18/8/2026)
+**El bloqueo de Supabase ya no existe.** Decía que había que configurar SMTP
+propio para poder editar las plantillas, porque Supabase no las dejaba tocar y
+a la clienta le llegaba un mail en inglés desde `noreply@mail.app.supabase.io`.
 
-Los datos reales están en [`src/lib/contact.ts`](src/lib/contact.ts):
+Al migrar, esos mails los manda la app: las plantillas viven en
+[`emails/`](emails/) —en castellano, escritas hace semanas— y las despacha
+Resend desde `src/server/services/email.service.ts`.
 
-- Dominio: **`shiraf.com.ar`**
-- Mail: **`shirafbeautyandspa@gmail.com`**
-- Instagram y TikTok: **`@shiraf_beauty`** (mismo usuario en las dos)
+Lo que sigue faltando es la cuenta y el dominio verificado. Sin eso, todo
+funciona pero **ningún mail sale**: el panel avisa "por mail no salió" al
+confirmar un turno, y quien olvide su contraseña no puede recuperarla.
 
-Queda una sola pregunta abierta, y es la que destraba todo lo de abajo:
+### La pregunta que destraba todo
 
 - [ ] ¿Dónde está registrado `shiraf.com.ar` (NIC.ar, Donweb, otro) y quién
       entra al panel de DNS? Sin cargar SPF y DKIM no hay remitente propio.
 
-⚠️ **El Gmail no sirve como remitente.** Resend y Brevo piden un dominio que
-puedan firmar, y Google no deja firmar por `gmail.com`. Las dos salidas:
+⚠️ **El Gmail del centro no sirve como remitente.** Resend pide un dominio que
+pueda firmar, y Google no deja firmar por `gmail.com`. Va como `reply-to`, así
+las respuestas siguen llegando a la casilla de siempre.
 
-- **Recomendada:** crear `hola@shiraf.com.ar` y verificar el dominio en Resend.
-  El Gmail queda como `reply-to`, así las respuestas siguen llegando a la casilla
-  de siempre.
-- **Rápida:** mandar por el SMTP de Google (`smtp.gmail.com`, puerto `465`, con
-  una contraseña de aplicación). No hay que comprar nada, pero el tope es ~500
-  mails por día y Gmail le muestra a la clienta un "vía gmail.com".
+### Los pasos, una vez que esté el dominio
 
-### Por qué hay que hacerlo sí o sí
+1. [ ] Crear la cuenta en [resend.com](https://resend.com) — gratis, 3.000
+       mails por mes
+2. [ ] Agregar `shiraf.com.ar` y cargar los registros **SPF y DKIM** en el DNS
+3. [ ] Esperar la verificación (suele tardar minutos)
+4. [ ] Crear una API key y completar en el `.env`: - `RESEND_API_KEY` - `MAIL_FROM` — por ejemplo `Shiraf <turnos@shiraf.com.ar>` - `MAIL_REPLY_TO` — `shirafbeautyandspa@gmail.com`
+5. [ ] Probar en Gmail **y** en Outlook: Outlook usa el motor de Word y es el
+       que más rompe
 
-Supabase **bloquea la edición de las plantillas** hasta que haya SMTP propio. El
-cartel está en Authentication → Emails → Templates:
-
-> _Set up custom SMTP to edit templates. Emails will be sent using the default
-> templates._
-
-O sea que el formato del mail y el remitente vienen juntos, no se pueden separar.
-Hoy a la clienta le llega un mail **en inglés**, de `noreply@mail.app.supabase.io`,
-con un pie que dice _"powered by Supabase"_.
-
-Y hay un motivo que no es de imagen: el envío de fábrica está limitado a unos
-pocos mails por hora y la documentación de Supabase dice que no es para
-producción. Un sábado con varias clientas registrándose, los mails dejan de salir.
-
-### Pasos, una vez que esté el dominio
-
-1. [ ] Crear cuenta en **Resend** (gratis: 3.000 mails/mes) o Brevo
-2. [ ] Agregar el dominio y cargar los registros **SPF y DKIM** en el DNS
-3. [ ] Esperar la verificación — suele tardar minutos
-4. [ ] Generar las credenciales SMTP
-5. [ ] Supabase → Authentication → Emails → **SMTP Settings**: host, puerto `465`,
-       usuario, contraseña, remitente `hola@shiraf.com.ar`, nombre `Shiraf`,
-       `reply-to` `shirafbeautyandspa@gmail.com`
-6. [ ] Ya destrabadas, pegar las plantillas en la pestaña **Templates**:
-   - `Confirm sign up` ← [`supabase/emails/confirmar-cuenta.html`](supabase/emails/confirmar-cuenta.html)
-     · asunto: `Confirmá tu cuenta en Shiraf`
-   - `Reset password` ← [`supabase/emails/recuperar-contrasena.html`](supabase/emails/recuperar-contrasena.html)
-     · asunto: `Recuperá tu contraseña de Shiraf`
-7. [ ] Agregar `https://shiraf.com.ar/recuperar` en Authentication → URL
-       Configuration → Redirect URLs. Hoy solo está `http://localhost:8081/recuperar`
-8. [ ] Probar en Gmail **y** en Outlook: Outlook usa el motor de Word y es el que
-       más rompe
-
-Las plantillas ya están escritas y se pueden mirar sin Supabase, con el dev
-server levantado:
+Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
 `http://localhost:8081/preview-mails/recuperar-contrasena.html`
-
-⚠️ **Cuidado con el toggle "Enable custom SMTP":** si queda encendido con los
-campos vacíos, dejan de salir todos los mails.
-
----
 
 ## Lo próximo, por orden de dolor real
 

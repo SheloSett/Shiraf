@@ -51,7 +51,7 @@ Todo el documento está organizado alrededor de proteger esa última fila.
 Hoy hay un bloqueo viejo en el `TODO.md`: **Supabase no deja editar las
 plantillas de mail hasta que no configures SMTP propio**, así que a las clientas
 les llega un mail en inglés desde `noreply@mail.app.supabase.io`. Las plantillas
-en castellano ya están escritas en `supabase/emails/*.html` y hace semanas que no
+en castellano ya están escritas en `emails/*.html` y hace semanas que no
 se pueden usar.
 
 Al migrar, esos mails los manda la app por Resend con esas mismas plantillas. El
@@ -977,7 +977,7 @@ limpio, y `bunx prisma studio` muestra las 15 tablas vacías.
 > `PrismaClient` (allá hay 19, uno por controller).
 >
 > De paso destrabó el bloqueo viejo de las plantillas de mail: salieron de
-> `supabase/emails/` a `emails/` y las manda Resend.
+> `emails/` a `emails/` y las manda Resend.
 
 La fase más delicada. **Hacela entera antes de tocar una sola pantalla de
 datos.**
@@ -1063,7 +1063,7 @@ lista la sección 2.** Esta fase es en un 80% copiar de ahí.
    antes de inventarlo.
 
 6. **Los mails de auth por Resend, con las plantillas que ya existen.**
-   Reusá `supabase/emails/confirmar-cuenta.html` y `recuperar-contrasena.html`.
+   Reusá `emails/confirmar-cuenta.html` y `recuperar-contrasena.html`.
    Los placeholders `{{ .ConfirmationURL }}` de Supabase pasan a interpolación
    normal. **Acá es donde se destraba el bloqueo viejo del TODO** — las
    plantillas en castellano están escritas hace semanas y Supabase no las deja

@@ -35,7 +35,7 @@ import {
 const TO_CLIENT: readonly AppointmentEvent[] = ["confirmed", "cancelled", "reminder"];
 
 // ── El mail, en HTML ────────────────────────────────────────────────────────
-// Escrito con las mismas restricciones que las plantillas de supabase/emails:
+// Escrito con las mismas restricciones que las plantillas de emails:
 // tablas en vez de flex, estilos inline en vez de clases, Georgia en vez de
 // Bodoni y colores en hex en vez de oklch. El porqué de cada una está explicado
 // arriba de recuperar-contrasena.html; en resumen, es lo único que se ve igual

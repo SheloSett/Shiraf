@@ -8,7 +8,7 @@ import { CONTACT } from "@/lib/contact";
  * ── ESTO DESTRABA UN BLOQUEO VIEJO ────────────────────────────────────────
  *
  * Las dos plantillas están escritas en castellano desde hace semanas, en
- * `supabase/emails/`, y no se podían usar: Supabase no deja editar sus
+ * `emails/`, y no se podían usar: Supabase no deja editar sus
  * plantillas hasta que no configures SMTP propio, así que a la clienta le
  * llegaba un mail en inglés desde `noreply@mail.app.supabase.io`. Estaba
  * anotado en el TODO como pendiente.
