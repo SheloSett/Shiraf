@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiPut } from "@/lib/api";
+import type { RtaMiCuenta, RtaMisTurnos } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
 import { passwordProblem } from "@/lib/password";
 import { isTeamAccount } from "@/lib/roles";
@@ -56,6 +57,7 @@ function AccountPage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordAgain, setNewPasswordAgain] = useState("");
 
@@ -63,10 +65,14 @@ function AccountPage() {
     mutationFn: async () => {
       const problem = passwordProblem(newPassword, newPasswordAgain);
       if (problem) throw new Error(problem);
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
+      // ⚠️ Ahora hace falta la contraseña ACTUAL, que Supabase no pedía teniendo
+      // sesión abierta. Es lo que hace changePassword en Ecommerce_mm, y evita
+      // que alguien que se encuentra una sesión abierta —un celular prestado,
+      // una compu del centro— se apropie de la cuenta cambiándole la clave.
+      await apiPut("/api/auth/password", { currentPassword, newPassword });
     },
     onSuccess: () => {
+      setCurrentPassword("");
       setNewPassword("");
       setNewPasswordAgain("");
       toast.success("Contraseña actualizada.");
@@ -76,23 +82,11 @@ function AccountPage() {
 
   const profile = useQuery({
     queryKey: ["my-profile"],
-    queryFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      // La nota ya no vive en profiles.notes: se mudó a client_notes para que
-      // el permiso "Ver notas clínicas" del panel sea un candado de verdad y no
-      // sólo un filtro de pantalla. Ver migración 20260814010000.
-      const [row, note] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name, phone, birth_date")
-          .eq("id", auth.user!.id)
-          .maybeSingle(),
-        supabase.from("client_notes").select("body").eq("client_id", auth.user!.id).maybeSingle(),
-      ]);
-      if (row.error) throw row.error;
-      if (note.error) throw note.error;
-      return row.data ? { ...row.data, notes: note.data?.body ?? "" } : null;
-    },
+    // Ya no hace falta preguntar quién soy: el servidor lo saca de la cookie.
+    // La ficha y la nota vienen juntas — la nota vive en client_notes desde la
+    // migración 20260814010000, para que "Ver notas clínicas" sea un candado de
+    // verdad y no un filtro de pantalla.
+    queryFn: async () => (await api<RtaMiCuenta>("/api/mi-cuenta")).ficha,
   });
 
   useEffect(() => {
@@ -105,40 +99,17 @@ function AccountPage() {
 
   const appointments = useQuery({
     queryKey: ["my-appointments"],
-    queryFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { data, error } = await supabase
-        .from("appointments")
-        .select(
-          "id, starts_at, status, duration_minutes, client_notes, services(name, price, category), professionals(full_name)",
-        )
-        // El filtro es explícito y no se delega en la RLS. La policy dice
-        // "los propios O los de todas si tenés el permiso de turnos", así que
-        // sin este .eq() la dueña o una secretaria abrían SU cuenta y veían
-        // ahí los turnos de todas las clientas, mezclados con los suyos.
-        .eq("client_id", auth.user!.id)
-        .order("starts_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    // El filtro por client_id sigue siendo explícito, ahora en el controller:
+    // sin él la dueña o una secretaria abrirían SU cuenta y verían ahí los
+    // turnos de todas las clientas, mezclados con los suyos.
+    queryFn: async () => (await api<RtaMisTurnos>("/api/mi-cuenta/turnos")).turnos,
   });
 
   const saveProfile = useMutation({
-    mutationFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from("profiles")
-        .update({ full_name: fullName, phone })
-        .eq("id", auth.user!.id);
-      if (error) throw error;
-
-      // upsert y no update: la primera vez que escribe una nota todavía no hay
-      // fila en client_notes.
-      const { error: noteError } = await supabase
-        .from("client_notes")
-        .upsert({ client_id: auth.user!.id, body: notes.trim() || null });
-      if (noteError) throw noteError;
-    },
+    // La ficha y la nota se guardan en una transacción del lado del servidor.
+    // Antes eran dos pedidos sueltos: si el segundo fallaba, quedaba el nombre
+    // cambiado y la nota no.
+    mutationFn: () => apiPut("/api/mi-cuenta", { full_name: fullName, phone, notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-profile"] });
       toast.success("Datos actualizados.");
@@ -147,13 +118,7 @@ function AccountPage() {
   });
 
   const cancel = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("appointments")
-        .update({ status: "cancelled" })
-        .eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: (id: string) => apiPut(`/api/mi-cuenta/turnos/${id}/cancelar`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });
       toast.success("Turno cancelado.");
@@ -280,6 +245,16 @@ function AccountPage() {
         </div>
         <Card className="mt-5 border-border/80 shadow-soft">
           <CardContent className="grid gap-4 p-6 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="current-pass">Tu contraseña actual</Label>
+              <Input
+                id="current-pass"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="new-pass">Contraseña nueva</Label>
               <Input
@@ -312,6 +287,7 @@ function AccountPage() {
                 onClick={() => changePassword.mutate()}
                 disabled={
                   changePassword.isPending ||
+                  currentPassword.length === 0 ||
                   newPasswordAgain.length === 0 ||
                   passwordProblem(newPassword, newPasswordAgain) !== null
                 }

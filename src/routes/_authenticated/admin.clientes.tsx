@@ -9,7 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaClientas } from "@/lib/api-tipos";
 import { formatDateTime } from "@/lib/shiraf";
 import { useAccess } from "@/hooks/useAccess";
 import { useTeamMemberIds } from "@/hooks/useTeamMemberIds";
@@ -26,35 +27,12 @@ function AdminClients() {
     // El permiso entra en la clave: sin esto, quien lo tenga y quien no
     // compartirían la misma entrada de caché y una vería la columna de la otra.
     queryKey: ["admin-clients", canSeeNotes],
-    queryFn: async () => {
-      const [profiles, appointments] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name, phone, created_at")
-          .order("created_at", { ascending: false }),
-        supabase.from("appointments").select("client_id, starts_at, status"),
-      ]);
-      if (profiles.error) throw profiles.error;
-      if (appointments.error) throw appointments.error;
-
-      // Las notas viven en su propia tabla desde la migración 20260814010000.
-      // Ni siquiera se pide la consulta sin el permiso: la RLS la devolvería
-      // vacía igual, pero así el pedido tampoco sale del navegador.
-      const notes = canSeeNotes
-        ? (await supabase.from("client_notes").select("client_id, body")).data
-        : [];
-      const noteByClient = new Map((notes ?? []).map((n) => [n.client_id, n.body]));
-
-      return (profiles.data ?? []).map((p) => {
-        const own = (appointments.data ?? []).filter((a) => a.client_id === p.id);
-        const done = own.filter((a) => a.status === "completed").length;
-        const last = own
-          .map((a) => a.starts_at)
-          .sort()
-          .at(-1);
-        return { ...p, notes: noteByClient.get(p.id) ?? null, total: own.length, done, last };
-      });
-    },
+    // Las notas y los conteos vienen recortados por el SERVIDOR según el
+    // permiso: las notas sólo con `clients_notes`, y los turnos de todas sólo
+    // con `appointments`. Antes la pantalla decidía no pedir las notas y la RLS
+    // hacía cumplir el resto; ahora las dos cosas se resuelven del otro lado.
+    // El canSeeNotes de acá abajo sigue existiendo sólo para mostrar la columna.
+    queryFn: async () => (await api<RtaClientas>("/api/clientas")).clientas,
   });
 
   /**

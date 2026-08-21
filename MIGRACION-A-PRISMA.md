@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 20 archivos        |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 17 archivos        |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1381,8 +1381,9 @@ que la anterior compile limpio.
 > grep -rl 'from "@/integrations/supabase' src --include=*.ts --include=*.tsx >   | grep -v '^src/integrations/supabase/'
 > ```
 >
-> Al 21/8/2026 son 20: ya pasaron las públicas, el catálogo, el stock, el
-> equipo y **todo el bloque de sesión**.
+> Al 21/8/2026 son 17. Falta el bloque de **turnos** —que es el más grande y el
+> más sensible— más `admin.equipo`, `admin.cuenta` y los tres archivos de
+> `src/lib/*.functions.ts`.
 
 > #### ✅ Hecho: el paso 1, las 4 páginas públicas
 >
@@ -1447,6 +1448,32 @@ que la anterior compile limpio.
 > El endpoint devuelve las URLs que dejaron de estar referenciadas **después** de
 > guardar; recién ahí la pantalla las borra. Al revés, una falla dejaría la
 > galería apuntando a archivos que ya no existen.
+>
+> #### ✅ Hecho: el paso 5, `admin.clientes` y `mi-cuenta`
+>
+> Dos pantallas con candados opuestos, y por eso comparten controller: la lista
+> del panel pide `clients_contact` **o** `appointments` —los dos, como decía
+> `read profiles`—, y "mi cuenta" no pide ningún permiso pero **todo sale de
+> `ctx.user.id` y nunca de un id que venga del pedido**.
+>
+> Tres recortes que la RLS hacía sola y ahora están escritos:
+>
+> | Qué | Antes | Ahora |
+> | --- | --- | --- |
+> | Las notas clínicas | la pantalla no las pedía sin permiso | el controller no las devuelve |
+> | Los conteos de turnos por clienta | daban 0 sin `appointments` | el `where` los limita a los propios |
+> | Los turnos de "mi cuenta" | `.eq("client_id", …)` explícito | ídem, en el controller |
+>
+> El tercero ya estaba explícito **y con el comentario que explicaba por qué**:
+> sin ese filtro, la dueña abría SU cuenta y veía ahí los turnos de todas.
+> Conviene leerlo antes de tocar la parte de turnos.
+>
+> ##### El campo que hubo que agregar
+>
+> `mi-cuenta` ahora pide **la contraseña actual** para cambiarla. Supabase no la
+> pedía teniendo sesión abierta; el endpoint sí, igual que `Ecommerce_mm`. Es lo
+> que evita que alguien que se encuentra una sesión abierta —un celular
+> prestado, la compu del centro— se apropie de la cuenta.
 >
 > #### 🔴 Hecho fuera de orden: la sesión — y por qué hubo que adelantarla
 >

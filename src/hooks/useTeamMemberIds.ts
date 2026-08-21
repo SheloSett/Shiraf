@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaEquipo } from "@/lib/api-tipos";
 
 /** Estable entre renders: devolver un Set nuevo cada vez rompería los useMemo. */
 const NONE: ReadonlySet<string> = new Set();
@@ -17,11 +18,11 @@ const NONE: ReadonlySet<string> = new Set();
  * muestra marcadas (una empleada también se atiende y hay que poder cargarle el
  * turno).
  *
- * Va por RPC y no consultando user_roles derecho, y el motivo importa: la policy
- * de esa tabla deja leer el rol propio y, si sos la dueña, el de las demás. Una
- * empleada que la consultara recibiría sólo el suyo —sin error, con menos
- * filas— y la lista le saldría mezclada igual. La función corre con SECURITY
- * DEFINER y devuelve nada más que ids.
+ * Tiene endpoint propio y no se arma consultando los roles desde la pantalla, y
+ * el motivo sobrevive a la migración: la policy de `user_roles` dejaba leer el
+ * rol propio y, si eras la dueña, el de las demás. Una empleada que la
+ * consultara recibía sólo el suyo —sin error, con menos filas— y la lista le
+ * salía mezclada igual. El endpoint devuelve nada más que ids.
  *
  * Se cachea 5 minutos: quién es empleada cambia cada varios meses, no entre una
  * pantalla y la otra.
@@ -34,11 +35,7 @@ export function useTeamMemberIds(enabled = true): ReadonlySet<string> {
     queryKey: ["team-member-ids"],
     enabled,
     staleTime: 5 * 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("team_member_ids");
-      if (error) throw error;
-      return new Set((data ?? []).map((row) => row.member_id));
-    },
+    queryFn: async () => new Set((await api<RtaEquipo>("/api/clientas/equipo")).ids),
   });
 
   return query.data ?? NONE;

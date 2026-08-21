@@ -226,3 +226,53 @@ export type RtaServiciosParaElegir = {
  * ese permiso el aviso simplemente no aparece.
  */
 export type RtaTurnosProximos = { turnos: Record<string, number> };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clientas
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Una clienta en la lista del panel.
+ *
+ * `notes` viene en null si no hay nota o si no se tiene `clients_notes`, igual
+ * que el costo en el stock. Y `total`/`done`/`last` vienen en cero para quien
+ * no tiene `appointments`: es lo que hacía la policy, no un dato faltante.
+ */
+export type ClientaEnLista = {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+  created_at: string;
+  notes: string | null;
+  total: number;
+  done: number;
+  last?: string;
+};
+
+export type RtaClientas = { clientas: ClientaEnLista[] };
+
+/** Los ids de las cuentas del centro, para no confundirlas con clientas. */
+export type RtaEquipo = { ids: string[] };
+
+export type MiFicha = {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+  /** "1990-05-23". Sólo la fecha: la columna es `date`. */
+  birth_date: string | null;
+  notes: string;
+};
+
+export type RtaMiCuenta = { ficha: MiFicha | null };
+
+export type MiTurno = {
+  id: string;
+  starts_at: string;
+  status: string;
+  duration_minutes: number;
+  client_notes: string | null;
+  services: { name: string; price: number; category: string };
+  professionals: { full_name: string } | null;
+};
+
+export type RtaMisTurnos = { turnos: MiTurno[] };

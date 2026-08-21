@@ -153,6 +153,14 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // Las clientas: la lista del panel y el espacio propio de cada una. Los
+      // dos prefijos van al mismo router porque comparten controller.
+      if (pathname.startsWith("/api/clientas") || pathname.startsWith("/api/mi-cuenta")) {
+        const { clientasRouter } = await import("./server/routes/clientas.routes");
+        const respuesta = await clientasRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
