@@ -735,7 +735,7 @@ git checkout -b migracion-prisma
 > | 3 · Triggers y funciones   | ✅ los 3 triggers + las 8 RPC                 |
 > | 4 · Los datos              | ✅ 91 filas cargadas                          |
 > | **5 · Permisos en código** | 🟡 la tabla y las reglas escritas, sin llamar |
-> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 17 archivos        |
+> | **6 · Las pantallas**      | 🟡 **acá seguís** — quedan 13 archivos        |
 > | 7 · Deploy al VPS          | ⬜                                            |
 > | 8 · Limpieza               | ⬜                                            |
 >
@@ -1381,9 +1381,8 @@ que la anterior compile limpio.
 > grep -rl 'from "@/integrations/supabase' src --include=*.ts --include=*.tsx >   | grep -v '^src/integrations/supabase/'
 > ```
 >
-> Al 21/8/2026 son 17. Falta el bloque de **turnos** —que es el más grande y el
-> más sensible— más `admin.equipo`, `admin.cuenta` y los tres archivos de
-> `src/lib/*.functions.ts`.
+> Al 21/8/2026 son 13. Lo que falta es casi todo **turnos** —el bloque más
+> grande y el más sensible— más `admin.equipo`, `admin.cuenta` y `contacto`.
 
 > #### ✅ Hecho: el paso 1, las 4 páginas públicas
 >
@@ -1448,6 +1447,45 @@ que la anterior compile limpio.
 > El endpoint devuelve las URLs que dejaron de estar referenciadas **después** de
 > guardar; recién ahí la pantalla las borra. Al revés, una falla dejaría la
 > galería apuntando a archivos que ya no existen.
+>
+> #### 🔴 Las tres server functions: otro desajuste que no se veía
+>
+> Igual que con la sesión: `cloudinary.functions.ts`, `notifications.functions.ts`
+> y `team.functions.ts` seguían usando `requireSupabaseAuth`, que lee el header
+> `Authorization` que ya nadie manda. **Subir una foto en `admin.servicios`
+> estaba roto**, en una pantalla dada por terminada dos pasos antes.
+>
+> Ahora usan `requireAuth` (`src/lib/serverfn-auth.ts`), que lee la misma cookie
+> y devuelve el mismo `context.userId` — por eso no hubo que tocar a quienes lo
+> consumen.
+>
+> ##### ⚠️ Y acá apareció un guard del framework que conviene conocer
+>
+> TanStack Start **prohíbe que el código alcanzable desde el navegador importe
+> nada de `src/server/`**, y lo hace fallar el build. La cadena que lo dispara es
+> real: `admin.servicios` → `storage.ts` → `cloudinary.functions.ts`.
+>
+> Es más estricto que el lint de LA REGLA y conviene tenerlo: falla el build, no
+> una revisión. La salida es la que este proyecto ya usaba para `supabaseAdmin`:
+> **`await import()` adentro del handler**, no arriba del archivo.
+>
+> Y un detalle que costó un rato: escribir el patrón de esa protección adentro de
+> un comentario `/** ... */` **cierra el comentario** —lleva un `*/` adentro— y el
+> error que sale es "Cannot find name 'server'".
+>
+> ##### Lo que mejoró de paso
+>
+> El alta de una empleada era **cuatro pedidos sueltos** a Supabase: crear la
+> cuenta, sacarle el rol `client` que le ponía el trigger, ponerle `staff`,
+> cargarle los permisos — con un `try/catch` que borraba la cuenta a mano si
+> algo fallaba, porque una empleada a medio crear deja el mail ocupado. Ahora es
+> **una transacción** y ese rollback manual desapareció.
+>
+> Y `linkProfessionalAccount` dejó de escribir `professionals.user_id` desde el
+> navegador. Se apoyaba en la RLS y en `guard_professional_account_link`; sin los
+> dos, quien tiene `team` podía atarse la ficha de otra y pasar a ver los
+> teléfonos y las notas de esas clientas. Ahora es `PUT /api/equipo/vinculo`, con
+> `exigirPoderAtarFicha` — que pide **admin**, no `team`.
 >
 > #### ✅ Hecho: el paso 5, `admin.clientes` y `mi-cuenta`
 >

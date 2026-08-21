@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/serverfn-auth";
 import { CONTACT } from "@/lib/contact";
 import {
   buildAppointmentMessage,
@@ -175,43 +175,42 @@ export async function deliverAppointmentEmail(
   appointmentId: string,
   event: AppointmentEvent,
 ): Promise<DeliveryResult> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { prisma } = await import("@/server/db");
 
-  const { data: appointment, error } = await supabaseAdmin
-    .from("appointments")
-    .select(
-      "id, starts_at, client_id, guest_name, guest_phone, guest_email, services(name), professionals(full_name)",
-    )
-    .eq("id", appointmentId)
-    .maybeSingle();
+  // El mail y el nombre de la clienta salen del mismo viaje que el turno.
+  //
+  // Antes eran hasta tres consultas: el turno, el profile, y la Admin API de
+  // Supabase para el mail — que vivía en auth.users y no se podía joinear. Con
+  // la tabla `users` propia, el mail está a un include de distancia.
+  const appointment = await prisma.appointments.findUnique({
+    where: { id: appointmentId },
+    select: {
+      id: true,
+      starts_at: true,
+      client_id: true,
+      guest_name: true,
+      guest_phone: true,
+      guest_email: true,
+      service: { select: { name: true } },
+      professional: { select: { full_name: true } },
+      client: { select: { email: true, profile: { select: { full_name: true } } } },
+    },
+  });
 
-  if (error) return { sent: false, reason: "No se pudo leer el turno." };
   if (!appointment) return { sent: false, reason: "El turno no existe." };
 
   // ── Quién es la clienta y cómo se le escribe ──────────────────────────────
-  let clientName = appointment.guest_name ?? "Clienta";
-  let clientEmail = appointment.guest_email ?? null;
-
-  if (appointment.client_id) {
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("full_name")
-      .eq("id", appointment.client_id)
-      .maybeSingle();
-    if (profile?.full_name) clientName = profile.full_name;
-
-    // La dirección está en auth.users y no en profiles, así que hay que ir a
-    // buscarla por la Admin API.
-    const { data: account } = await supabaseAdmin.auth.admin.getUserById(appointment.client_id);
-    clientEmail = account?.user?.email ?? clientEmail;
-  }
+  // Los datos de invitada son el respaldo: si hay cuenta, mandan los de la
+  // cuenta. Es el mismo orden que antes.
+  const clientName = appointment.client?.profile?.full_name ?? appointment.guest_name ?? "Clienta";
+  const clientEmail = appointment.client?.email ?? appointment.guest_email ?? null;
 
   const notifiable: NotifiableAppointment = {
-    startsAt: appointment.starts_at,
+    startsAt: appointment.starts_at.toISOString(),
     clientName,
     clientPhone: appointment.guest_phone,
-    serviceName: appointment.services?.name ?? null,
-    professionalName: appointment.professionals?.full_name ?? null,
+    serviceName: appointment.service?.name ?? null,
+    professionalName: appointment.professional?.full_name ?? null,
   };
 
   const recipient = TO_CLIENT.includes(event) ? clientEmail : CONTACT.email;
@@ -255,36 +254,31 @@ const NotifyInput = z.object({
  *     el turno sea suyo.
  */
 export const notifyAppointment = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((data: unknown) => NotifyInput.parse(data))
   .handler(async ({ data, context }): Promise<DeliveryResult> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { prisma } = await import("@/server/db");
 
     if (data.event === "new-request") {
-      const { data: appointment } = await supabaseAdmin
-        .from("appointments")
-        .select("client_id")
-        .eq("id", data.appointmentId)
-        .maybeSingle();
+      // Una clienta avisando que reservó: tiene que ser SU turno. El chequeo va
+      // sobre la base y no sobre lo que manda, que es el id del turno.
+      const appointment = await prisma.appointments.findUnique({
+        where: { id: data.appointmentId },
+        select: { client_id: true },
+      });
 
       if (!appointment || appointment.client_id !== context.userId) {
         throw new Error("Ese turno no es tuyo.");
       }
     } else {
-      // El permiso se verifica contra las tablas y no llamando a
-      // public.has_permission: esa función está concedida a `authenticated`, y
-      // acá la conexión es la service role, que no hereda ese grant.
-      const [{ data: roles }, { data: permissions }] = await Promise.all([
-        supabaseAdmin.from("user_roles").select("role").eq("user_id", context.userId),
-        supabaseAdmin
-          .from("user_permissions")
-          .select("permission")
-          .eq("user_id", context.userId)
-          .eq("permission", "appointments"),
-      ]);
-
-      const isAdmin = (roles ?? []).some((r) => r.role === "admin");
-      if (!isAdmin && (permissions ?? []).length === 0) {
+      // El resto de los avisos los manda el centro.
+      //
+      // Antes esto consultaba las tablas a mano en vez de llamar a
+      // has_permission(), porque esa función estaba concedida a `authenticated`
+      // y acá la conexión era la service role. Esa distinción desapareció con
+      // la RLS: ahora es la misma `puede()` que usa todo el servidor.
+      const { accesoDe, puede } = await import("@/server/services/authz.service");
+      if (!puede(await accesoDe(context.userId), "appointments")) {
         throw new Error("No tenés permiso para avisar sobre turnos.");
       }
     }

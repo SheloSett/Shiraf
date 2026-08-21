@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { accesoDe, puede } from "@/server/services/authz.service";
+import { accesoDe, exigirPoderAtarFicha, puede } from "@/server/services/authz.service";
 import { comoHora, horaDesdeTexto } from "@/server/serializar";
 import type {
   RtaProfesionalesAdmin,
@@ -319,5 +319,49 @@ export async function borrar(ctx: Ctx) {
   // ON DELETE SET NULL. Es lo que ya pasaba, y por eso la pantalla avisa
   // cuántos turnos futuros hay antes de dejar borrar.
   await prisma.professionals.delete({ where: { id } });
+  return json({ ok: true });
+}
+
+/**
+ * Ata (o suelta) la ficha de una profesional con una cuenta.
+ *
+ * ── 🔴 POR QUÉ ESTO NO PUEDE SEGUIR SIENDO UN UPDATE DESDE EL NAVEGADOR ───
+ *
+ * Antes vivía en `src/lib/team.ts` y escribía `professionals.user_id` derecho
+ * desde la pantalla. Se apoyaba en dos cosas que ya no existen: la RLS —que
+ * pedía el permiso `team` para tocar la tabla— y el trigger
+ * `guard_professional_account_link`, que además exigía el rol admin para esa
+ * columna en particular.
+ *
+ * Sin las dos, un update desde el navegador no lo frena nadie. Y lo que está en
+ * juego no es una inconsistencia: quien tiene `team` edita fichas, así que si
+ * pudiera escribir `user_id` **se ataría a sí misma la ficha de otra** y pasaría
+ * a ver, vía «Mi agenda», los teléfonos y las notas clínicas de las clientas de
+ * esa profesional.
+ *
+ * Por eso `exigirPoderAtarFicha` pide **admin** y no `team`: `team` es
+ * exactamente lo que tiene quien haría el abuso.
+ *
+ * Se suelta primero lo que hubiera: hay un índice único que impide que dos
+ * fichas apunten a la misma cuenta, así que cambiar de ficha sin liberar la
+ * anterior fallaría con un error de duplicado. Las dos escrituras van en una
+ * transacción — a mitad de camino la cuenta queda sin ninguna ficha.
+ */
+export async function vincularCuenta(ctx: Ctx) {
+  exigirPoderAtarFicha(await accesoDe(ctx.user!.id));
+
+  const userId = ctx.body["userId"];
+  const profesionalId = ctx.body["professionalId"];
+  if (typeof userId !== "string" || !userId) return json({ error: "Falta la cuenta." }, 400);
+  if (typeof profesionalId !== "string") return json({ error: "Falta la ficha." }, 400);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.professionals.updateMany({ where: { user_id: userId }, data: { user_id: null } });
+    // "" significa dejar la cuenta sin ninguna ficha.
+    if (profesionalId) {
+      await tx.professionals.update({ where: { id: profesionalId }, data: { user_id: userId } });
+    }
+  });
+
   return json({ ok: true });
 }

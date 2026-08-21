@@ -8,6 +8,7 @@ import {
   listar,
   serviciosParaElegir,
   turnosProximos,
+  vincularCuenta,
 } from "@/server/controllers/equipo.controller";
 
 /**
@@ -35,3 +36,9 @@ equipoRouter.post("/profesionales", ...soloEquipo, crear);
 equipoRouter.put("/profesionales/:id", ...soloEquipo, editar);
 equipoRouter.put("/profesionales/:id/activa", ...soloEquipo, activar);
 equipoRouter.delete("/profesionales/:id", ...soloEquipo, borrar);
+
+// ⚠️ Sólo authMiddleware acá, y el candado adentro del controller: atar una
+// ficha a una cuenta lo puede hacer SÓLO la dueña, no quien tiene `team`.
+// Ponerle exigeMiddleware("team") sería el error exacto que esta ruta tiene que
+// evitar — `team` es lo que tiene quien haría el abuso. Ver vincularCuenta.
+equipoRouter.put("/vinculo", authMiddleware, vincularCuenta);

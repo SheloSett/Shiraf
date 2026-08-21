@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/serverfn-auth";
 import { CLOUDINARY_FOLDER } from "@/lib/cloudinary";
 
 /**
@@ -63,29 +63,19 @@ function readConfig() {
 /**
  * ¿Este usuario puede tocar el catálogo?
  *
- * Repite la lógica de has_permission() de la base en vez de llamarla: esa
- * función tiene EXECUTE sólo para `authenticated`, y acá se consulta con la
- * service role. La regla es la misma — el admin puede siempre, sin mirar la
- * tabla de permisos.
+ * Antes esto repetía a mano la lógica de `has_permission()` consultando
+ * `user_roles` y `user_permissions` con la service role, porque esa función de
+ * la base tenía EXECUTE sólo para `authenticated`.
+ *
+ * Ahora es la misma `puede()` que usa todo el resto del servidor, así que la
+ * regla dejó de estar escrita dos veces — que era lo que la hacía capaz de
+ * divergir. El criterio no cambió: la dueña puede siempre, sin mirar la tabla
+ * de permisos.
  */
 async function canManageCatalog(userId: string): Promise<boolean> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-  const { data: roles, error: rolesError } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  if (rolesError) throw new Error("No se pudo verificar el permiso.");
-  if ((roles ?? []).some((r) => r.role === "admin")) return true;
-
-  const { data: permissions, error: permissionsError } = await supabaseAdmin
-    .from("user_permissions")
-    .select("permission")
-    .eq("user_id", userId)
-    .eq("permission", "catalog");
-  if (permissionsError) throw new Error("No se pudo verificar el permiso.");
-
-  return (permissions ?? []).length > 0;
+  // Dinámico por el guard de imports; ver serverfn-auth.ts.
+  const { accesoDe, puede } = await import("@/server/services/authz.service");
+  return puede(await accesoDe(userId), "catalog");
 }
 
 /**
@@ -100,7 +90,7 @@ async function canManageCatalog(userId: string): Promise<boolean> {
  * sube (ver uploadServiceMedia en storage.ts).
  */
 export const signImageUpload = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     if (!(await canManageCatalog(context.userId))) {
       throw new Error("No tenés permiso para cargar fotos de tratamientos.");
@@ -130,7 +120,7 @@ export const signImageUpload = createServerFn({ method: "POST" })
  * que lo manda y no se adivina acá.
  */
 export const deleteImage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .validator((data: unknown) =>
     z
       .object({
