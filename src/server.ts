@@ -92,9 +92,27 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const pathname = new URL(request.url).pathname;
+
       // Antes de TanStack: esta ruta no es una página ni una server function.
-      if (new URL(request.url).pathname === REMINDERS_PATH) {
+      if (pathname === REMINDERS_PATH) {
         return await handleReminders(request);
+      }
+
+      // Las cuentas: /api/auth/*. Van acá y no como server functions por el
+      // mismo motivo que los recordatorios —no son páginas— y por uno propio:
+      // el login TIENE que poder correr sin sesión, y las server functions de
+      // este proyecto pasan todas por el middleware que exige una.
+      //
+      // El import va adentro y no arriba para que el router y sus controllers
+      // —que arrastran Prisma, bcrypt y jsonwebtoken— no entren en el arranque
+      // de una petición que sólo quiere servir una página.
+      if (pathname.startsWith("/api/auth/")) {
+        const { authRouter } = await import("./server/routes/auth.routes");
+        const respuesta = await authRouter.handle(request);
+        // null = ninguna ruta matcheó. Sigue de largo y termina en el 404 de
+        // TanStack, que es lo correcto: /api/auth/inventado no existe.
+        if (respuesta) return respuesta;
       }
 
       const handler = await getServerEntry();

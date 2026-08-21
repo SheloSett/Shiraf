@@ -69,11 +69,23 @@ services:
     volumes:
       # El código, en vivo.
       - .:/app
-      # 🔴 Este volumen anónimo NO es un detalle. Sin él, el bind mount de arriba
-      # tapa el node_modules del contenedor con el del host — que en Windows
-      # tiene los binarios de rollup y esbuild compilados para Windows. La app no
-      # arranca y el error no dice eso en ningún lado.
-      - /app/node_modules
+      # 🔴 Este volumen NO es un detalle. Sin él, el bind mount de arriba tapa el
+      # node_modules del contenedor con el del host — que en Windows tiene los
+      # binarios de rollup y esbuild compilados para Windows. La app no arranca y
+      # el error no dice eso en ningún lado.
+      #
+      # Y es NOMBRADO, no anónimo. Antes decía `- /app/node_modules`, que crea
+      # uno nuevo por contenedor: cada `docker compose run --rm app ...` arrancaba
+      # con un node_modules recién salido de la imagen, sin el cliente que dejó
+      # `prisma generate`. El sintoma era
+      # "Cannot find module '.prisma/client/default'" en cualquier comando suelto
+      # —el seed, un script— aunque el contenedor de la app estuviera andando
+      # perfecto. Con el volumen nombrado lo comparten todos.
+      #
+      # Si alguna vez hay que forzar una instalación limpia:
+      #   docker compose -f docker-compose.dev.yml up -d --build --renew-anon-volumes
+      #   docker volume rm shiraf_node_modules_dev
+      - node_modules_dev:/app/node_modules
     ports:
       # HOST:CONTENEDOR, y son dos cosas distintas. Vale la pena entenderlo
       # porque acá ya hubo un bug por confundirlas.
@@ -107,3 +119,4 @@ services:
 
 volumes:
   shiraf-pgdata-dev:
+  node_modules_dev:
