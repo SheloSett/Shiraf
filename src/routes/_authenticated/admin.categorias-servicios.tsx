@@ -66,13 +66,20 @@ function AdminServiceCategories() {
   });
 
   const remove = useMutation({
-    mutationFn: ({ id, destino }: { id: string; destino: string }) =>
+    mutationFn: ({ id, destino, crear }: { id: string; destino: string; crear: boolean }) =>
       // `destino` es a dónde mudar lo que usaba la categoría. El servidor lo
-      // exige si hay algo usándola: sin eso quedaban huérfanos.
-      apiDelete(`/api/categorias/servicios/${id}`, { destino }),
-    onSuccess: async () => {
+      // exige si hay algo usándola: sin eso quedaban huérfanos. `crear` avisa
+      // que ese destino todavía no existe y hay que darlo de alta.
+      apiDelete<{ mudados: number }>(`/api/categorias/servicios/${id}`, { destino, crear }),
+    onSuccess: async (rta) => {
       await refresh();
-      toast.success("Categoría eliminada.");
+      // Se dice cuántos se mudaron: el borrado tocó otras filas además de la
+      // categoría, y eso tiene que verse.
+      toast.success(
+        rta.mudados > 0
+          ? `Categoría eliminada. Se mudaron ${rta.mudados} tratamiento${rta.mudados > 1 ? "s" : ""}.`
+          : "Categoría eliminada.",
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });

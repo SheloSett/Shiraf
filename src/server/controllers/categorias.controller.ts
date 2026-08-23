@@ -122,7 +122,11 @@ export async function borrarDeServicios(ctx: Ctx) {
   // `destino` es a dónde mudar los tratamientos que la usaban. Se ignora si no
   // hay ninguno. Ver borrarCategoriaDeServicio.
   const destino = typeof ctx.body["destino"] === "string" ? ctx.body["destino"] : "";
-  const mudados = await borrarCategoriaDeServicio(id, destino);
+  // `crear` lo manda la pantalla cuando se eligió «Crear una categoría nueva…».
+  // Sin esa bandera, un destino que no existe sigue siendo un error: es lo que
+  // impide que un dedazo invente una categoría a la que nadie quiso mudar nada.
+  const crear = ctx.body["crear"] === true;
+  const mudados = await borrarCategoriaDeServicio(id, destino, crear);
   return json({ ok: true, mudados });
 }
 
@@ -165,6 +169,7 @@ export async function borrarDeProductos(ctx: Ctx) {
   const id = ctx.params["id"];
   if (!id) return json({ error: "Falta la categoría." }, 400);
   const destino = typeof ctx.body["destino"] === "string" ? ctx.body["destino"] : "";
-  const mudados = await borrarCategoriaDeProducto(id, destino);
+  const crear = ctx.body["crear"] === true;
+  const mudados = await borrarCategoriaDeProducto(id, destino, crear);
   return json({ ok: true, mudados });
 }

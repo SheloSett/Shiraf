@@ -176,10 +176,22 @@ export function renombrarCategoriaDeProducto(id: string, nombre: string): Promis
  * transacción: o se mudan y se borra, o no pasa nada. A mitad de camino
  * quedarían los productos ya mudados y la categoría todavía viva.
  *
+ * El destino puede ser una categoría que ya existe o una nueva: la pantalla
+ * ofrece «Crear una categoría nueva…» y el alta viaja en la misma transacción.
+ *
  * @param destino nombre de la categoría a la que mudar lo que usaba ésta.
  *   Se ignora si no hay nada que mudar.
+ * @param crearDestino si el destino no existe, crearlo en vez de rechazar.
+ *   Lo manda la pantalla cuando se elige «Crear una categoría nueva…». Sin esta
+ *   bandera un nombre inventado sigue siendo un error, que es lo que evita que
+ *   un dedazo desde la API invente una categoría fantasma.
  */
-async function borrar(tabla: "service" | "product", id: string, destino: string): Promise<number> {
+async function borrar(
+  tabla: "service" | "product",
+  id: string,
+  destino: string,
+  crearDestino = false,
+): Promise<number> {
   return prisma.$transaction(async (tx) => {
     // Las dos ramas enteras y no una unificada, por el mismo motivo que en
     // `renombrar`: TypeScript no acepta llamar a la unión de los dos delegates.
@@ -205,7 +217,13 @@ async function borrar(tabla: "service" | "product", id: string, destino: string)
           where: { name: nombre },
           select: { id: true },
         });
-        if (!existe) throw new ErrorDeRegla("Esa categoría de destino no existe.");
+        if (!existe) {
+          if (!crearDestino) throw new ErrorDeRegla("Esa categoría de destino no existe.");
+          // Se pidió crearla. Va DENTRO de la misma transacción: si el borrado
+          // falla después, la categoría nueva tampoco queda dada de alta. Si el
+          // nombre ya existía, `existe` la habría encontrado y no llegamos acá.
+          await tx.service_categories.create({ data: { name: nombre } });
+        }
 
         const { count } = await tx.services.updateMany({
           where: { category: actual.name },
@@ -236,7 +254,10 @@ async function borrar(tabla: "service" | "product", id: string, destino: string)
         where: { name: nombre },
         select: { id: true },
       });
-      if (!existe) throw new ErrorDeRegla("Esa categoría de destino no existe.");
+      if (!existe) {
+        if (!crearDestino) throw new ErrorDeRegla("Esa categoría de destino no existe.");
+        await tx.product_categories.create({ data: { name: nombre } });
+      }
 
       const { count } = await tx.products.updateMany({
         where: { category: actual.name },
@@ -251,11 +272,19 @@ async function borrar(tabla: "service" | "product", id: string, destino: string)
 }
 
 /** Borra una categoría de tratamientos. Devuelve cuántos se mudaron. */
-export function borrarCategoriaDeServicio(id: string, destino: string): Promise<number> {
-  return borrar("service", id, destino);
+export function borrarCategoriaDeServicio(
+  id: string,
+  destino: string,
+  crearDestino = false,
+): Promise<number> {
+  return borrar("service", id, destino, crearDestino);
 }
 
 /** Borra una categoría de productos. Devuelve cuántos se mudaron. */
-export function borrarCategoriaDeProducto(id: string, destino: string): Promise<number> {
-  return borrar("product", id, destino);
+export function borrarCategoriaDeProducto(
+  id: string,
+  destino: string,
+  crearDestino = false,
+): Promise<number> {
+  return borrar("product", id, destino, crearDestino);
 }
