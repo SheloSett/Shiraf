@@ -65,7 +65,10 @@ function AdminProductCategories() {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => apiDelete(`/api/categorias/productos/${id}`),
+    mutationFn: ({ id, destino }: { id: string; destino: string }) =>
+      // `destino` es a dónde mudar lo que usaba la categoría. El servidor lo
+      // exige si hay algo usándola: sin eso quedaban huérfanos.
+      apiDelete(`/api/categorias/productos/${id}`, { destino }),
     onSuccess: async () => {
       await refresh();
       toast.success("Categoría eliminada.");
@@ -83,7 +86,7 @@ function AdminProductCategories() {
       usage={usage.data}
       onCreate={(name) => create.mutate(name)}
       onRename={(args) => rename.mutate(args)}
-      onRemove={(id) => remove.mutate(id)}
+      onRemove={(args) => remove.mutate(args)}
       isBusy={create.isPending || rename.isPending || remove.isPending}
     />
   );

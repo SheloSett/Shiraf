@@ -1,5 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
+// El error de una regla de negocio, que lleva su propio 422. Con un `Error`
+// pelado el router no puede distinguirlo de un fallo interno y contesta 500
+// "Error interno del servidor" — o sea que a la dueña le decía que la app está
+// rota cuando lo que pasaba era que faltaba elegir una categoría de destino.
+import { ErrorDeRegla } from "@/server/services/turnos.service";
 import { aSlug } from "@/lib/shiraf";
 
 /**
@@ -100,7 +105,7 @@ async function renombrar(
   nombreNuevo: string,
 ): Promise<void> {
   const nuevo = nombreNuevo.trim();
-  if (!nuevo) throw new Error("El nombre no puede quedar vacío.");
+  if (!nuevo) throw new ErrorDeRegla("El nombre no puede quedar vacío.");
 
   // Las dos ramas escritas enteras, y no un `const categorias = tabla === ...`
   // que las unifique. TypeScript no acepta llamar a la union de los dos
@@ -114,7 +119,7 @@ async function renombrar(
         where: { id },
         select: { name: true },
       });
-      if (!actual) throw new Error("Esa categoría no existe.");
+      if (!actual) throw new ErrorDeRegla("Esa categoría no existe.");
       // Nada que hacer. Se corta acá y no se escriben dos UPDATE que no cambian
       // nada — y de paso se evita chocar contra el índice único con su propio
       // nombre.
@@ -129,7 +134,7 @@ async function renombrar(
       where: { id },
       select: { name: true },
     });
-    if (!actual) throw new Error("Esa categoría no existe.");
+    if (!actual) throw new ErrorDeRegla("Esa categoría no existe.");
     if (actual.name === nuevo) return;
 
     await tx.product_categories.update({ where: { id }, data: { name: nuevo } });
@@ -151,4 +156,106 @@ export function renombrarCategoriaDeServicio(id: string, nombre: string): Promis
  */
 export function renombrarCategoriaDeProducto(id: string, nombre: string): Promise<void> {
   return renombrar("product", id, nombre);
+}
+
+/**
+ * Borra una categoría, mudando primero lo que la usaba.
+ *
+ * ── POR QUÉ NO ALCANZA CON UN DELETE ──────────────────────────────────────
+ *
+ * `services.category` y `products.category` guardan el NOMBRE, no el id. Así
+ * que borrar la fila de la categoría no toca a los que la nombraban: quedan
+ * apuntando a un nombre que ya no existe, desaparecen del filtro del catálogo y
+ * no hay ninguna pantalla para arreglarlos.
+ *
+ * Eso es lo que pasaba. La pantalla avisaba —"quedan con una categoría que ya no
+ * está: vas a tener que reasignarlos"— pero reasignar no era posible. Un aviso
+ * sobre algo que no se puede hacer no es un aviso, es una trampa.
+ *
+ * Ahora el borrado pide **a dónde mudarlos**, y las dos escrituras van en una
+ * transacción: o se mudan y se borra, o no pasa nada. A mitad de camino
+ * quedarían los productos ya mudados y la categoría todavía viva.
+ *
+ * @param destino nombre de la categoría a la que mudar lo que usaba ésta.
+ *   Se ignora si no hay nada que mudar.
+ */
+async function borrar(tabla: "service" | "product", id: string, destino: string): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    // Las dos ramas enteras y no una unificada, por el mismo motivo que en
+    // `renombrar`: TypeScript no acepta llamar a la unión de los dos delegates.
+    if (tabla === "service") {
+      const actual = await tx.service_categories.findUnique({
+        where: { id },
+        select: { name: true },
+      });
+      if (!actual) throw new ErrorDeRegla("Esa categoría no existe.");
+
+      const enUso = await tx.services.count({ where: { category: actual.name } });
+      let mudados = 0;
+
+      if (enUso > 0) {
+        const nombre = destino.trim();
+        if (!nombre) throw new ErrorDeRegla("Elegí a qué categoría mudar los tratamientos.");
+        if (nombre === actual.name) throw new ErrorDeRegla("Elegí una categoría distinta.");
+
+        // Que el destino exista de verdad. Sin esto, un nombre inventado desde
+        // la API mudaría todo a una categoría fantasma — el mismo problema que
+        // se vino a arreglar, con otro nombre.
+        const existe = await tx.service_categories.findFirst({
+          where: { name: nombre },
+          select: { id: true },
+        });
+        if (!existe) throw new ErrorDeRegla("Esa categoría de destino no existe.");
+
+        const { count } = await tx.services.updateMany({
+          where: { category: actual.name },
+          data: { category: nombre },
+        });
+        mudados = count;
+      }
+
+      await tx.service_categories.delete({ where: { id } });
+      return mudados;
+    }
+
+    const actual = await tx.product_categories.findUnique({
+      where: { id },
+      select: { name: true },
+    });
+    if (!actual) throw new ErrorDeRegla("Esa categoría no existe.");
+
+    const enUso = await tx.products.count({ where: { category: actual.name } });
+    let mudados = 0;
+
+    if (enUso > 0) {
+      const nombre = destino.trim();
+      if (!nombre) throw new ErrorDeRegla("Elegí a qué categoría mudar los productos.");
+      if (nombre === actual.name) throw new ErrorDeRegla("Elegí una categoría distinta.");
+
+      const existe = await tx.product_categories.findFirst({
+        where: { name: nombre },
+        select: { id: true },
+      });
+      if (!existe) throw new ErrorDeRegla("Esa categoría de destino no existe.");
+
+      const { count } = await tx.products.updateMany({
+        where: { category: actual.name },
+        data: { category: nombre },
+      });
+      mudados = count;
+    }
+
+    await tx.product_categories.delete({ where: { id } });
+    return mudados;
+  });
+}
+
+/** Borra una categoría de tratamientos. Devuelve cuántos se mudaron. */
+export function borrarCategoriaDeServicio(id: string, destino: string): Promise<number> {
+  return borrar("service", id, destino);
+}
+
+/** Borra una categoría de productos. Devuelve cuántos se mudaron. */
+export function borrarCategoriaDeProducto(id: string, destino: string): Promise<number> {
+  return borrar("product", id, destino);
 }

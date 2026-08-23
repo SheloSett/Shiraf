@@ -91,4 +91,13 @@ export const apiPost = <T>(path: string, body?: unknown) => api<T>(path, conCuer
 
 export const apiPut = <T>(path: string, body?: unknown) => api<T>(path, conCuerpo("PUT", body));
 
-export const apiDelete = <T>(path: string) => api<T>(path, { method: "DELETE" });
+/**
+ * DELETE, que **sí puede llevar cuerpo**.
+ *
+ * Lo necesita el borrado de una categoría: hay que decirle a dónde mudar los
+ * productos que la usaban. Va en el cuerpo y no en la query string porque es un
+ * dato del pedido, no un filtro — y porque un nombre con acentos o espacios en
+ * la URL es una fuente de escapes mal hechos.
+ */
+export const apiDelete = <T>(path: string, body?: unknown) =>
+  api<T>(path, conCuerpo("DELETE", body));

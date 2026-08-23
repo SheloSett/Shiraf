@@ -3,6 +3,7 @@ import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,7 +56,8 @@ export function CategoryManager({
   usage: Map<string, number> | undefined;
   onCreate: (name: string) => void;
   onRename: (args: { id: string; from: string; to: string }) => void;
-  onRemove: (id: string) => void;
+  /** `destino` es el nombre de la categoría a la que mudar lo que usaba ésta. */
+  onRemove: (args: { id: string; destino: string }) => void;
   isBusy?: boolean;
 }) {
   const [newName, setNewName] = useState("");
@@ -63,6 +65,17 @@ export function CategoryManager({
   const [deleting, setDeleting] = useState<{ id: string; name: string; count: number } | null>(
     null,
   );
+  /**
+   * A dónde mudar lo que usaba la categoría que se está por borrar.
+   *
+   * Vacío mientras no se elija. El botón de confirmar queda deshabilitado hasta
+   * que haya uno, así que no se puede borrar dejando huérfanos — que era
+   * justamente lo que pasaba antes.
+   */
+  const [destino, setDestino] = useState("");
+
+  /** Las otras categorías, que son los destinos posibles. */
+  const destinos = (categories ?? []).filter((c) => c.id !== deleting?.id);
 
   return (
     <div>
@@ -196,26 +209,80 @@ export function CategoryManager({
         </Table>
       </div>
 
-      <AlertDialog open={!!deleting} onOpenChange={(next) => !next && setDeleting(null)}>
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(next) => {
+          if (next) return;
+          setDeleting(null);
+          setDestino("");
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display text-2xl">
               ¿Eliminar {deleting?.name}?
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleting && deleting.count > 0
-                ? `${deleting.count} ${deleting.count > 1 ? `${itemLabel} la usan` : `${itemLabel.replace(/s$/, "")} la usa`}. No se borran, pero quedan con una categoría que ya no está en la lista: vas a tener que reasignarlos.`
-                : "No hay nada usando esta categoría."}
+            <AlertDialogDescription asChild>
+              <div>
+                {deleting && deleting.count > 0 ? (
+                  <>
+                    <p>
+                      {deleting.count}{" "}
+                      {deleting.count > 1
+                        ? `${itemLabel} la usan`
+                        : `${itemLabel.replace(/s$/, "")} la usa`}
+                      . No se borran: hay que mudarlos a otra categoría.
+                    </p>
+
+                    {destinos.length > 0 ? (
+                      <div className="mt-4 space-y-2">
+                        <Label htmlFor="destino-categoria">Mudarlos a</Label>
+                        {/* `select` nativo, igual que en Servicios y Equipo: son
+                            pocas opciones y en el celular abre la rueda del
+                            sistema, que se usa mejor que cualquier lista
+                            dibujada a mano. */}
+                        <select
+                          id="destino-categoria"
+                          value={destino}
+                          onChange={(e) => setDestino(e.target.value)}
+                          className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                        >
+                          <option value="">Elegí una…</option>
+                          {destinos.map((c) => (
+                            <option key={c.id} value={c.name}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      /* Sin otra categoría no hay a dónde mudarlos. Se dice, en
+                         vez de dejar apretar un botón que va a fallar. */
+                      <p className="mt-4 font-medium text-foreground">
+                        Es la única categoría que hay. Creá otra antes de borrar ésta.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p>No hay nada usando esta categoría.</p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
+              // Deshabilitado mientras la categoría esté en uso y no se haya
+              // elegido a dónde mudar. Es lo que hace imposible dejar huérfanos.
+              // Las dos condiciones juntas: mientras se está guardando, y
+              // mientras la categoría esté en uso mas no se haya elegido a dónde
+              // mudar. La segunda es la que hace imposible dejar huérfanos.
+              disabled={isBusy || (!!deleting && deleting.count > 0 && !destino)}
               onClick={() => {
-                if (deleting) onRemove(deleting.id);
+                if (deleting) onRemove({ id: deleting.id, destino });
                 setDeleting(null);
+                setDestino("");
               }}
-              disabled={isBusy}
             >
               Eliminar
             </AlertDialogAction>

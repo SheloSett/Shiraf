@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
 import {
+  borrarCategoriaDeProducto,
+  borrarCategoriaDeServicio,
   renombrarCategoriaDeProducto,
   renombrarCategoriaDeServicio,
 } from "@/server/services/catalogo.service";
@@ -30,9 +32,10 @@ import type { RtaCategorias, RtaUsoDeCategorias } from "@/lib/api-tipos";
  * existen `renombrarCategoriaDeServicio` y `renombrarCategoriaDeProducto`, que
  * lo hacen en una transacción. **No lo reimplementes acá.**
  *
- * Y por eso borrar una categoría NO toca los tratamientos que la usaban: quedan
- * con el nombre viejo escrito. Es el comportamiento que ya tenía y se conserva;
- * la pantalla avisa cuántos la usan antes de dejar borrar.
+ * Y por eso borrar una categoría tiene que MUDAR primero a los que la usaban.
+ * Antes no lo hacía: quedaban con el nombre viejo escrito, desaparecían del
+ * filtro y no había forma de arreglarlos. Ahora el borrado pide a dónde
+ * mudarlos y las dos escrituras van juntas. Ver `borrarCategoriaDeServicio`.
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,8 +119,11 @@ export async function renombrarDeServicios(ctx: Ctx) {
 export async function borrarDeServicios(ctx: Ctx) {
   const id = ctx.params["id"];
   if (!id) return json({ error: "Falta la categoría." }, 400);
-  await prisma.service_categories.delete({ where: { id } });
-  return json({ ok: true });
+  // `destino` es a dónde mudar los tratamientos que la usaban. Se ignora si no
+  // hay ninguno. Ver borrarCategoriaDeServicio.
+  const destino = typeof ctx.body["destino"] === "string" ? ctx.body["destino"] : "";
+  const mudados = await borrarCategoriaDeServicio(id, destino);
+  return json({ ok: true, mudados });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +164,7 @@ export async function renombrarDeProductos(ctx: Ctx) {
 export async function borrarDeProductos(ctx: Ctx) {
   const id = ctx.params["id"];
   if (!id) return json({ error: "Falta la categoría." }, 400);
-  await prisma.product_categories.delete({ where: { id } });
-  return json({ ok: true });
+  const destino = typeof ctx.body["destino"] === "string" ? ctx.body["destino"] : "";
+  const mudados = await borrarCategoriaDeProducto(id, destino);
+  return json({ ok: true, mudados });
 }
