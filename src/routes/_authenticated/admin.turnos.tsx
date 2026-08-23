@@ -411,6 +411,16 @@ function AdminAppointments() {
                       <Button
                         size="sm"
                         variant="outline"
+                        // Un turno que todavía no empezó no se pudo haber
+                        // realizado. El servidor lo rechaza igual; acá se apaga
+                        // el botón para no ofrecer algo que va a fallar, y el
+                        // título dice por qué está apagado.
+                        disabled={new Date(a.starts_at) > new Date()}
+                        title={
+                          new Date(a.starts_at) > new Date()
+                            ? "Todavía no llegó la hora de este turno"
+                            : undefined
+                        }
                         onClick={() =>
                           setStatus.mutate({
                             id: a.id,

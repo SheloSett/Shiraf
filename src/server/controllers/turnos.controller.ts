@@ -235,6 +235,20 @@ export async function calendario(ctx: Ctx) {
  * `notifyAppointment`, y es a propósito: si un mail que no sale hiciera fallar
  * esta llamada, la pantalla diría que el turno no se confirmó **cuando sí se
  * confirmó**. Está explicado en el `onSuccess` de la mutación.
+ *
+ * ── REALIZADO NO SE PUEDE MARCAR ANTES DE QUE EMPIECE ─────────────────────
+ *
+ * Es lo único que se valida acá, y es una corrección: se podía marcar como
+ * realizado un turno de la semana que viene. Un turno que no pasó no se puede
+ * haber realizado, y el estado `completed` es el que dice qué se atendió de
+ * verdad — si se puede poner sobre el futuro, deja de querer decir eso.
+ *
+ * El corte es el COMIENZO y no el final. Que la clienta se vaya cinco minutos
+ * antes es normal, y hacer esperar a que termine el bloque para poder cerrarlo
+ * sería una molestia sin ninguna ganancia.
+ *
+ * Los otros tres estados no se tocan: cancelar o confirmar un turno futuro es
+ * exactamente lo que hay que poder hacer.
  */
 export async function cambiarEstado(ctx: Ctx) {
   const id = ctx.params["id"];
@@ -243,8 +257,18 @@ export async function cambiarEstado(ctx: Ctx) {
   const estado = estadoDe(typeof ctx.body["status"] === "string" ? ctx.body["status"] : null);
   if (!estado) return json({ error: "Ese estado no existe." }, 400);
 
-  const turno = await prisma.appointments.findUnique({ where: { id }, select: { id: true } });
+  const turno = await prisma.appointments.findUnique({
+    where: { id },
+    select: { id: true, starts_at: true },
+  });
   if (!turno) return json({ error: "Ese turno no existe." }, 404);
+
+  if (estado === "completed" && turno.starts_at > new Date()) {
+    return json(
+      { error: "Todavía no llegó la hora de ese turno: no se puede marcar como realizado." },
+      422,
+    );
+  }
 
   await prisma.appointments.update({ where: { id }, data: { status: estado } });
   return json({ ok: true });

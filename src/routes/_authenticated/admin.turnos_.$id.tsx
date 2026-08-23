@@ -101,6 +101,12 @@ function FichaDelTurno() {
 
   const t = turno.data;
   const estado = toStatus(t.status);
+  /**
+   * Un turno que todavía no empezó no se pudo haber realizado. Se mide contra el
+   * comienzo y no contra el final: que la clienta se vaya cinco minutos antes es
+   * normal, y hacer esperar a que termine el bloque sería una molestia.
+   */
+  const todaviaNoEmpezo = new Date(t.starts_at) > new Date();
   const aviso = estado ? NOTIFIES[estado] : undefined;
   const whatsapp = aviso ? appointmentWhatsappUrl(aviso, toNotifiable(t)) : null;
 
@@ -254,7 +260,11 @@ function FichaDelTurno() {
               <Button
                 variant="outline"
                 onClick={() => cambiarA("completed")}
-                disabled={setStatus.isPending}
+                // Un turno que todavía no empezó no se pudo haber realizado. El
+                // servidor lo rechaza igual; acá se apaga para no ofrecer algo
+                // que va a fallar.
+                disabled={setStatus.isPending || todaviaNoEmpezo}
+                title={todaviaNoEmpezo ? "Todavía no llegó la hora de este turno" : undefined}
               >
                 Marcar realizado
               </Button>
