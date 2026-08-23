@@ -8,6 +8,7 @@ import {
   puede,
 } from "@/server/services/authz.service";
 import { PERMISSION_VALUES, type Permission } from "@/lib/permissions";
+import { diaConTramosSuperpuestos, WEEKDAYS } from "@/lib/shiraf";
 import { comoHora, horaDesdeTexto } from "@/server/serializar";
 import type {
   RtaEmpleadas,
@@ -206,6 +207,29 @@ function horariosDe(ctx: Ctx): HorarioAGuardar[] | string {
       end_time: hasta,
     });
   }
+
+  // Dos tramos del mismo día pisándose. La pantalla ya lo avisa nombrando el
+  // día; acá se repite por lo mismo que la validación de arriba: un pedido
+  // hecho a mano no pasa por el formulario.
+  //
+  // Se compara sobre el texto original —"09:00", "13:00"— y no sobre las Date
+  // que se guardan: son horas de pared del mismo día, así que el orden
+  // alfabético y el del reloj coinciden, y es exactamente lo que compara la
+  // pantalla. Ver `diaConTramosSuperpuestos`.
+  const superpuesto = diaConTramosSuperpuestos(
+    crudo.map((item) => {
+      const h = item as { weekday?: unknown; start_time?: unknown; end_time?: unknown };
+      return {
+        weekday: Number(h.weekday),
+        start_time: String(h.start_time),
+        end_time: String(h.end_time),
+      };
+    }),
+  );
+  if (superpuesto !== null) {
+    return `Hay dos tramos del ${WEEKDAYS[superpuesto]} que se pisan.`;
+  }
+
   return salida;
 }
 

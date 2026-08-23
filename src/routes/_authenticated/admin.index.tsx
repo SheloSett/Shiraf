@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import type { RtaCalendario } from "@/lib/api-tipos";
-import { formatTime, STATUS_LABEL, toStatus, WEEKDAYS } from "@/lib/shiraf";
+// `toStatus` se usaba cuando el botón enlazaba a la lista y había que elegirle
+// la pestaña. Ahora va derecho a la ficha del turno, que no necesita el estado.
+// import { formatTime, STATUS_LABEL, toStatus, WEEKDAYS } from "@/lib/shiraf";
+import { formatTime, STATUS_LABEL, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: AdminCalendar,
@@ -165,19 +168,19 @@ function AdminCalendar() {
                     persona ya intentaba apretar— y la flechita de la esquina
                     está para avisar que se puede.
 
-                    Lleva a Turnos con la pestaña del estado de ESTE turno ya
-                    elegida y con él resaltado; ahí están sus datos y los botones
-                    de confirmar, cancelar y avisar. Se enlaza a la lista y no a
-                    una pantalla nueva de detalle para no tener dos lugares
-                    distintos donde se toca el mismo turno. */}
+                    Lleva a la ficha del turno: los datos de la clienta, el
+                    tratamiento, el valor y los botones de confirmar, cancelar y
+                    avisar. Al principio esto enlazaba a la LISTA con la fila
+                    resaltada; la ficha es lo que pedía el TODO y es mejor para
+                    lo que se hace acá — mirar un turno puntual, no revisar la
+                    tanda del día. La vuelta de la ficha sigue llevando a la
+                    lista con su pestaña y su fila marcada. */}
                 <div className="mt-1 space-y-1">
                   {(byDay[day] ?? []).map((a) => (
                     <Link
                       key={a.id}
-                      to="/admin/turnos"
-                      // `toStatus` porque el estado llega como string de la
-                      // base; si fuera uno raro, cae en la pestaña por defecto.
-                      search={{ estado: toStatus(a.status) ?? "pending", turno: a.id }}
+                      to="/admin/turnos/$id"
+                      params={{ id: a.id }}
                       title="Ver el turno con sus detalles"
                       className={`group block rounded-sm px-1.5 py-1 text-[11px] leading-tight transition-shadow hover:ring-1 hover:ring-primary/40 ${appointmentTone(
                         a.status,

@@ -1,4 +1,67 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
+import { aSlug } from "@/lib/shiraf";
+
+/**
+ * El slug con el que este tratamiento va a vivir en la URL.
+ *
+ * ── SE REGENERA CON EL NOMBRE, Y ESO ES UNA DECISIÓN ──────────────────────
+ *
+ * Tanto el alta como la edición llaman a esto, así que renombrar "Drenaje
+ * linfático" a "Drenaje linfático manual" cambia la URL de la ficha, y la
+ * anterior deja de existir. La alternativa era congelar el slug del alta, pero
+ * entonces un nombre corregido —una falta de ortografía, un tratamiento que se
+ * renombró entero— queda con una URL que dice otra cosa para siempre.
+ *
+ * Nadie queda tirado igual: la ficha pública también acepta el UUID, que no
+ * cambia nunca. Un enlace viejo con el id sigue abriendo. Ver `porIdOSlug` en
+ * publico.controller.ts.
+ *
+ * ── EL SUFIJO ─────────────────────────────────────────────────────────────
+ *
+ * Nada impide dos tratamientos con el mismo nombre —`services.name` no es
+ * único— y el slug SÍ lo es. El segundo "Masaje" queda "masaje-2". Sin esto el
+ * alta fallaría con un error de Postgres que la pantalla mostraría como "error
+ * interno", que es la peor manera de enterarse de que ya existe uno igual.
+ *
+ * El `exceptoId` es para la edición: al guardar un tratamiento sin tocarle el
+ * nombre, el slug que le corresponde ya lo tiene él mismo. Sin excluirlo se
+ * chocaría consigo mismo y se renombraría a "-2" en cada guardado.
+ *
+ * El bucle no tiene tope a propósito: cada vuelta descarta un slug que existe
+ * de verdad en la tabla, así que corta como mucho a la cantidad de filas + 1.
+ * Un tope arbitrario sólo agregaría una rama de error imposible de alcanzar.
+ *
+ * ⚠️ Dos altas simultáneas con el mismo nombre pueden elegir el mismo candidato
+ * y la segunda choca contra el índice único. Se acepta: acá guarda una persona
+ * por vez desde el panel, y el índice está justamente para que en ese caso la
+ * escritura falle en vez de duplicar.
+ */
+export async function slugLibre(
+  tx: Prisma.TransactionClient,
+  nombre: string,
+  exceptoId?: string,
+): Promise<string> {
+  // `aSlug` devuelve "" con un nombre hecho sólo de símbolos ("+++"). Una URL
+  // vacía sería /servicios/ —el listado— así que cae a una palabra, y el sufijo
+  // se encarga de que el segundo sea "tratamiento-2".
+  const base = aSlug(nombre) || "tratamiento";
+
+  for (let n = 1; ; n++) {
+    const candidato = n === 1 ? base : `${base}-${n}`;
+    const ocupado = await tx.services.findFirst({
+      where: {
+        slug: candidato,
+        // Con spread y no `NOT: { id: exceptoId }` a secas: con
+        // `exactOptionalPropertyTypes` una clave presente con valor `undefined`
+        // no es lo mismo que ausente, y Prisma la interpretaría como un filtro.
+        ...(exceptoId ? { NOT: { id: exceptoId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (!ocupado) return candidato;
+  }
+}
 
 /**
  * El renombrado de categorías.

@@ -37,6 +37,61 @@ export function toStatus(value: unknown): AppointmentStatus | null {
   return STATUSES.includes(value as AppointmentStatus) ? (value as AppointmentStatus) : null;
 }
 
+/**
+ * Un tramo de atención: un día y un rango de horas.
+ *
+ * Se llama tramo y no "horario" porque un día puede tener más de uno. La base y
+ * el buscador de horarios libres siempre lo permitieron —`professional_schedules`
+ * no tiene ninguna restricción de un tramo por día, y `buildSlots` recorre todas
+ * las ventanas del día—, pero las pantallas los listaban sueltos y un lunes
+ * partido se leía como dos lunes distintos.
+ */
+export type Tramo = { weekday: number; start_time: string; end_time: string };
+
+/**
+ * Los tramos agrupados por día, cada día con los suyos en orden de reloj.
+ *
+ * Es lo que hace que "Lunes 9 a 13" y "Lunes 15 a 17" se muestren como un solo
+ * lunes con un corte en el medio, que es como lo piensa quien arma la agenda.
+ */
+export function agruparPorDia<T extends Tramo>(tramos: T[]): { weekday: number; tramos: T[] }[] {
+  const porDia = new Map<number, T[]>();
+  for (const t of tramos) {
+    porDia.set(t.weekday, [...(porDia.get(t.weekday) ?? []), t]);
+  }
+
+  return [...porDia.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([weekday, delDia]) => ({
+      weekday,
+      tramos: [...delDia].sort((a, b) => a.start_time.localeCompare(b.start_time)),
+    }));
+}
+
+/** "09:00:00" y "09:00" son lo mismo acá: la base devuelve lo primero. */
+export function soloHoraYMinutos(hora: string) {
+  return hora.slice(0, 5);
+}
+
+/**
+ * ¿Hay dos tramos del mismo día pisándose? Devuelve el día, o null.
+ *
+ * Un solapamiento no rompe nada visible —`buildSlots` simplemente ofrece dos
+ * veces los mismos horarios—, pero es siempre un error de carga: nadie atiende
+ * de 9 a 13 y de 12 a 16 al mismo tiempo. Se avisa al guardar, que es cuando
+ * todavía se puede corregir.
+ */
+export function diaConTramosSuperpuestos(tramos: Tramo[]): number | null {
+  for (const { weekday, tramos: delDia } of agruparPorDia(tramos)) {
+    for (let i = 1; i < delDia.length; i++) {
+      // Ya vienen ordenados por hora de inicio: alcanza con mirar si cada uno
+      // arranca antes de que termine el anterior.
+      if (delDia[i]!.start_time < delDia[i - 1]!.end_time) return weekday;
+    }
+  }
+  return null;
+}
+
 export function formatMoney(value: number | string | null | undefined) {
   const n = Number(value ?? 0);
   return n.toLocaleString("es-AR", {
@@ -73,6 +128,38 @@ export function toDateKey(date: Date) {
   const m = `${date.getMonth() + 1}`.padStart(2, "0");
   const d = `${date.getDate()}`.padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/**
+ * Un texto convertido en pieza de URL: "Drenaje linfático" → "drenaje-linfatico".
+ *
+ * Vivía adentro de `servicios.index.tsx` como `categorySlug`, sirviendo para las
+ * anclas de categoría. Subió acá cuando la ficha de tratamiento pasó a usar slug
+ * en vez de UUID, y ahora la usan tres lados que TIENEN que coincidir: la
+ * pantalla, el servidor cuando guarda un tratamiento, y el script que rellenó
+ * los slugs viejos. Si cada uno tuviera su copia, el día que una acentúe distinto
+ * el enlace apunta a una URL que no existe.
+ *
+ * Lo que hace, en orden:
+ *
+ *   · `normalize("NFD")` separa la tilde de la letra —"á" pasa a ser "a" más un
+ *     acento suelto— y el reemplazo siguiente descarta el acento. Sin este paso
+ *     "á" no es "a" para nadie y terminaría comida por el filtro de abajo.
+ *   · todo lo que no sea letra o número queda como guion, y los guiones del
+ *     principio y del final se van: "Peeling químico." → "peeling-quimico".
+ *
+ * ⚠️ Puede devolver "" y eso es correcto, no un error: un nombre escrito sólo
+ * con símbolos ("+++") no tiene nada que llevar a la URL. Quien la use para
+ * armar una URL tiene que decidir qué pone en ese caso — el servidor cae a
+ * "tratamiento", ver `slugLibre` en catalogo.service.ts.
+ */
+export function aSlug(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 type Schedule = { weekday: number; start_time: string; end_time: string };

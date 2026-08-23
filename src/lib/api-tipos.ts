@@ -37,6 +37,17 @@
 /** Un tratamiento, como lo muestran el catálogo y la portada. */
 export type ServicioPublico = {
   id: string;
+  /**
+   * La pieza legible de la URL: "drenaje-linfatico".
+   *
+   * `null` sólo en una fila que haya entrado por fuera del panel y que
+   * `scripts/rellenar-slugs.ts` todavía no haya tocado. Es opcional en la base
+   * y por eso también acá: si el tipo dijera `string`, la pantalla armaría
+   * `/servicios/null` sin que TypeScript dijera nada. Declarado así, el
+   * compilador obliga a elegir el reemplazo — y el reemplazo es el `id`, que la
+   * ficha sigue aceptando.
+   */
+  slug: string | null;
   name: string;
   description: string | null;
   category: string;
@@ -305,6 +316,41 @@ export type TurnoDelPanel = {
 };
 
 export type RtaTurnos = { turnos: TurnoDelPanel[] };
+
+/**
+ * Un turno solo, con todo lo que hace falta para decidir sobre él.
+ *
+ * Es lo mismo que una fila de la tabla más lo que ahí no entraba: el mail de
+ * quien reservó, la duración, el precio congelado, cuándo se pidió el turno y
+ * la nota interna del centro. Ninguno de esos campos es nuevo en la base —
+ * `admin_notes` estaba escrito desde la primera migración y no se mostraba en
+ * ninguna pantalla.
+ *
+ * El precio viaja como número: en la base es DECIMAL y Prisma lo entrega como
+ * objeto. Lo convierte `comoNumero` en el controller, igual que en la lista.
+ */
+export type TurnoEnDetalle = {
+  id: string;
+  starts_at: string;
+  status: string;
+  duration_minutes: number;
+  /** El precio del día en que se reservó, NO el actual del catálogo. */
+  price: number;
+  client_notes: string | null;
+  admin_notes: string | null;
+  created_at: string;
+  client_id: string | null;
+  guest_name: string | null;
+  guest_phone: string | null;
+  guest_email: string | null;
+  /** El de la cuenta si la tiene; el de invitada si no. Puede no haber ninguno. */
+  email: string | null;
+  services: { id: string; name: string; price: number } | null;
+  professionals: { id: string; full_name: string } | null;
+  person: PersonaDelTurno;
+};
+
+export type RtaTurnoEnDetalle = { turno: TurnoEnDetalle };
 export type RtaPendientes = { total: number };
 
 export type TurnoDelCalendario = {

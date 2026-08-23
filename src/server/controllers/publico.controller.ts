@@ -60,6 +60,10 @@ function comoHora(valor: Date): string {
 
 const CAMPOS_DEL_CATALOGO = {
   id: true,
+  // Va en el listado y no sólo en la ficha: es lo que el listado necesita para
+  // armar el enlace a cada tratamiento. Sin esto la pantalla no tendría con qué
+  // construir /servicios/drenaje-linfatico y volvería al UUID.
+  slug: true,
   name: true,
   description: true,
   category: true,
@@ -86,6 +90,36 @@ function limiteDe(ctx: Ctx): number {
   if (!crudo) return TOPE;
   const n = Number(crudo);
   return Number.isInteger(n) && n > 0 && n <= TOPE ? n : TOPE;
+}
+
+/**
+ * Un tratamiento se pide por slug o por UUID, y las dos formas tienen que andar.
+ *
+ * La ficha usa el slug —/servicios/drenaje-linfatico—, pero el UUID no se
+ * jubila:
+ *
+ *   · los enlaces que se compartieron antes de que existiera el slug lo llevan;
+ *   · el slug se regenera al renombrar el tratamiento, así que un enlace con
+ *     slug puede quedar viejo. El id no cambia nunca y es la salida de auxilio.
+ *
+ * ── ⚠️ EL REGEX NO ES COSMÉTICO ───────────────────────────────────────────
+ *
+ * `services.id` es `@db.Uuid`. Preguntarle a Postgres por un id que no tiene
+ * forma de UUID no devuelve "no encontrado": revienta con
+ * `invalid input syntax for type uuid`, que sale por la ventana como un 500.
+ * O sea que sin este chequeo, `/servicios/cualquier-cosa` pasaría de ser un 404
+ * a ser un error del servidor. Con él, todo lo que no parezca UUID se busca por
+ * slug y no encontrarlo es simplemente un 404.
+ *
+ * Si alguien llamara a un tratamiento con 32 dígitos hexadecimales separados
+ * por guiones, su slug quedaría indistinguible de un id y ganaría la rama del
+ * id. Es un empate imposible en la práctica y, si pasara, el id es la clave
+ * verdadera: que gane está bien.
+ */
+const FORMA_DE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function porIdOSlug(clave: string): { id: string } | { slug: string } {
+  return FORMA_DE_UUID.test(clave) ? { id: clave } : { slug: clave };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,11 +159,21 @@ export async function listarServicios(ctx: Ctx) {
  * dueña está preparando algo.
  */
 export async function verServicio(ctx: Ctx) {
-  const id = ctx.params["id"];
-  if (!id) return json({ error: "Falta el tratamiento." }, 400);
+  // Se llama `clave` y ya no `id` porque lo que llega puede ser las dos cosas:
+  // el slug de la URL o un UUID de un enlace viejo. El nombre del parámetro de
+  // la ruta sigue siendo `:id` para no tocar publico.routes.ts.
+  //   const id = ctx.params["id"];
+  const clave = ctx.params["id"];
+  if (!clave) return json({ error: "Falta el tratamiento." }, 400);
 
   const servicio = await prisma.services.findFirst({
-    where: { id, is_published: true },
+    // Comentada, no borrada: buscaba sólo por id, que es lo que la ficha ya no
+    // manda.
+    //   where: { id, is_published: true },
+    //
+    // `findFirst` y no `findUnique` aunque las dos columnas sean únicas: con el
+    // filtro de publicado al lado, `findUnique` no acepta el `where` compuesto.
+    where: { ...porIdOSlug(clave), is_published: true },
     select: {
       ...CAMPOS_DEL_CATALOGO,
       media: {
@@ -228,11 +272,16 @@ export async function listarProfesionales(ctx: Ctx) {
  * en la ficha de un tratamiento que hacía.
  */
 export async function profesionalesDelServicio(ctx: Ctx) {
-  const id = ctx.params["id"];
-  if (!id) return json({ error: "Falta el tratamiento." }, 400);
+  //   const id = ctx.params["id"];
+  const clave = ctx.params["id"];
+  if (!clave) return json({ error: "Falta el tratamiento." }, 400);
 
   const filas = await prisma.professional_services.findMany({
-    where: { service_id: id, professional: { is_active: true } },
+    // Comentada, no borrada: filtraba por la columna `service_id`, que sólo
+    // entiende UUID. La ficha ahora manda el slug, así que el filtro pasa a la
+    // relación y de ahí a la tabla `services`, donde el slug existe.
+    //   where: { service_id: id, professional: { is_active: true } },
+    where: { service: porIdOSlug(clave), professional: { is_active: true } },
     select: {
       professional: {
         select: {

@@ -7,7 +7,7 @@ import { Reveal } from "@/components/reveal";
 import { api } from "@/lib/api";
 import type { RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
-import { formatMoney } from "@/lib/shiraf";
+import { aSlug, formatMoney } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/servicios/")({
@@ -29,14 +29,31 @@ export const Route = createFileRoute("/servicios/")({
   component: ServicesPage,
 });
 
-/** Ancla estable para cada categoría: "Depilación" → "depilacion". */
+/**
+ * Ancla estable para cada categoría: "Depilación" → "depilacion".
+ *
+ * El cuerpo se mudó a `aSlug` en src/lib/shiraf.ts y quedó comentado acá abajo,
+ * no borrado, para que se vea que es EXACTAMENTE el mismo cálculo y no una
+ * versión parecida. Se mudó porque ahora también lo necesita el servidor, que
+ * es quien escribe el slug de cada tratamiento: dos copias de esta función es
+ * la forma segura de que un día el enlace de la pantalla apunte a una URL que
+ * el servidor nunca guardó.
+ *
+ *   function categorySlug(category: string): string {
+ *     return category
+ *       .normalize("NFD") // separa la tilde de la letra para poder descartarla
+ *       .replace(/\p{Diacritic}/gu, "")
+ *       .toLowerCase()
+ *       .replace(/[^a-z0-9]+/g, "-")
+ *       .replace(/^-|-$/g, "");
+ *   }
+ *
+ * Se conserva el nombre local en vez de llamar a `aSlug` derecho en el JSX:
+ * acá abajo lo que se arma es un ancla de la misma página (#depilacion), que no
+ * tiene nada que ver con la URL de un tratamiento aunque el cálculo coincida.
+ */
 function categorySlug(category: string): string {
-  return category
-    .normalize("NFD") // separa la tilde de la letra para poder descartarla
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  return aSlug(category);
 }
 
 function CategoryPill({
@@ -193,9 +210,19 @@ function ServicesPage() {
               <ul className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map((s) => (
                   <li key={s.id}>
+                    {/* Comentadas, no borradas: mandaban el UUID, que es lo que
+                        dejaba /servicios/11111111-1111-4111-8111-... en la
+                        barra del navegador.
+
+                          to="/servicios/$serviceId"
+                          params={{ serviceId: s.id }}
+
+                        El `?? s.id` no es decorativo: `slug` es opcional en la
+                        base, y una ficha sin slug tiene que enlazar igual. La
+                        ruta acepta las dos formas. */}
                     <Link
-                      to="/servicios/$serviceId"
-                      params={{ serviceId: s.id }}
+                      to="/servicios/$slug"
+                      params={{ slug: s.slug ?? s.id }}
                       className="group flex h-full flex-col overflow-hidden rounded-sm border border-border bg-card shadow-soft transition-shadow duration-500 hover:shadow-lift"
                     >
                       <div className="relative aspect-[4/3] overflow-hidden bg-primary">

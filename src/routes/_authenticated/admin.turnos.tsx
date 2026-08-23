@@ -1,6 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+// Los tres que sólo usaba la mutación mudada. Comentados y no borrados, con el
+// mismo criterio que el bloque de más abajo: dejan ver qué dejó de pasar acá.
+// import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+// import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,20 +16,29 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Plus } from "lucide-react";
+import { FileText, MessageCircle, Plus } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
-import { api, apiPut } from "@/lib/api";
+// import { api, apiPut } from "@/lib/api";  ← `apiPut` se fue con la mutación.
+import { api } from "@/lib/api";
 import type { RtaTurnos } from "@/lib/api-tipos";
 import { usePendingAppointments } from "@/hooks/usePendingAppointments";
 import { formatDateTime, formatMoney, STATUS_LABEL, toStatus } from "@/lib/shiraf";
 import {
   appointmentWhatsappUrl,
-  type AppointmentEvent,
-  type NotifiableAppointment,
+  // Los dos tipos los usaba lo que se mudó; `appointmentWhatsappUrl` se queda
+  // porque el botón "Avisar" de cada fila lo sigue llamando desde acá.
+  // type AppointmentEvent,
+  // type NotifiableAppointment,
 } from "@/lib/notifications";
-import { notifyAppointment } from "@/lib/notifications.functions";
+// import { notifyAppointment } from "@/lib/notifications.functions";
+import {
+  NOTIFIES,
+  openWhatsapp,
+  toNotifiable,
+  useCambiarEstadoDeTurno,
+} from "@/hooks/useCambiarEstadoDeTurno";
 
 /**
  * Qué mira la pantalla, escrito en la URL.
@@ -60,47 +72,54 @@ export const Route = createFileRoute("/_authenticated/admin/turnos")({
 const FILTERS = ["pending", "confirmed", "completed", "cancelled"] as const;
 type Status = (typeof FILTERS)[number];
 
-/**
- * De los dos cambios de estado que hace el panel, cuáles ameritan avisarle a la
- * clienta.
- *
- * "completed" no está a propósito: marcar un turno como realizado es una
- * anotación interna que pasa DESPUÉS de que la clienta estuvo en el centro.
- * Avisarle de eso es mandarle un mensaje para contarle algo que ya vivió.
- */
-const NOTIFIES: Partial<Record<Status, AppointmentEvent>> = {
-  confirmed: "confirmed",
-  cancelled: "cancelled",
-};
-
-/**
- * La fila de la tabla, en la forma que espera el módulo de avisos.
- *
- * El parámetro se tipa con lo mínimo que se usa y no con la fila entera: así
- * esta función no se rompe cada vez que el select de arriba suma una columna.
- */
-function toNotifiable(a: {
-  starts_at: string;
-  services: { name: string } | null;
-  professionals: { full_name: string } | null;
-  person: { name: string; phone: string | null };
-}): NotifiableAppointment {
-  return {
-    startsAt: a.starts_at,
-    clientName: a.person.name,
-    clientPhone: a.person.phone,
-    serviceName: a.services?.name ?? null,
-    professionalName: a.professionals?.full_name ?? null,
-  };
-}
-
-/** Abre WhatsApp con el mensaje cargado, en una pestaña aparte. */
-function openWhatsapp(url: string) {
-  window.open(url, "_blank", "noopener,noreferrer");
-}
+// ⬇️ MUDADO a src/hooks/useCambiarEstadoDeTurno.ts.
+//
+// Se comenta y no se borra para que quede el rastro de dónde estuvo. Ahora lo
+// necesitan dos pantallas —esta lista y la ficha de un turno—, y el aviso a la
+// clienta tiene que salir igual desde las dos: si esto viviera copiado, el día
+// que cambie el mensaje o el criterio de a quién se le avisa, una de las dos se
+// queda vieja sin que nadie lo note.
+// /**
+//  * De los dos cambios de estado que hace el panel, cuáles ameritan avisarle a la
+//  * clienta.
+//  *
+//  * "completed" no está a propósito: marcar un turno como realizado es una
+//  * anotación interna que pasa DESPUÉS de que la clienta estuvo en el centro.
+//  * Avisarle de eso es mandarle un mensaje para contarle algo que ya vivió.
+//  */
+// const NOTIFIES: Partial<Record<Status, AppointmentEvent>> = {
+//   confirmed: "confirmed",
+//   cancelled: "cancelled",
+// };
+//
+// /**
+//  * La fila de la tabla, en la forma que espera el módulo de avisos.
+//  *
+//  * El parámetro se tipa con lo mínimo que se usa y no con la fila entera: así
+//  * esta función no se rompe cada vez que el select de arriba suma una columna.
+//  */
+// function toNotifiable(a: {
+//   starts_at: string;
+//   services: { name: string } | null;
+//   professionals: { full_name: string } | null;
+//   person: { name: string; phone: string | null };
+// }): NotifiableAppointment {
+//   return {
+//     startsAt: a.starts_at,
+//     clientName: a.person.name,
+//     clientPhone: a.person.phone,
+//     serviceName: a.services?.name ?? null,
+//     professionalName: a.professionals?.full_name ?? null,
+//   };
+// }
+//
+// /** Abre WhatsApp con el mensaje cargado, en una pestaña aparte. */
+// function openWhatsapp(url: string) {
+//   window.open(url, "_blank", "noopener,noreferrer");
+// }
 
 function AdminAppointments() {
-  const queryClient = useQueryClient();
+  // const queryClient = useQueryClient();  ← lo pide el hook por su cuenta.
   const navigate = useNavigate();
   const search = Route.useSearch();
 
@@ -157,57 +176,68 @@ function AdminAppointments() {
     highlightedRow.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [highlighted, appointments.data]);
 
-  const setStatus = useMutation({
-    mutationFn: async ({
-      id,
-      status,
-    }: {
-      id: string;
-      status: Status;
-      notify: NotifiableAppointment;
-    }) => {
-      await apiPut(`/api/turnos/${id}/estado`, { status });
+  // Lo mismo de antes, ahora compartido con la ficha del turno. Se usa igual:
+  // setStatus.mutate({ id, status, notify }).
+  const setStatus = useCambiarEstadoDeTurno();
 
-      const event = NOTIFIES[status];
-      if (!event) return { mail: null };
-
-      // El mail se manda acá pero su fracaso NO se propaga: el cambio de estado
-      // ya está guardado en la base, y hacer fallar la mutación por un mail que
-      // no salió dejaría la pantalla diciendo que el turno no se confirmó cuando
-      // sí se confirmó. Se reporta como aviso y el turno queda como quedó.
-      return {
-        mail: await notifyAppointment({ data: { appointmentId: id, event } }).catch((e: Error) => ({
-          sent: false as const,
-          reason: e.message,
-        })),
-      };
-    },
-    onSuccess: ({ mail }, { status, notify }) => {
-      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-calendar"] });
-
-      // El WhatsApp va en un botón del toast y no abriendo la pestaña solo:
-      // abrir una desde el callback de una petición ya no cuenta como gesto del
-      // usuario y los bloqueadores de popups la comen. Apretar el botón sí.
-      //
-      // Que además sea opcional es a propósito: hay turnos que se confirman con
-      // la clienta al teléfono, ya avisada, y ahí el mensaje sobra.
-      const event = NOTIFIES[status];
-      const url = event ? appointmentWhatsappUrl(event, notify) : null;
-
-      toast.success("Turno actualizado.", {
-        description: mail
-          ? mail.sent
-            ? "Le avisamos por mail."
-            : `Por mail no salió: ${mail.reason}`
-          : undefined,
-        ...(url
-          ? { action: { label: "Avisar", onClick: () => openWhatsapp(url) }, duration: 10000 }
-          : {}),
-      });
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  // ⬇️ MUDADO a src/hooks/useCambiarEstadoDeTurno.ts.
+  //
+  // Se comenta y no se borra para que quede el rastro de dónde estuvo. Ahora lo
+  // necesitan dos pantallas —esta lista y la ficha de un turno—, y el aviso a la
+  // clienta tiene que salir igual desde las dos: si esto viviera copiado, el día
+  // que cambie el mensaje o el criterio de a quién se le avisa, una de las dos se
+  // queda vieja sin que nadie lo note.
+  //   const setStatus = useMutation({
+  //     mutationFn: async ({
+  //       id,
+  //       status,
+  //     }: {
+  //       id: string;
+  //       status: Status;
+  //       notify: NotifiableAppointment;
+  //     }) => {
+  //       await apiPut(`/api/turnos/${id}/estado`, { status });
+  //
+  //       const event = NOTIFIES[status];
+  //       if (!event) return { mail: null };
+  //
+  //       // El mail se manda acá pero su fracaso NO se propaga: el cambio de estado
+  //       // ya está guardado en la base, y hacer fallar la mutación por un mail que
+  //       // no salió dejaría la pantalla diciendo que el turno no se confirmó cuando
+  //       // sí se confirmó. Se reporta como aviso y el turno queda como quedó.
+  //       return {
+  //         mail: await notifyAppointment({ data: { appointmentId: id, event } }).catch((e: Error) => ({
+  //           sent: false as const,
+  //           reason: e.message,
+  //         })),
+  //       };
+  //     },
+  //     onSuccess: ({ mail }, { status, notify }) => {
+  //       queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+  //       queryClient.invalidateQueries({ queryKey: ["admin-calendar"] });
+  //
+  //       // El WhatsApp va en un botón del toast y no abriendo la pestaña solo:
+  //       // abrir una desde el callback de una petición ya no cuenta como gesto del
+  //       // usuario y los bloqueadores de popups la comen. Apretar el botón sí.
+  //       //
+  //       // Que además sea opcional es a propósito: hay turnos que se confirman con
+  //       // la clienta al teléfono, ya avisada, y ahí el mensaje sobra.
+  //       const event = NOTIFIES[status];
+  //       const url = event ? appointmentWhatsappUrl(event, notify) : null;
+  //
+  //       toast.success("Turno actualizado.", {
+  //         description: mail
+  //           ? mail.sent
+  //             ? "Le avisamos por mail."
+  //             : `Por mail no salió: ${mail.reason}`
+  //           : undefined,
+  //         ...(url
+  //           ? { action: { label: "Avisar", onClick: () => openWhatsapp(url) }, duration: 10000 }
+  //           : {}),
+  //       });
+  //     },
+  //     onError: (e: Error) => toast.error(e.message),
+  //   });
 
   return (
     <div>
@@ -332,6 +362,16 @@ function AdminAppointments() {
                 <TableCell>{formatMoney(a.services?.price)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
+                    {/* La ficha del turno: los datos de la clienta, el valor y
+                        el resto de lo que en una fila de tabla no entra. Va
+                        primera y en gris para que no le compita al botón del
+                        estado, que es la acción de todos los días. */}
+                    <Button asChild size="sm" variant="ghost">
+                      <Link to="/admin/turnos/$id" params={{ id: a.id }}>
+                        <FileText className="mr-2 h-4 w-4" /> Ver ficha
+                      </Link>
+                    </Button>
+
                     {/* Reenviar el aviso, para cuando el del toast se pasó de
                         largo o el mensaje no llegó. Sale con el texto del
                         estado en el que el turno está AHORA, que es lo que la

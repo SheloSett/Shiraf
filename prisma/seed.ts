@@ -28,11 +28,30 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { aSlug } from "../src/lib/shiraf";
 
 const DATOS = join(process.cwd(), "scripts", "datos");
 
 function leer<T>(nombre: string): T[] {
   return JSON.parse(readFileSync(join(DATOS, nombre + ".json"), "utf8")) as T[];
+}
+
+/**
+ * El primer slug libre de la tanda: "masaje", "masaje-2", "masaje-3"...
+ *
+ * Es la version en memoria de `slugLibre` (src/server/services/catalogo.service.ts),
+ * que hace lo mismo preguntandole a la base. Aca no hace falta ir a la base: la
+ * tabla arranca vacia y lo unico con lo que se puede chocar es con otra fila de
+ * este mismo archivo JSON.
+ */
+function slugLibreEnMemoria(base: string, usados: Set<string>): string {
+  for (let n = 1; ; n++) {
+    const candidato = n === 1 ? base : base + "-" + n;
+    if (!usados.has(candidato)) {
+      usados.add(candidato);
+      return candidato;
+    }
+  }
 }
 
 /** Los `timestamptz` vienen como ISO; Prisma quiere Date. */
@@ -173,6 +192,11 @@ async function main() {
     created_at: string;
   };
   const servicios = leer<Servicio>("services");
+  // Los slugs ya entregados en esta corrida. Los seis nombres del catalogo son
+  // distintos entre si, asi que el desempate no se usa nunca — pero el JSON lo
+  // edita una persona, y dos "Masaje" dejarian el seed a mitad de camino con un
+  // error de indice unico que no dice cual fila lo causo.
+  const slugsUsados = new Set<string>();
   for (const s of servicios) {
     // ⚠️ SIN image_url. La escribe sola el trigger trg_sync_service_cover en
     // cuanto se inserten las fotos, más abajo. Mandarla desde acá la pisaría con
@@ -183,6 +207,11 @@ async function main() {
       create: {
         id: s.id,
         name: s.name,
+        // La misma funcion que usa el servidor al guardar desde el panel, y por
+        // eso importada de src/lib en vez de copiada: si el seed slugificara
+        // distinto, los seis del catalogo tendrian URLs que la app nunca
+        // volveria a generar.
+        slug: slugLibreEnMemoria(aSlug(s.name) || "tratamiento", slugsUsados),
         description: s.description,
         category: s.category,
         duration_minutes: s.duration_minutes,

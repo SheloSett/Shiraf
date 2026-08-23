@@ -88,6 +88,30 @@ y la escritura pasen **en la misma transacción**:
 | `apply_stock_movement`      | Dos movimientos a la vez pierden uno                                           |
 | `sync_service_cover`        | Es un invariante de datos: vale aunque escriba un seed o una corrección a mano |
 
+### Las URLs de los tratamientos (23/8/2026)
+
+La ficha pública dejó de vivir en `/servicios/<uuid>` y pasó a
+`/servicios/drenaje-linfatico`. Lo que lo sostiene:
+
+| Pieza                                     | Qué hace                                                      |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `services.slug`, `String? @unique`        | La columna. Opcional, y el porqué está escrito en el esquema  |
+| `aSlug()` en `src/lib/shiraf.ts`          | El cálculo, uno solo para pantalla, servidor y scripts        |
+| `slugLibre()` en `catalogo.service.ts`    | Le busca uno libre; desempata con sufijo (`masaje-2`)         |
+| `porIdOSlug()` en `publico.controller.ts` | Acepta las dos formas en el endpoint                          |
+| `scripts/rellenar-slugs.ts`               | Relleno único de las filas viejas — `npm run db:slugs`        |
+
+Dos cosas que conviene tener presentes:
+
+- **El slug se regenera al renombrar el tratamiento**, así que su URL cambia y
+  la anterior deja de existir. Fue una decisión, no un descuido: un nombre
+  corregido con una URL que dice lo viejo para siempre es peor. El UUID sigue
+  funcionando siempre y es la salida para un enlace que se rompió.
+- **El regex de `porIdOSlug` no es cosmético.** `services.id` es `@db.Uuid`:
+  buscar por id algo que no tiene forma de UUID no da "no encontrado", revienta
+  con `invalid input syntax for type uuid` y sale como un 500. Con el chequeo,
+  `/servicios/cualquier-cosa` es un 404 y no un error del servidor.
+
 ### El primer admin
 
 Ya no hace falta el `crear-admin.sql`: las 4 cuentas se cargaron con el seed,
@@ -331,7 +355,7 @@ viejo tomando el 8080. Hay que matarlo — si conviven dos, pelean por escribir
 Cosas que costaron encontrar y no conviene volver a descubrir:
 
 - **Rutas anidadas y el 404 fantasma.** Al partir `/servicios` en
-  `servicios.index.tsx` + `servicios.$serviceId.tsx`, TanStack arma un padre
+  `servicios.index.tsx` + `servicios.$slug.tsx`, TanStack arma un padre
   virtual y el SSR responde **404 aunque la página renderice bien**. Se arregla
   agregando un `servicios.tsx` explícito que sólo devuelve `<Outlet />`. El
   mismo patrón usa `admin.tsx`.

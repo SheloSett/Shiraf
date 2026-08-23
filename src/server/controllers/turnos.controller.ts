@@ -14,6 +14,7 @@ import type {
   RtaPendientes,
   RtaServiciosParaTurno,
   RtaTurnos,
+  RtaTurnoEnDetalle,
 } from "@/lib/api-tipos";
 
 /**
@@ -107,6 +108,69 @@ export async function listar(ctx: Ctx) {
 export async function pendientes() {
   const total = await prisma.appointments.count({ where: { status: "pending" } });
   return json({ total } satisfies RtaPendientes);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Un turno solo
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La ficha de un turno.
+ *
+ * Pide el mismo permiso que la lista (`appointments`) y a propósito NO trae
+ * `profiles.notes`: esas son las notas clínicas —alergias, embarazos— y tienen
+ * su propio candado, `clients_notes`. Sumarlas acá seria abrirlas a todo el que
+ * pueda gestionar turnos, que es justo lo que ese permiso separado evita.
+ *
+ * Lo que sí trae de más que la lista es el MAIL. La tabla no lo mostraba por
+ * lugar, pero es el dato con el que se escribe cuando el teléfono no contesta.
+ */
+export async function detalle(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta el turno." }, 400);
+
+  const t = await prisma.appointments.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      starts_at: true,
+      status: true,
+      duration_minutes: true,
+      price: true,
+      client_notes: true,
+      admin_notes: true,
+      created_at: true,
+      ...DATOS_DE_LA_PERSONA,
+      // Pisa el `client` de DATOS_DE_LA_PERSONA para sumarle el mail. El resto
+      // de lo que ese objeto pide sigue igual, porque `personaDe` lo necesita.
+      client: { select: { email: true, profile: { select: { full_name: true, phone: true } } } },
+      service: { select: { id: true, name: true, price: true } },
+      professional: { select: { id: true, full_name: true } },
+    },
+  });
+
+  if (!t) return json({ error: "Ese turno no existe." }, 404);
+
+  return json({
+    turno: {
+      id: t.id,
+      starts_at: t.starts_at.toISOString(),
+      status: t.status,
+      duration_minutes: t.duration_minutes,
+      price: comoNumero(t.price),
+      client_notes: t.client_notes,
+      admin_notes: t.admin_notes,
+      created_at: t.created_at.toISOString(),
+      client_id: t.client_id,
+      guest_name: t.guest_name,
+      guest_phone: t.guest_phone,
+      guest_email: t.guest_email,
+      email: t.client?.email ?? t.guest_email,
+      services: t.service ? { ...t.service, price: comoNumero(t.service.price) } : null,
+      professionals: t.professional,
+      person: personaDe(t),
+    },
+  } satisfies RtaTurnoEnDetalle);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

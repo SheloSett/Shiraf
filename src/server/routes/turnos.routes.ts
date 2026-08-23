@@ -7,6 +7,7 @@ import {
   clientasParaElegir,
   corregirInvitada,
   crear,
+  detalle,
   listar,
   miAgendaDeHoy,
   pendientes,
@@ -46,3 +47,11 @@ turnosRouter.put("/invitada/vincular", ...gestionarTurnos, vincularInvitada);
 
 // Sólo sesión: el alcance lo pone la sesión, no un permiso.
 turnosRouter.get("/mi-agenda", authMiddleware, miAgendaDeHoy);
+
+// ⚠️ ÚLTIMA, y no es cuestión de orden estético: las rutas se prueban en el
+// orden en que se declaran y gana la primera que matchea (ver el `for` de
+// http.ts). Declarada más arriba, "/:id" se comería a "/pendientes",
+// "/calendario", "/clientas", "/servicios" y "/mi-agenda", que también son un
+// solo segmento — y el síntoma sería el panel entero pidiendo un turno con id
+// "pendientes".
+turnosRouter.get("/:id", ...gestionarTurnos, detalle);

@@ -10,9 +10,17 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { RtaProfesionalesConHorarios, RtaServicio } from "@/lib/api-tipos";
 import { imageUrl, videoPosterUrl, videoUrl } from "@/lib/cloudinary";
-import { formatMoney, WEEKDAYS } from "@/lib/shiraf";
+import { agruparPorDia, formatMoney, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
 
-export const Route = createFileRoute("/servicios/$serviceId")({
+// El archivo se llamaba `servicios.$serviceId.tsx` y la ruta era
+// "/servicios/$serviceId". Cambió junto con lo que viaja en la URL: antes era
+// el UUID del tratamiento y ahora es su slug —/servicios/drenaje-linfatico—,
+// así que el parámetro dejó de llamarse como lo que ya no lleva.
+//
+// El endpoint sigue aceptando el UUID (ver `porIdOSlug` en
+// publico.controller.ts), así que un enlace viejo con el id abre esta misma
+// pantalla: lo que venga por acá se le pasa al servidor tal cual.
+export const Route = createFileRoute("/servicios/$slug")({
   head: () => ({
     meta: [
       { title: "Tratamiento — Shiraf" },
@@ -43,18 +51,22 @@ const STEPS = [
 ] as const;
 
 function ServiceDetail() {
-  const { serviceId } = Route.useParams();
+  //   const { serviceId } = Route.useParams();
+  const { slug } = Route.useParams();
 
   const service = useQuery({
-    queryKey: ["service", serviceId],
-    queryFn: async () => (await api<RtaServicio>(`/api/publico/servicios/${serviceId}`)).servicio,
+    // La clave de caché es lo que vino en la URL, no el id del tratamiento: si
+    // fuera el id, entrar por el slug y entrar por el UUID compartirían entrada
+    // pero la primera tendría que esperar la respuesta para saber cuál es.
+    queryKey: ["service", slug],
+    queryFn: async () => (await api<RtaServicio>(`/api/publico/servicios/${slug}`)).servicio,
   });
 
   const team = useQuery({
-    queryKey: ["service-professionals", serviceId],
+    queryKey: ["service-professionals", slug],
     // El filtro por is_active ahora lo hace el servidor, en la consulta.
     queryFn: async () =>
-      (await api<RtaProfesionalesConHorarios>(`/api/publico/servicios/${serviceId}/profesionales`))
+      (await api<RtaProfesionalesConHorarios>(`/api/publico/servicios/${slug}/profesionales`))
         .profesionales,
   });
 
@@ -213,7 +225,10 @@ function ServiceDetail() {
         <div className="mt-12 px-5 lg:col-span-5 lg:col-start-7 lg:mt-0 lg:px-0">
           {activo ? (
             <>
-              <div className="surface-olive grain overflow-hidden rounded-sm">
+              {/* `justify-center` + el tope de alto de adentro: el contenedor
+                  se adapta a la imagen en vez de estirarla, y lo que sobre a los
+                  costados queda del campo oliva con grano. */}
+              <div className="surface-olive grain flex justify-center overflow-hidden rounded-sm">
                 {activo.kind === "video" ? (
                   /* `controls` y nada de autoplay: un video que arranca solo con
                      sonido es molesto, y en celular se come los datos de alguien
@@ -225,13 +240,23 @@ function ServiceDetail() {
                     controls
                     preload="none"
                     playsInline
-                    className="block h-auto w-full"
+                    /* `max-h-[70vh] w-auto`: la imagen se achica hasta entrar
+                       en pantalla manteniendo su proporción, y se ve ENTERA.
+                       Antes decía `h-auto w-full`, que la estiraba al ancho de
+                       la columna — y con un flyer vertical eso la volvía
+                       enorme: había que scrollear dos pantallas para verla. */
+                    className="block max-h-[70vh] w-auto max-w-full"
                   />
                 ) : (
                   <img
                     src={imageUrl(activo.url, "hero") ?? undefined}
                     alt={`${s.name} en Shiraf`}
-                    className="block h-auto w-full"
+                    /* `max-h-[70vh] w-auto`: la imagen se achica hasta entrar
+                       en pantalla manteniendo su proporción, y se ve ENTERA.
+                       Antes decía `h-auto w-full`, que la estiraba al ancho de
+                       la columna — y con un flyer vertical eso la volvía
+                       enorme: había que scrollear dos pantallas para verla. */
+                    className="block max-h-[70vh] w-auto max-w-full"
                   />
                 )}
               </div>
@@ -322,15 +347,23 @@ function ServiceDetail() {
                 <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{p.bio}</p>
 
                 <p className="text-eyebrow mt-6 text-muted-foreground/70">Atiende</p>
+                {/* Un renglón por DÍA con todos sus tramos, igual que en
+                    /profesionales y que en el panel. Este lugar se me había
+                    pasado: acá seguía saliendo "Lunes · 09:00 a 13:00" y
+                    "Lunes · 15:00 a 17:00" en dos renglones, que se lee como dos
+                    lunes distintos. */}
                 <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
-                  {[...p.professional_schedules]
-                    .sort((a, b) => a.weekday - b.weekday)
-                    .map((sch, index) => (
-                      <li key={index}>
-                        {WEEKDAYS[sch.weekday]} · {sch.start_time.slice(0, 5)} a{" "}
-                        {sch.end_time.slice(0, 5)}
-                      </li>
-                    ))}
+                  {agruparPorDia(p.professional_schedules).map(({ weekday, tramos }) => (
+                    <li key={weekday}>
+                      {WEEKDAYS[weekday]} ·{" "}
+                      {tramos
+                        .map(
+                          (t) =>
+                            `${soloHoraYMinutos(t.start_time)} a ${soloHoraYMinutos(t.end_time)}`,
+                        )
+                        .join(" y ")}
+                    </li>
+                  ))}
                 </ul>
 
                 <Link

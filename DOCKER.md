@@ -149,3 +149,16 @@ docker compose run --rm app sh -c   "node node_modules/prisma/build/index.js db 
 
 En el VPS eso ya pasa solo en cada `docker compose up`, porque es lo que hace el
 servicio `migrate`.
+
+### Una vez, después del push que agrega `services.slug` (23/8/2026)
+
+La columna entra vacía —`db push` no puede darle valor a filas que ya existen—
+y hasta que se rellene, la ficha de cada tratamiento cae al UUID en la URL. Se
+arregla con un comando, que no hace nada si ya está hecho:
+
+```sh
+docker compose run --rm app bun scripts/rellenar-slugs.ts
+```
+
+No hace falta repetirlo: de ahí en más el slug lo escribe el panel al crear y al
+editar un tratamiento.

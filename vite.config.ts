@@ -33,6 +33,10 @@ const revisarPorReloj = process.env["SHIRAF_DEV_POLLING"] === "1";
  * Adentro del contenedor Vite escucha en el 8080 y le dice al navegador que se
  * conecte ahí, pero desde el host el que existe es el 8081 (el mapeo del
  * compose). Sin esto el websocket de HMR no conecta y hay que recargar a mano.
+ *
+ * Va en `server.ws` y no en `server.hmr`: en Vite 8 lo segundo sigue andando
+ * pero avisa por consola que está deprecado —lo dijo al arrancar el contenedor—
+ * y `server.ws.clientPort` es el nombre nuevo de exactamente lo mismo.
  */
 const puertoHmr = Number(process.env["SHIRAF_DEV_HMR_PORT"] ?? "");
 
@@ -45,7 +49,7 @@ export default defineConfig({
   vite: {
     server: {
       ...(revisarPorReloj ? { watch: { usePolling: true, interval: 400 } } : {}),
-      ...(puertoHmr ? { hmr: { clientPort: puertoHmr } } : {}),
+      ...(puertoHmr ? { ws: { clientPort: puertoHmr } } : {}),
     },
   },
 });

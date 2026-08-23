@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
+import { slugLibre } from "@/server/services/catalogo.service";
 import type { MediaAGuardar, RtaMediaSacada, RtaServiciosAdmin } from "@/lib/api-tipos";
 
 /**
@@ -18,6 +19,11 @@ export async function listar() {
   const servicios = await prisma.services.findMany({
     select: {
       id: true,
+      // Lo pide `ServicioAdmin`, que extiende `ServicioPublico`. No lo usa
+      // todavía ninguna pantalla del panel, pero es el dato con el que la tabla
+      // de tratamientos podría mostrar "ver en el sitio" — y sacarlo del select
+      // rompe el tipo, que es exactamente el aviso que uno querría.
+      slug: true,
       name: true,
       category: true,
       description: true,
@@ -106,7 +112,15 @@ export async function crear(ctx: Ctx) {
   const id = await prisma.$transaction(async (tx) => {
     // Se crea publicado, como venía haciendo la pantalla.
     const servicio = await tx.services.create({
-      data: { ...campos, is_published: true },
+      // Comentada, no borrada: le faltaba el `slug`, y sin él el tratamiento
+      // nuevo nacía sin URL legible y la ficha tenía que caer al UUID.
+      //   data: { ...campos, is_published: true },
+      //
+      // El slug lo calcula el servidor y NO lo manda el formulario, por lo
+      // mismo que `image_url`: es un dato derivado. Si lo mandara la pantalla,
+      // habría que confiar en que lo arma igual que acá y en que se acuerda de
+      // recalcularlo al renombrar — dos cosas que se olvidan.
+      data: { ...campos, slug: await slugLibre(tx, campos.name), is_published: true },
       select: { id: true },
     });
     if (media.length > 0) {
@@ -152,7 +166,18 @@ export async function editar(ctx: Ctx) {
   const media = mediaDe(ctx);
 
   const sacadas = await prisma.$transaction(async (tx) => {
-    await tx.services.update({ where: { id }, data: campos });
+    // Comentada, no borrada: guardaba el nombre nuevo pero dejaba el slug
+    // viejo, y la URL terminaba diciendo el nombre anterior.
+    //   await tx.services.update({ where: { id }, data: campos });
+    //
+    // `slugLibre` se recalcula siempre, aunque el nombre no haya cambiado:
+    // devuelve el mismo texto y el UPDATE escribe lo que ya estaba. Preguntar
+    // antes "¿cambió el nombre?" pediría leer la fila para compararla, una
+    // consulta más para ahorrar una escritura que no cuesta nada.
+    await tx.services.update({
+      where: { id },
+      data: { ...campos, slug: await slugLibre(tx, campos.name, id) },
+    });
 
     const antes = await tx.service_media.findMany({
       where: { service_id: id },
