@@ -76,6 +76,25 @@ export function createRouter(prefijo: string) {
       const url = new URL(req.url);
       const partesUrl = url.pathname.split("/").filter(Boolean);
 
+      /**
+       * ¿Hubo alguna ruta con este path pero con otro método?
+       *
+       * 🔴 Esto arregla un bug que rompía CASI TODA LA ESCRITURA DEL PANEL.
+       *
+       * Antes, en cuanto una ruta coincidía de path, se contestaba 405 sin
+       * seguir buscando. Y como los archivos de rutas registran primero el GET
+       * y después el POST sobre el mismo path —`/api/turnos`, `/api/catalogo/
+       * servicios`, `/api/stock/productos`, y siete más—, el POST **nunca se
+       * alcanzaba**: lo interceptaba el GET registrado antes.
+       *
+       * O sea que crear un turno, un tratamiento, un producto, una profesional
+       * o una categoría contestaba "Método no permitido". Compilaba perfecto y
+       * los GET andaban, así que no se veía hasta ejercitar una escritura.
+       *
+       * Ahora se recorren TODAS las rutas y el 405 se decide recién al final.
+       */
+      let pathExiste = false;
+
       for (const ruta of rutas) {
         if (ruta.partes.length !== partesUrl.length) continue;
 
@@ -92,10 +111,13 @@ export function createRouter(prefijo: string) {
         }
         if (!coincide) continue;
 
-        // El path coincide pero el método no: 405 y no 404. Un 404 haría pensar
-        // que la ruta no existe, que es una pista falsa cuando existe y se la
-        // llamó con el verbo equivocado.
-        if (ruta.metodo !== req.method) return json({ error: "Método no permitido." }, 405);
+        // El path coincide pero el método no. NO se contesta acá: puede haber
+        // otra ruta más abajo con este mismo path y el método correcto. Se
+        // anota y se sigue.
+        if (ruta.metodo !== req.method) {
+          pathExiste = true;
+          continue;
+        }
 
         let body: Record<string, unknown> = {};
         if (req.method !== "GET") {
@@ -122,6 +144,11 @@ export function createRouter(prefijo: string) {
         console.error(`[router] ${req.method} ${url.pathname} no devolvió respuesta`);
         return json({ error: "Error interno del servidor." }, 500);
       }
+
+      // Ninguna ruta coincidió de método, pero el path existe: 405 y no 404. Un
+      // 404 haría pensar que la ruta no existe, que es una pista falsa cuando
+      // existe y se la llamó con el verbo equivocado.
+      if (pathExiste) return json({ error: "Método no permitido." }, 405);
 
       return null;
     },
@@ -180,6 +207,43 @@ export function leerCookie(req: Request, nombre: string): string | null {
  * y a ningún otro lado: un error de Prisma trae nombres de tablas y de columnas,
  * y eso es un mapa de la base para quien esté probando la puerta.
  */
+
+/**
+ * Los códigos de Postgres cuyo mensaje SÍ se le muestra a quien llamó.
+ *
+ * Son exactamente los dos que levantan **nuestros** triggers con un `RAISE
+ * EXCEPTION` escrito para que lo lea una persona:
+ *
+ *   23P01  exclusion_violation → "Ese horario ya fue tomado con esa profesional."
+ *   P0001  raise_exception     → el default de plpgsql, que usan los demás
+ *
+ * NO están `23514` (check) ni `23505` (unique) a propósito: esos los redacta
+ * Postgres y dicen cosas como "violates check constraint
+ * appointments_identifies_someone", que no le sirve a nadie. Ésos salen como
+ * "Error interno" y el controller que quiera un mensaje bueno tiene que
+ * validarlo antes, como hace `crear` con el nombre de la invitada.
+ */
+const CODIGOS_CON_MENSAJE_PROPIO = new Set(["23P01", "P0001"]);
+
+/**
+ * El mensaje que escribió un trigger nuestro, si el error viene de uno.
+ *
+ * Prisma 7 envuelve el error del driver bastante hondo —
+ * `meta.driverAdapterError.cause`— y lo que llega arriba es un `P2039` con un
+ * `message` de varias líneas que incluye el código fuente de la llamada. Sin
+ * desenterrarlo, un choque de turnos le llegaba a la pantalla como "Error
+ * interno del servidor": la persona entendía que la app está rota en vez de que
+ * el horario está tomado.
+ */
+function mensajeDeTrigger(error: unknown): string | null {
+  const causa = (
+    error as { meta?: { driverAdapterError?: { cause?: { code?: string; message?: string } } } }
+  )?.meta?.driverAdapterError?.cause;
+
+  if (!causa?.code || !causa.message) return null;
+  return CODIGOS_CON_MENSAJE_PROPIO.has(causa.code) ? causa.message : null;
+}
+
 function respuestaDeError(req: Request, url: URL, error: unknown): Response {
   const status = (error as { status?: unknown })?.status;
 
@@ -187,6 +251,12 @@ function respuestaDeError(req: Request, url: URL, error: unknown): Response {
     const mensaje = error instanceof Error ? error.message : "No se pudo completar.";
     return json({ error: mensaje }, status);
   }
+
+  // Una regla de la base que se rompió. Es 409 y no 500: el pedido está bien
+  // formado, lo que pasa es que choca con el estado actual — casi siempre,
+  // alguien reservó ese horario primero.
+  const deTrigger = mensajeDeTrigger(error);
+  if (deTrigger) return json({ error: deTrigger }, 409);
 
   console.error(`[router] ${req.method} ${url.pathname}`, error);
   return json({ error: "Error interno del servidor." }, 500);
