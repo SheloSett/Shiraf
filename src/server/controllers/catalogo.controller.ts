@@ -229,6 +229,26 @@ export async function publicar(ctx: Ctx) {
  * Da de baja el tratamiento y devuelve sus archivos para que la pantalla los
  * borre de Cloudinary.
  *
+ * ── QUÉ FRENA EL BORRADO Y QUÉ NO ─────────────────────────────────────────
+ *
+ * Antes lo frenaba la base: `appointments.service_id` era ON DELETE RESTRICT, y
+ * eso quiere decir que un tratamiento tomado UNA sola vez, aunque fuera hace dos
+ * años y aunque ese turno estuviera cancelado, no se podía borrar nunca más. El
+ * catálogo se llenaba de cosas que ya no se hacen y la única salida era
+ * despublicarlas.
+ *
+ * Ahora se mira el ESTADO de los turnos, que es la diferencia que importa:
+ *
+ *   · pendientes o confirmados → **no se borra**. Son turnos que se van a
+ *     atender: sacarles el tratamiento de abajo deja a la clienta con una hora
+ *     reservada para nada.
+ *   · realizados o cancelados  → **se borra**. Son historial, y el historial no
+ *     se pierde: `service_id` queda en NULL y el turno se sigue leyendo con
+ *     `service_name` y `price`, que están congelados en la fila.
+ *
+ * La cuenta y el borrado van en la misma transacción. Entre "no hay turnos por
+ * venir" y "borralo" alguien puede estar reservando justo ese tratamiento.
+ *
  * ⚠️ Las URLs se leen ANTES de borrar: después las filas ya no están —
  * `service_media` cae por CASCADE— y los archivos quedarían sin forma de
  * encontrarse. Y se devuelven sólo si la baja salió bien, porque puede fallar.
@@ -242,12 +262,37 @@ export async function borrar(ctx: Ctx) {
     select: { url: true, kind: true },
   });
 
+  // `porVenir` sale de la transacción para poder armar el mensaje afuera: acá
+  // adentro sólo se decide si se borra o no.
+  let porVenir = 0;
+
   try {
-    await prisma.services.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      porVenir = await tx.appointments.count({
+        where: { service_id: id, status: { in: ["pending", "confirmed"] } },
+      });
+      // Se corta la transacción tirando: así el borrado no llega a pasar y no
+      // hay dos caminos que puedan quedar desincronizados.
+      if (porVenir > 0) throw new ErrorDeTurnosPorVenir();
+
+      await tx.services.delete({ where: { id } });
+    });
   } catch (error) {
-    // P2003 = clave foránea. Acá significa una cosa sola: hay turnos con este
-    // tratamiento y la base lo frena, porque appointments.service_id es
-    // ON DELETE RESTRICT.
+    if (error instanceof ErrorDeTurnosPorVenir) {
+      return json(
+        {
+          error:
+            porVenir === 1
+              ? "No se puede eliminar: hay 1 turno pendiente o confirmado con este tratamiento. Esperá a que pase o cancelalo. Mientras tanto podés despublicarlo."
+              : `No se puede eliminar: hay ${porVenir} turnos pendientes o confirmados con este tratamiento. Esperá a que pasen o cancelalos. Mientras tanto podés despublicarlo.`,
+        },
+        409,
+      );
+    }
+    // P2003 = clave foránea. Ya no lo puede tirar `appointments` —esa relación
+    // pasó a SET NULL— pero se deja: si mañana otra tabla apunta acá con
+    // RESTRICT, este error saldría igual y sin esto se vería como "Error interno
+    // del servidor".
     //
     // 🔴 La traducción va del lado del servidor porque el mensaje crudo de
     // Postgres YA NO LLEGA a la pantalla: el router sólo deja pasar el texto de
@@ -257,7 +302,7 @@ export async function borrar(ctx: Ctx) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       return json(
         {
-          error: "No se puede eliminar: hay turnos con este tratamiento. Despublicalo en su lugar.",
+          error: "No se puede eliminar: hay otros datos que dependen de este tratamiento.",
         },
         409,
       );
@@ -268,3 +313,9 @@ export async function borrar(ctx: Ctx) {
   const salida: RtaMediaSacada = { sacadas: media };
   return json(salida);
 }
+
+/**
+ * Sólo sirve para cortar la transacción de arriba: no lleva mensaje porque el
+ * mensaje se arma afuera, con la cuenta a la vista.
+ */
+class ErrorDeTurnosPorVenir extends Error {}

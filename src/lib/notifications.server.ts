@@ -220,6 +220,9 @@ export async function deliverAppointmentEmail(
       guest_phone: true,
       guest_email: true,
       service: { select: { name: true } },
+      // El nombre congelado: si el tratamiento se borró del catálogo, el mail
+      // igual tiene que decir de qué es el turno.
+      service_name: true,
       professional: { select: { full_name: true } },
       client: { select: { email: true, profile: { select: { full_name: true } } } },
     },
@@ -237,7 +240,7 @@ export async function deliverAppointmentEmail(
     startsAt: appointment.starts_at.toISOString(),
     clientName,
     clientPhone: appointment.guest_phone,
-    serviceName: appointment.service?.name ?? null,
+    serviceName: appointment.service?.name ?? appointment.service_name ?? null,
     professionalName: appointment.professional?.full_name ?? null,
   };
 

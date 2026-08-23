@@ -129,6 +129,14 @@ export type TurnoValidado = {
   /** Los fija la base, nunca quien llama. Ver abajo. */
   price: string;
   duration_minutes: number;
+  /**
+   * El nombre del tratamiento, congelado en el turno igual que el precio.
+   *
+   * Es lo que permite BORRAR un tratamiento del catálogo sin que los turnos
+   * viejos queden diciendo "turno de nada": el vínculo se corta, el nombre se
+   * queda. Ver `appointments.service_name`.
+   */
+  service_name: string;
 };
 
 /**
@@ -145,6 +153,10 @@ export type TurnoValidado = {
  * El precio queda congelado: es el del día que se reservó, no el actual del
  * catálogo. Por eso `appointments.price` existe como columna en vez de leerse
  * de `services` con un join.
+ *
+ * El NOMBRE también se congela, en `service_name`, y ése además tiene una razón
+ * propia: es lo que deja borrar un tratamiento del catálogo sin que el turno
+ * viejo quede sin decir de qué fue.
  *
  * ── LO QUE SÍ SE LE PERDONA AL CENTRO ─────────────────────────────────────
  *
@@ -168,13 +180,14 @@ export async function validarTurno(
 
   const servicio = await prisma.services.findUnique({
     where: { id: turno.service_id },
-    select: { price: true, duration_minutes: true, is_published: true },
+    select: { name: true, price: true, duration_minutes: true, is_published: true },
   });
   if (!servicio) throw new ErrorDeRegla("El tratamiento no existe.");
 
   const validado: TurnoValidado = {
     price: servicio.price.toString(),
     duration_minutes: servicio.duration_minutes,
+    service_name: servicio.name,
   };
 
   if (!servicio.is_published && !esCentro) {
@@ -291,4 +304,33 @@ function enHoraDelCentro(instante: Date): HoraDelCentro {
  */
 function comoHora(minutosDelDia: number): Date {
   return new Date(Date.UTC(1970, 0, 1, Math.floor(minutosDelDia / 60), minutosDelDia % 60, 0));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. Cómo se llamaba el tratamiento
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * El nombre del tratamiento de un turno, exista todavía en el catálogo o no.
+ *
+ * `appointments.service_id` es NULL-able desde que un tratamiento se puede
+ * borrar: el turno viejo se queda sin vínculo pero conserva `service_name`,
+ * congelado el día que se reservó.
+ *
+ * ── EL ORDEN NO ES CASUAL ─────────────────────────────────────────────────
+ *
+ * Primero el del catálogo y después el congelado. Así, renombrar un tratamiento
+ * sigue arrastrando a todos sus turnos —que es lo que hacía antes y lo que
+ * espera quien renombra— y el nombre congelado entra a jugar sólo cuando ya no
+ * hay a quién preguntarle.
+ *
+ * El texto final es para los turnos anteriores a que existiera la columna, que
+ * podrían tener las dos cosas en NULL. Con el CHECK
+ * `appointments_names_its_service` puesto no debería pasar nunca más.
+ */
+export function nombreDelTratamiento(turno: {
+  service?: { name: string } | null;
+  service_name?: string | null;
+}): string {
+  return turno.service?.name ?? turno.service_name ?? "Tratamiento eliminado";
 }

@@ -2,7 +2,7 @@ import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
 import { accesoDe, puede } from "@/server/services/authz.service";
 import { idsDelEquipo } from "@/server/services/agenda.service";
-import { exigirAlcanceDeClienta } from "@/server/services/turnos.service";
+import { exigirAlcanceDeClienta, nombreDelTratamiento } from "@/server/services/turnos.service";
 import { comoNumero } from "@/server/serializar";
 import type { RtaClientas, RtaEquipo, RtaMiCuenta, RtaMisTurnos } from "@/lib/api-tipos";
 
@@ -158,6 +158,9 @@ export async function misTurnos(ctx: Ctx) {
       duration_minutes: true,
       client_notes: true,
       service: { select: { name: true, price: true, category: true } },
+      // El nombre congelado, por si el tratamiento ya no está en el catálogo.
+      service_name: true,
+      price: true,
       professional: { select: { full_name: true } },
     },
     orderBy: { starts_at: "desc" },
@@ -172,7 +175,15 @@ export async function misTurnos(ctx: Ctx) {
       client_notes: t.client_notes,
       // Los nombres anidados vienen del select de supabase-js y se conservan
       // para no tener que tocar el JSX.
-      services: { ...t.service, price: comoNumero(t.service.price) },
+      //
+      // `t.service` puede ser null: el tratamiento se borró del catálogo y el
+      // turno quedó sin vínculo. El nombre sale igual —congelado en la fila— y
+      // el precio se cae al que se cobró ese día, que es el único que queda.
+      services: {
+        name: nombreDelTratamiento(t),
+        price: comoNumero(t.service ? t.service.price : t.price),
+        category: t.service?.category ?? null,
+      },
       professionals: t.professional,
     })),
   } satisfies RtaMisTurnos);

@@ -282,7 +282,9 @@ export type MiTurno = {
   status: string;
   duration_minutes: number;
   client_notes: string | null;
-  services: { name: string; price: number; category: string };
+  // `category` es null cuando el tratamiento ya no está en el catálogo. `name`
+  // y `price` no: el turno los tiene congelados desde el día que se reservó.
+  services: { name: string; price: number; category: string | null };
   professionals: { full_name: string } | null;
 };
 
@@ -345,7 +347,13 @@ export type TurnoEnDetalle = {
   guest_email: string | null;
   /** El de la cuenta si la tiene; el de invitada si no. Puede no haber ninguno. */
   email: string | null;
-  services: { id: string; name: string; price: number } | null;
+  /**
+   * El nombre SIEMPRE está: sale congelado del turno si el tratamiento ya no
+   * está en el catálogo. `id` y `price` son los del catálogo, así que se van a
+   * null cuando el tratamiento se borró — `price` acá es el de HOY, el que se
+   * cobró está en `price` del turno.
+   */
+  services: { id: string | null; name: string; price: number | null };
   professionals: { id: string; full_name: string } | null;
   person: PersonaDelTurno;
 };
@@ -357,7 +365,8 @@ export type TurnoDelCalendario = {
   id: string;
   starts_at: string;
   status: string;
-  services: { name: string } | null;
+  /** Siempre está: si el tratamiento se borró, sale el nombre congelado. */
+  services: { name: string };
   professionals: { full_name: string } | null;
 };
 

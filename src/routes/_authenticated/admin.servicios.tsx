@@ -261,9 +261,9 @@ function AdminServices() {
   const remove = useMutation({
     mutationFn: async (id: string) => {
       // El servidor devuelve las URLs DESPUÉS de que la baja salió bien. Puede
-      // no salir: appointments.service_id es ON DELETE RESTRICT, así que un
-      // tratamiento con turnos no se borra. Si mandáramos a borrar los archivos
-      // antes, en ese caso habríamos tirado la foto de un tratamiento vivo.
+      // no salir: un tratamiento con turnos pendientes o confirmados no se
+      // borra. Si mandáramos a borrar los archivos antes, en ese caso habríamos
+      // tirado la foto de un tratamiento vivo.
       const { sacadas } = await apiDelete<RtaMediaSacada>(`/api/catalogo/servicios/${id}`);
 
       // Antes esto no se hacía y el archivo quedaba huérfano para siempre. Con
@@ -280,8 +280,8 @@ function AdminServices() {
       setDeleting(null);
       toast.success("Tratamiento eliminado.");
     },
-    // La traducción del "hay turnos con este tratamiento" la hace el servidor,
-    // que es quien ve el código de error de Postgres. Acá ya llega en castellano.
+    // El mensaje de "hay N turnos pendientes o confirmados" lo arma el servidor,
+    // que es el único que tiene la cuenta a mano. Acá ya llega en castellano.
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -570,9 +570,10 @@ function AdminServices() {
               ¿Eliminar {deleting?.name}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Se quita del catálogo y de las profesionales que lo realizan. Si ya hay turnos con
-              este tratamiento la base no va a dejar borrarlo — en ese caso despublicalo, que lo
-              saca del sitio sin tocar el historial.
+              Se quita del catálogo y de las profesionales que lo realizan. Los turnos que ya
+              pasaron o se cancelaron quedan como están: guardan el nombre y el precio de ese día.
+              Si hay turnos pendientes o confirmados no se va a poder borrar hasta que pasen o se
+              cancelen — mientras tanto podés despublicarlo, que lo saca del sitio.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

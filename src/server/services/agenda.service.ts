@@ -1,4 +1,5 @@
 import { prisma } from "@/server/db";
+import { nombreDelTratamiento } from "@/server/services/turnos.service";
 
 /**
  * Lo que hacían las funciones de la base sobre turnos y agenda.
@@ -90,6 +91,8 @@ export async function miAgenda(userId: string, dias = 30): Promise<TurnoDeMiAgen
       guest_name: true,
       guest_phone: true,
       service: { select: { name: true } },
+      // El nombre congelado, por si el tratamiento ya no está en el catálogo.
+      service_name: true,
       client: {
         select: {
           profile: { select: { full_name: true, phone: true } },
@@ -110,7 +113,7 @@ export async function miAgenda(userId: string, dias = 30): Promise<TurnoDeMiAgen
       empiezaEn: t.starts_at,
       minutos: t.duration_minutes,
       estado: t.status as string,
-      tratamiento: t.service.name,
+      tratamiento: nombreDelTratamiento(t),
       // La clienta puede ser una invitada: ahí el nombre y el teléfono salen de
       // las columnas guest_*, y `esInvitada` deja que la pantalla lo aclare en
       // vez de mostrar una ficha que no existe.

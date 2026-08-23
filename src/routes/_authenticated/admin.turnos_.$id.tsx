@@ -200,7 +200,15 @@ function FichaDelTurno() {
 
         <Tarjeta titulo="El turno">
           <Dato etiqueta="Tratamiento">
-            {t.services?.name ?? <span className="text-muted-foreground">Sin tratamiento</span>}
+            {/* El nombre siempre llega: si el tratamiento se borró del catálogo,
+                viene congelado del turno. Lo que se pierde es el enlace al
+                catálogo, no el dato. */}
+            {t.services.name}
+            {t.services.id === null && (
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Este tratamiento ya no está en el catálogo.
+              </span>
+            )}
           </Dato>
 
           <Dato etiqueta="Profesional">
@@ -219,7 +227,9 @@ function FichaDelTurno() {
                 del catálogo cambió desde entonces, se avisa: cobrar el nuevo o
                 respetar el viejo es una decisión del centro, pero para tomarla
                 hay que saber que son distintos. */}
-            {t.services && t.services.price !== t.price && (
+            {/* `price` del catálogo es null cuando el tratamiento se borró: ahí
+                no hay con qué comparar y no se avisa nada. */}
+            {t.services.price !== null && t.services.price !== t.price && (
               <span className="mt-1 block text-xs text-muted-foreground">
                 Hoy en el catálogo figura {formatMoney(t.services.price)}
               </span>

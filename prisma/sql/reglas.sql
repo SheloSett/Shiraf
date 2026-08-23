@@ -42,6 +42,31 @@ ALTER TABLE "appointments"
   CHECK (client_id IS NOT NULL OR btrim(coalesce(guest_name, '')) <> '');
 
 
+-- ── 1.1 bis  Un turno dice qué tratamiento fue ──────────────────────────────
+--
+-- `service_id` pasó a ser NULL-able para que un tratamiento se pueda borrar del
+-- catálogo sin llevarse el historial por delante. El precio ya estaba congelado
+-- en el turno; ahora el nombre también, en `service_name`.
+--
+-- Sin este CHECK los dos podrían quedar en NULL, y el turno viejo no diría de
+-- qué fue. El nombre se escribe SIEMPRE al crear —lo pone `validarTurno`— así
+-- que en la práctica nunca se llega acá: el CHECK está para lo que entre por
+-- fuera de la app, una corrección a mano, un import, un seed.
+
+-- El relleno va primero: los turnos que ya existían no tienen el nombre escrito
+-- y sin esto el CHECK no se podría crear. Es idempotente por el `IS NULL`.
+UPDATE appointments a
+   SET service_name = s.name
+  FROM services s
+ WHERE s.id = a.service_id
+   AND a.service_name IS NULL;
+
+ALTER TABLE "appointments" DROP CONSTRAINT IF EXISTS appointments_names_its_service;
+ALTER TABLE "appointments"
+  ADD CONSTRAINT appointments_names_its_service
+  CHECK (service_id IS NOT NULL OR btrim(coalesce(service_name, '')) <> '');
+
+
 -- ── 1.2 Dos clientas no pueden reservar el mismo horario ────────────────────
 -- ESTE ES EL IMPORTANTE. Si esto se hiciera en código —"fijate si está libre" y
 -- después "insertá"— dos reservas que llegan juntas leen las dos que está libre

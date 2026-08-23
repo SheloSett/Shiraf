@@ -3,7 +3,7 @@ import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
 import { miAgenda, vincularTurnosDeInvitada } from "@/server/services/agenda.service";
 import { accesoDe } from "@/server/services/authz.service";
-import { validarTurno } from "@/server/services/turnos.service";
+import { nombreDelTratamiento, validarTurno } from "@/server/services/turnos.service";
 import { comoNumero } from "@/server/serializar";
 import type {
   RtaAlcanceInvitada,
@@ -80,6 +80,9 @@ export async function listar(ctx: Ctx) {
       client_notes: true,
       ...DATOS_DE_LA_PERSONA,
       service: { select: { name: true, price: true } },
+      // El nombre congelado, por si el tratamiento ya no está en el catálogo.
+      service_name: true,
+      price: true,
       professional: { select: { full_name: true } },
     },
   });
@@ -97,7 +100,12 @@ export async function listar(ctx: Ctx) {
       // No se muestra en la tabla, pero lo necesita el diálogo de editar: es lo
       // que decide a cuántos turnos alcanza la corrección de una invitada.
       guest_email: t.guest_email,
-      services: { name: t.service.name, price: comoNumero(t.service.price) },
+      // `t.service` puede ser null: el tratamiento se borró del catálogo. El
+      // nombre sale congelado de la fila y el precio se cae al que se cobró.
+      services: {
+        name: nombreDelTratamiento(t),
+        price: comoNumero(t.service ? t.service.price : t.price),
+      },
       professionals: t.professional,
       person: personaDe(t),
     })),
@@ -145,6 +153,8 @@ export async function detalle(ctx: Ctx) {
       // de lo que ese objeto pide sigue igual, porque `personaDe` lo necesita.
       client: { select: { email: true, profile: { select: { full_name: true, phone: true } } } },
       service: { select: { id: true, name: true, price: true } },
+      // El nombre congelado, por si el tratamiento ya no está en el catálogo.
+      service_name: true,
       professional: { select: { id: true, full_name: true } },
     },
   });
@@ -166,7 +176,14 @@ export async function detalle(ctx: Ctx) {
       guest_phone: t.guest_phone,
       guest_email: t.guest_email,
       email: t.client?.email ?? t.guest_email,
-      services: t.service ? { ...t.service, price: comoNumero(t.service.price) } : null,
+      // El nombre siempre sale; el id y el precio de catálogo se van a null si
+      // el tratamiento se borró. Lo que se cobró está en `price` del turno, que
+      // va aparte y no depende de que el tratamiento siga existiendo.
+      services: {
+        id: t.service?.id ?? null,
+        name: nombreDelTratamiento(t),
+        price: t.service ? comoNumero(t.service.price) : null,
+      },
       professionals: t.professional,
       person: personaDe(t),
     },
@@ -190,6 +207,8 @@ export async function calendario(ctx: Ctx) {
       starts_at: true,
       status: true,
       service: { select: { name: true } },
+      // El nombre congelado, por si el tratamiento ya no está en el catálogo.
+      service_name: true,
       professional: { select: { full_name: true } },
     },
   });
@@ -199,7 +218,7 @@ export async function calendario(ctx: Ctx) {
       id: t.id,
       starts_at: t.starts_at.toISOString(),
       status: t.status,
-      services: t.service,
+      services: { name: nombreDelTratamiento(t) },
       professionals: t.professional,
     })),
   } satisfies RtaCalendario);

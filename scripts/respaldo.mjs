@@ -42,7 +42,11 @@ const accion = process.argv[2];
 const archivo = process.argv[3];
 
 function docker(args, opciones = {}) {
-  return execFileSync("docker", args, { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, ...opciones });
+  return execFileSync("docker", args, {
+    encoding: "utf8",
+    maxBuffer: 512 * 1024 * 1024,
+    ...opciones,
+  });
 }
 
 function vivo() {
@@ -69,8 +73,15 @@ if (accion === "guardar") {
   // tiene cosas: primero tira lo que haya, despues carga. Sin eso, restaurar
   // encima falla con "already exists" en la primera tabla.
   const volcado = docker([
-    "exec", CONTENEDOR,
-    "pg_dump", "-U", "shiraf", "-d", "shiraf", "--clean", "--if-exists",
+    "exec",
+    CONTENEDOR,
+    "pg_dump",
+    "-U",
+    "shiraf",
+    "-d",
+    "shiraf",
+    "--clean",
+    "--if-exists",
   ]);
 
   const fs = await import("node:fs");
@@ -123,8 +134,17 @@ if (accion === "restaurar") {
   // verifica igual: restaurar y quedarse sin el candado de los turnos seria
   // peor que no restaurar.
   const control = docker([
-    "exec", CONTENEDOR, "psql", "-U", "shiraf", "-d", "shiraf", "-t", "-A", "-c",
-    "SELECT (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal)||' triggers, '||(SELECT count(*) FROM pg_constraint WHERE conname='appointments_identifies_someone')||' CHECK, '||(SELECT count(*) FROM appointments)||' turnos, '||(SELECT count(*) FROM services)||' servicios'",
+    "exec",
+    CONTENEDOR,
+    "psql",
+    "-U",
+    "shiraf",
+    "-d",
+    "shiraf",
+    "-t",
+    "-A",
+    "-c",
+    "SELECT (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal)||' triggers, '||(SELECT count(*) FROM pg_constraint WHERE conname IN ('appointments_identifies_someone','appointments_names_its_service'))||' CHECK, '||(SELECT count(*) FROM appointments)||' turnos, '||(SELECT count(*) FROM services)||' servicios'",
   ]).trim();
   console.log(`Listo: ${control}`);
   process.exit(0);

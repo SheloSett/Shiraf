@@ -410,6 +410,22 @@ async function main() {
       },
     });
   }
+
+  // El nombre del tratamiento, congelado en el turno. El volcado viene de
+  // Supabase, donde esa columna no existía, así que se rellena acá con el del
+  // catálogo — que es lo que valía el día que se reservó.
+  //
+  // Lo mismo hace `reglas.sql` después de cada push. Se repite acá porque
+  // post-push corre ANTES que el seed en el arranque del contenedor: sin esto,
+  // una base recién sembrada quedaría con los turnos sin nombre congelado hasta
+  // el push siguiente. El `IS NULL` lo hace idempotente en los dos lugares.
+  await prisma.`
+    UPDATE appointments a
+       SET service_name = s.name
+      FROM services s
+     WHERE s.id = a.service_id
+       AND a.service_name IS NULL
+  `;
   console.log("  appointments            " + turnos.length);
 
   const notas = leer<{ client_id: string; body: string | null }>("client_notes");
