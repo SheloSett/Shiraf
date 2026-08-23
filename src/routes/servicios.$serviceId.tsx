@@ -58,7 +58,8 @@ function ServiceDetail() {
   });
 
   /**
-   * La galería sin la portada, que ya se muestra arriba a media pantalla.
+   * La galería sin la portada. YA NO SE USA — ver el bloque comentado más
+   * abajo, donde está el porqué.
    *
    * Va acá y no después de los early returns de abajo porque es un hook: si
    * quedara ahí, se ejecutaría en unos renders y en otros no, que es lo único
@@ -68,11 +69,13 @@ function ServiceDetail() {
    * de la base —la primera IMAGEN, salteando videos— y compararla así evita
    * tener que repetir esa regla acá y que las dos se desincronicen.
    */
-  const gallery = useMemo(() => {
-    const media = service.data?.service_media ?? [];
-    const cover = service.data?.image_url;
-    return [...media].sort((a, b) => a.position - b.position).filter((m) => m.url !== cover);
-  }, [service.data]);
+  // Sin uso desde que se sacó «La galería». Se deja comentado con ella:
+  //
+  // const gallery = useMemo(() => {
+  //   const media = service.data?.service_media ?? [];
+  //   const cover = service.data?.image_url;
+  //   return [...media].sort((a, b) => a.position - b.position).filter((m) => m.url !== cover);
+  // }, [service.data]);
 
   if (service.isLoading) {
     return (
@@ -191,7 +194,15 @@ function ServiceDetail() {
             <img
               src={imageUrl(s.image_url, "hero") ?? undefined}
               alt={`Tratamiento de ${s.name} en Shiraf`}
-              className="absolute inset-0 h-full w-full object-cover"
+              /* object-CONTAIN y no object-cover, que era lo que había.
+                 `cover` llena el hueco recortando lo que sobre, y para una foto
+                 de la camilla está bien: da igual dónde se corte. Pero acá lo
+                 que se sube no siempre es una foto — el centro carga FLYERS, con
+                 el nombre del tratamiento, el precio y la duración dibujados
+                 adentro. A un flyer recortarlo le come justo eso.
+                 `contain` lo muestra entero y lo que sobra queda del campo oliva
+                 con grano, que ya estaba pensado como fondo. */
+              className="absolute inset-0 h-full w-full object-contain"
             />
           )}
         </div>
@@ -203,57 +214,31 @@ function ServiceDetail() {
           hace falta aire entre el botón y el filete. */}
       <OrganicRule className="mt-20 lg:mt-0" />
 
-      {/* La galería: el resto de las fotos y los videos.
-          Se saltea la portada porque ya está arriba, ocupando media pantalla, y
-          repetirla es lo primero que se nota. Un tratamiento con una sola foto
-          no tiene resto, y entonces esta sección no existe: la ficha queda
-          exactamente como era antes de que hubiera galería. */}
+      {/* ── «La galería» SACADA (23/8/2026, decisión del centro) ─────────────
+          Acá iba una sección que listaba el resto de las fotos y los videos del
+          tratamiento, debajo del hero.
+
+          Se saca porque no aporta: lo que el centro sube es UN flyer por
+          tratamiento —con el nombre, la duración y el precio dibujados adentro—
+          y ese flyer ya es la portada, que se ve arriba a media pantalla.
+          La galería quedaba entonces como una segunda fila de imágenes sueltas,
+          repitiendo o desordenando lo que la ficha ya dice.
+
+          Lo que NO se toca, a propósito:
+            · se pueden seguir cargando varias fotos y videos desde el panel;
+            · el trigger sync_service_cover sigue eligiendo la portada;
+            · si algún día se quiere mostrar de vuelta, es descomentar esto.
+
+          El código queda comentado y no borrado para que se vea qué había y por
+          qué se fue.
+
       {gallery.length > 0 && (
         <>
-          <section className="grid lg:grid-cols-12">
-            <div className="px-5 py-20 lg:col-span-9 lg:col-start-2 lg:px-0 lg:py-28">
-              <Reveal>
-                <p className="text-eyebrow text-muted-foreground">Cómo se ve</p>
-                <h2 className="display-section mt-5 text-foreground">La galería</h2>
-              </Reveal>
-
-              <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {gallery.map((item, i) => (
-                  <Reveal key={item.id} delay={i * 80}>
-                    <figure className="surface-olive grain relative aspect-[4/5] overflow-hidden rounded-sm">
-                      {item.kind === "video" ? (
-                        /* `controls` y nada de autoplay: un video que arranca
-                           solo con sonido en la ficha de un tratamiento es
-                           molesto, y en celular se come los datos de alguien que
-                           quizás sólo quería el precio. `preload="none"` va por
-                           lo mismo — hasta que no le den play, lo único que baja
-                           es el poster, que es una jpg. */
-                        <video
-                          src={videoUrl(item.url, "card") ?? undefined}
-                          poster={videoPosterUrl(item.url, "card") ?? undefined}
-                          controls
-                          preload="none"
-                          playsInline
-                          className="absolute inset-0 h-full w-full object-cover"
-                        />
-                      ) : (
-                        <img
-                          src={imageUrl(item.url, "card") ?? undefined}
-                          alt={`${s.name} en Shiraf`}
-                          loading="lazy"
-                          className="absolute inset-0 h-full w-full object-cover"
-                        />
-                      )}
-                    </figure>
-                  </Reveal>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <OrganicRule />
+          … la sección entera, con su <Reveal>, la grilla de 3 columnas y el
+          <video controls preload="none"> para los videos …
         </>
       )}
+      ─────────────────────────────────────────────────────────────────────── */}
 
       {/* Quién lo realiza. Los horarios que se muestran son los de atención de
           cada profesional — datos públicos de professional_schedules — no la
