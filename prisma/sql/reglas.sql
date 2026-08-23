@@ -76,13 +76,47 @@ BEGIN
       USING ERRCODE = 'exclusion_violation';
   END IF;
 
+  -- ── Y la clienta tampoco puede estar en dos camillas a la vez ─────────────
+  --
+  -- Esto faltaba, y se descubrió probando: la misma clienta sacaba dos turnos a
+  -- la MISMA hora con dos profesionales distintas y el sistema los aceptaba los
+  -- dos. La comprobación de arriba sólo mira que no se pise la profesional;
+  -- nadie miraba a la persona que se atiende.
+  --
+  -- Va en la base y no en el código por el mismo motivo que la de arriba: dos
+  -- reservas que llegan juntas leerían las dos que el horario está libre. Acá
+  -- las dos pasan por la misma transacción.
+  --
+  -- Sólo para las clientas CON cuenta. Una invitada no tiene id con el que
+  -- reconocerla, y cruzar por teléfono sería adivinar: dos personas de la misma
+  -- casa pueden compartir el número, y de hecho en esta base ya hay un teléfono
+  -- repetido entre dos personas distintas.
+  IF NEW.client_id IS NOT NULL THEN
+    SELECT count(*)
+      INTO conflicts
+    FROM appointments a
+    WHERE a.client_id = NEW.client_id
+      AND a.id <> NEW.id
+      AND a.status IN ('pending', 'confirmed')
+      AND a.starts_at < NEW.starts_at + make_interval(mins => NEW.duration_minutes)
+      AND NEW.starts_at < a.starts_at + make_interval(mins => a.duration_minutes);
+
+    IF conflicts > 0 THEN
+      RAISE EXCEPTION 'Esa clienta ya tiene otro turno a esa hora.'
+        USING ERRCODE = 'exclusion_violation';
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_check_appointment_overlap ON "appointments";
+-- `client_id` se suma a la lista de columnas que disparan el chequeo: sin eso,
+-- vincular una invitada a una cuenta que ya tiene un turno a esa hora pasaría
+-- sin que nadie mire.
 CREATE TRIGGER trg_check_appointment_overlap
-  BEFORE INSERT OR UPDATE OF starts_at, duration_minutes, professional_id, status
+  BEFORE INSERT OR UPDATE OF starts_at, duration_minutes, professional_id, status, client_id
   ON "appointments"
   FOR EACH ROW EXECUTE FUNCTION check_appointment_overlap();
 
