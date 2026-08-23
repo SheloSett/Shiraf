@@ -95,3 +95,7 @@ backups/
 # contrasenas de las cuentas de prueba —y este repositorio es publico— y
 # ademas es un cuaderno de trabajo, no documentacion del proyecto.
 PRUEBAS.md
+
+# Respaldos de la base de desarrollo (scripts/respaldo.mjs). Son los datos
+# reales del centro y este repositorio es publico.
+respaldos/

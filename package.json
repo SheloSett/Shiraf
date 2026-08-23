@@ -14,7 +14,10 @@
     "db:sync": "prisma db push && node scripts/post-push.mjs",
     "db:seed": "bun prisma/seed.ts",
     "db:slugs": "bun scripts/rellenar-slugs.ts",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "db:backup": "node scripts/respaldo.mjs guardar",
+    "db:backups": "node scripts/respaldo.mjs listar",
+    "db:restore": "node scripts/respaldo.mjs restaurar"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
