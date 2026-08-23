@@ -111,6 +111,18 @@ services:
       # cosas escritas en el mismo .env es la fuente del error más frecuente de
       # todo el armado.
       DATABASE_URL: postgresql://shiraf:${POSTGRES_PASSWORD:-shiraf}@db:5432/shiraf
+      # 🔴 Las dos que hacen que "recarga solo al editar en el host" sea cierto.
+      # No lo era: el bind mount de Windows no transporta los avisos de cambio
+      # de archivo, así que Vite seguía sirviendo la versión con la que arrancó
+      # y editar no hacía nada hasta reiniciar el contenedor. El motivo largo
+      # está en vite.config.ts, que es donde se leen estas dos variables.
+      #
+      # Van acá y no en el vite.config a secas para no cobrarle el costo del
+      # sondeo a quien corra `bun run dev` en su máquina, sin contenedor.
+      SHIRAF_DEV_POLLING: "1"
+      # El 8081 es el puerto del HOST (ver el mapeo de abajo): es a donde le
+      # habla el navegador, y adentro Vite escucha en el 8080.
+      SHIRAF_DEV_HMR_PORT: "8081"
     depends_on:
       db:
         condition: service_healthy

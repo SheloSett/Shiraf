@@ -193,7 +193,19 @@ function AdminCalendar() {
                             {a.professionals?.full_name}
                           </span>
                         </span>
-                        <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0 opacity-40 transition-opacity group-hover:opacity-100" />
+                        {/* El botón, dibujado y no insinuado. Antes era la
+                            flecha suelta al 40% de opacidad que se encendía al
+                            pasar el mouse: sobre una pastilla de color ya de por
+                            sí clarita no se veía, y un botón que hay que
+                            descubrir pasando el mouse por encima no es un botón.
+                            Con recuadro, fondo propio y sombra se lee como algo
+                            apretable estando quieto, que es cuando se lo busca. */}
+                        <span
+                          aria-hidden
+                          className="mt-px inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border border-foreground/25 bg-background/80 text-foreground shadow-sm transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground"
+                        >
+                          <ArrowUpRight className="h-3 w-3" />
+                        </span>
                       </span>
                     </Link>
                   ))}
