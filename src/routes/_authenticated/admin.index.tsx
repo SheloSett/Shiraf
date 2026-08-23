@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import type { RtaCalendario } from "@/lib/api-tipos";
-import { formatTime, STATUS_LABEL, WEEKDAYS } from "@/lib/shiraf";
+import { formatTime, STATUS_LABEL, toStatus, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: AdminCalendar,
@@ -157,22 +157,45 @@ function AdminCalendar() {
                 ) : (
                   <span className="text-xs text-muted-foreground">{day}</span>
                 )}
+                {/* Cada turno es el enlace a su ficha, y no un botoncito
+                    aparte adentro del recuadro: el recuadro entero mide dos
+                    renglones de 11px, así que un botón propio quedaría del
+                    tamaño de una uña y le robaría el lugar al nombre del
+                    tratamiento. Toda la pastilla es el botón —que es lo que la
+                    persona ya intentaba apretar— y la flechita de la esquina
+                    está para avisar que se puede.
+
+                    Lleva a Turnos con la pestaña del estado de ESTE turno ya
+                    elegida y con él resaltado; ahí están sus datos y los botones
+                    de confirmar, cancelar y avisar. Se enlaza a la lista y no a
+                    una pantalla nueva de detalle para no tener dos lugares
+                    distintos donde se toca el mismo turno. */}
                 <div className="mt-1 space-y-1">
                   {(byDay[day] ?? []).map((a) => (
-                    <div
+                    <Link
                       key={a.id}
-                      className={`rounded-sm px-1.5 py-1 text-[11px] leading-tight ${appointmentTone(
+                      to="/admin/turnos"
+                      // `toStatus` porque el estado llega como string de la
+                      // base; si fuera uno raro, cae en la pestaña por defecto.
+                      search={{ estado: toStatus(a.status) ?? "pending", turno: a.id }}
+                      title="Ver el turno con sus detalles"
+                      className={`group block rounded-sm px-1.5 py-1 text-[11px] leading-tight transition-shadow hover:ring-1 hover:ring-primary/40 ${appointmentTone(
                         a.status,
                         a.starts_at,
                         now,
                       )}`}
                     >
-                      <span className="font-medium">{formatTime(a.starts_at)}</span>{" "}
-                      {a.services?.name}
-                      <span className="block text-muted-foreground">
-                        {a.professionals?.full_name}
+                      <span className="flex items-start justify-between gap-1">
+                        <span className="min-w-0">
+                          <span className="font-medium">{formatTime(a.starts_at)}</span>{" "}
+                          {a.services?.name}
+                          <span className="block text-muted-foreground">
+                            {a.professionals?.full_name}
+                          </span>
+                        </span>
+                        <ArrowUpRight className="mt-0.5 h-3 w-3 shrink-0 opacity-40 transition-opacity group-hover:opacity-100" />
                       </span>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </>

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageCircle, Plus } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
@@ -20,7 +20,7 @@ import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest
 import { api, apiPut } from "@/lib/api";
 import type { RtaTurnos } from "@/lib/api-tipos";
 import { usePendingAppointments } from "@/hooks/usePendingAppointments";
-import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
+import { formatDateTime, formatMoney, STATUS_LABEL, toStatus } from "@/lib/shiraf";
 import {
   appointmentWhatsappUrl,
   type AppointmentEvent,
@@ -28,7 +28,32 @@ import {
 } from "@/lib/notifications";
 import { notifyAppointment } from "@/lib/notifications.functions";
 
+/**
+ * Qué mira la pantalla, escrito en la URL.
+ *
+ * `estado` es la pestaña y `turno` el turno que hay que resaltar. Los dos
+ * existen por el mismo motivo: desde el calendario se hace clic en un turno y
+ * hay que aterrizar en ÉL, no en la lista de pendientes por defecto. Guardar la
+ * pestaña acá y no en un useState tiene además dos regalos: el botón "atrás"
+ * del navegador vuelve a la pestaña anterior, y el enlace se puede compartir.
+ *
+ * Claves opcionales y no claves obligatorias en `undefined`: con
+ * `exactOptionalPropertyTypes` esa diferencia hace que el router exija `search`
+ * en cada <Link to="/admin/turnos">, aunque los dos params sean opcionales.
+ */
+type Search = { estado?: Status; turno?: string };
+
 export const Route = createFileRoute("/_authenticated/admin/turnos")({
+  validateSearch: (search: Record<string, unknown>): Search => {
+    const parsed: Search = {};
+    // `toStatus` y no un cast: el `?estado=` lo puede escribir cualquiera a
+    // mano, y un valor inventado tiene que caer en la pestaña por defecto y no
+    // pedirle a la base un estado que no existe.
+    const estado = toStatus(search["estado"]);
+    if (estado) parsed.estado = estado;
+    if (typeof search["turno"] === "string") parsed.turno = search["turno"];
+    return parsed;
+  },
   component: AdminAppointments,
 });
 
@@ -76,7 +101,28 @@ function openWhatsapp(url: string) {
 
 function AdminAppointments() {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<Status>("pending");
+  const navigate = useNavigate();
+  const search = Route.useSearch();
+
+  // Comentado, no borrado: la pestaña dejó de vivir en un useState y pasó a la
+  // URL (ver `Search` arriba). Con el estado local, entrar por el enlace del
+  // calendario mostraba siempre "Pendiente" y el turno buscado no aparecía.
+  // const [filter, setFilter] = useState<Status>("pending");
+  const filter: Status = search.estado ?? "pending";
+
+  /**
+   * Cambiar de pestaña.
+   *
+   * `replace` para no llenar el historial: son cuatro pestañas de la misma
+   * pantalla, y el "atrás" tiene que volver de donde vino la persona (el
+   * calendario, casi siempre) y no recorrer las pestañas que fue mirando.
+   *
+   * El `turno` resaltado se cae a propósito al cambiar de pestaña: el resaltado
+   * señala un turno puntual al que se vino a mirar, y ya no se está mirando.
+   */
+  const setFilter = (next: Status) => {
+    void navigate({ to: "/admin/turnos", search: { estado: next }, replace: true });
+  };
   const [creating, setCreating] = useState(false);
   /** Invitada que se está vinculando a una cuenta, o null. */
   const [linking, setLinking] = useState<GuestToLink | null>(null);
@@ -95,6 +141,21 @@ function AdminAppointments() {
     // buscar los profiles de los que sí tenían cuenta.
     queryFn: async () => (await api<RtaTurnos>(`/api/turnos?estado=${filter}`)).turnos,
   });
+
+  /**
+   * El turno que llega señalado desde el calendario.
+   *
+   * La lista trae TODOS los turnos del estado (el servidor no pagina), así que
+   * el que se busca está sí o sí en la tabla — pero puede estar a media
+   * pantalla de scroll. Se lo lleva a la vista solo, porque si no la persona
+   * hace clic en un turno de agosto y aterriza mirando los de enero.
+   */
+  const highlighted = search.turno ?? null;
+  const highlightedRow = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    if (!highlighted || !appointments.data) return;
+    highlightedRow.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlighted, appointments.data]);
 
   const setStatus = useMutation({
     mutationFn: async ({
@@ -206,7 +267,14 @@ function AdminAppointments() {
           </TableHeader>
           <TableBody>
             {appointments.data?.map((a) => (
-              <TableRow key={a.id}>
+              <TableRow
+                key={a.id}
+                ref={a.id === highlighted ? highlightedRow : null}
+                // El turno al que se vino desde el calendario, marcado con el
+                // mismo dorado suave con el que la grilla marca el día de hoy:
+                // es "acá estás", no un estado nuevo del turno.
+                className={a.id === highlighted ? "bg-gold-soft/25" : ""}
+              >
                 <TableCell className="whitespace-nowrap">{formatDateTime(a.starts_at)}</TableCell>
                 <TableCell>
                   <span className="flex items-center gap-2">

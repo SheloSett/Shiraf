@@ -1,4 +1,4 @@
-import { deliverAppointmentEmail } from "@/lib/notifications.functions";
+import { deliverAppointmentEmail } from "@/lib/notifications.server";
 
 /**
  * El recordatorio del día antes.

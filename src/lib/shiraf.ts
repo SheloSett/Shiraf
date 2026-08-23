@@ -15,6 +15,28 @@ export const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
+/**
+ * Los mismos cuatro estados de arriba, pero como unión de TypeScript.
+ *
+ * STATUS_LABEL está tipado `Record<string, string>`: alcanza para poner un
+ * cartel en pantalla, pero para el compilador la clave puede ser cualquier
+ * texto. Desde que el calendario enlaza a la pestaña correcta de Turnos hace
+ * falta lo otro: el enlace lleva el estado en la URL y el router exige que sea
+ * uno de los cuatro, no un string suelto.
+ */
+export const STATUSES = ["pending", "confirmed", "completed", "cancelled"] as const;
+export type AppointmentStatus = (typeof STATUSES)[number];
+
+/**
+ * El estado, si es uno de los cuatro; null si no.
+ *
+ * Se usa con datos que vienen de afuera y llegan como `string`: el `status` de
+ * la base y el `?estado=` de la URL, que lo escribe cualquiera a mano.
+ */
+export function toStatus(value: unknown): AppointmentStatus | null {
+  return STATUSES.includes(value as AppointmentStatus) ? (value as AppointmentStatus) : null;
+}
+
 export function formatMoney(value: number | string | null | undefined) {
   const n = Number(value ?? 0);
   return n.toLocaleString("es-AR", {
