@@ -100,7 +100,13 @@ export async function login(ctx: Ctx) {
 
   const usuario = await prisma.users.findUnique({
     where: { email },
-    select: { id: true, email: true, password: true, roles: { select: { role: true } } },
+    select: {
+      id: true,
+      email: true,
+      password: true,
+      is_active: true,
+      roles: { select: { role: true } },
+    },
   });
 
   // Se compara igual cuando la cuenta no existe, contra un hash de descarte.
@@ -112,6 +118,16 @@ export async function login(ctx: Ctx) {
 
   if (!usuario || !valida) {
     return json({ error: "Credenciales inválidas." }, 401);
+  }
+
+  // La cuenta dada de baja se rechaza DESPUÉS de verificar la contraseña, no
+  // antes. Si se contestara "está dada de baja" sin mirarla, cualquiera podría
+  // ir probando direcciones hasta encontrar las que existen — es el mismo
+  // cuidado que el hash de descarte de acá arriba. Con la contraseña correcta ya
+  // no hay nada que delatar: quien la sabe es la dueña de la cuenta, y merece
+  // saber por qué no entra en vez de pelearse con "credenciales inválidas".
+  if (!usuario.is_active) {
+    return json({ error: "Esta cuenta está dada de baja. Hablá con el centro." }, 403);
   }
 
   // El rol que va en el token es el de más alcance. Los permisos finos NO van

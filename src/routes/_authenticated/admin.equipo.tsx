@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
@@ -233,12 +234,32 @@ function AdminTeam() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /**
+   * Dar de baja sin borrar, y volver a dar de alta.
+   *
+   * Es lo que faltaba: antes, para que alguien dejara de entrar, había que
+   * borrarle la cuenta — y con eso se iban también sus accesos tildados, que
+   * después hay que volver a armar uno por uno si la persona vuelve.
+   *
+   * La baja vale en el acto aunque la empleada tenga la sesión abierta: el
+   * servidor mira `is_active` en cada pedido, no sólo al entrar.
+   */
+  const toggleActive = useMutation({
+    mutationFn: ({ userId, value }: { userId: string; value: boolean }) =>
+      apiPut("/api/equipo/empleadas/" + userId + "/activa", { is_active: value }),
+    onSuccess: async (_data, vars) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
+      toast.success(vars.value ? "Cuenta dada de alta." : "Cuenta dada de baja.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const remove = useMutation({
     mutationFn: async (userId: string) => await deleteEmployee({ data: { userId } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
       setDeleting(null);
-      toast.success("Empleada dada de baja.");
+      toast.success("Cuenta eliminada.");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -303,23 +324,47 @@ function AdminTeam() {
             <CardContent className="p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <h2 className="font-display text-2xl text-foreground">{member.full_name}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <h2 className="font-display text-2xl text-foreground">
+                    {member.full_name}
+                    {!member.is_active && (
+                      <Badge variant="outline" className="ml-3 align-middle text-xs font-normal">
+                        Dada de baja
+                      </Badge>
+                    )}
+                  </h2>
+                  {/* El mail a la vista: es con lo que entra al panel, y sin verlo
+                      no había forma de saber cuál cuenta es cuál. */}
+                  <p className="mt-1 text-sm text-muted-foreground">{member.email}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
                     {member.phone ?? "Sin teléfono"} ·{" "}
-                    {member.permissions.length === 0
-                      ? "sin accesos todavía"
-                      : `${member.permissions.length} de ${PERMISSIONS.length} accesos`}
+                    {member.permissions.length === 0 ? "sin accesos todavía" : ` de  accesos`}
                   </p>
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-9 w-9 text-destructive hover:text-destructive"
-                  aria-label={`Dar de baja a ${member.full_name}`}
-                  onClick={() => setDeleting({ id: member.id, name: member.full_name })}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+
+                <div className="flex items-center gap-3">
+                  {/* El interruptor es la baja REVERSIBLE: le corta la entrada sin
+                      perderle los accesos tildados. El tacho, al lado, sigue
+                      siendo la definitiva. Son dos cosas distintas y por eso
+                      están las dos. */}
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                    <Switch
+                      checked={member.is_active}
+                      disabled={toggleActive.isPending}
+                      onCheckedChange={(value) => toggleActive.mutate({ userId: member.id, value })}
+                      aria-label={`Habilitar el ingreso de `}
+                    />
+                    Puede entrar
+                  </label>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-9 w-9 text-destructive hover:text-destructive"
+                    aria-label={`Eliminar la cuenta de `}
+                    onClick={() => setDeleting({ id: member.id, name: member.full_name })}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
               <div className="mt-5 grid gap-2 sm:grid-cols-2">
@@ -560,11 +605,17 @@ function AdminTeam() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display text-2xl">
-              ¿Dar de baja a {deleting?.name}?
+              ¿Eliminar la cuenta de {deleting?.name}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Se borra su cuenta y no va a poder entrar más. Los turnos que haya cargado no se
-              tocan: quedan a nombre de la clienta, no de quien los cargó.
+              Esto es definitivo: se borra la cuenta con sus accesos tildados y no hay vuelta atrás.
+              Si sólo querés que deje de entrar por un tiempo, usá el interruptor «Puede entrar» —
+              le corta la entrada en el acto y le guarda los accesos para cuando vuelva.
+              <span className="mt-3 block">
+                Los turnos que haya cargado no se tocan en ninguno de los dos casos: quedan a nombre
+                de la clienta, no de quien los cargó. Su ficha de profesional, si tiene, también
+                queda.
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -573,7 +624,7 @@ function AdminTeam() {
               onClick={() => deleting && remove.mutate(deleting.id)}
               disabled={remove.isPending}
             >
-              Dar de baja
+              Eliminar la cuenta
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { prisma } from "@/server/db";
 import { json, leerCookie, type Ctx, type Handler } from "@/server/http";
 import { accesoDe, exigirPermiso } from "@/server/services/authz.service";
 import type { Permission } from "@/lib/permissions";
@@ -87,10 +88,36 @@ export function leerSesion(req: Request): Payload | null {
   }
 }
 
-/** Exige sesión. Es el `authMiddleware` del ecommerce. */
-export const authMiddleware: Handler = (ctx: Ctx) => {
+/**
+ * Exige sesión. Es el `authMiddleware` del ecommerce, con una consulta más.
+ *
+ * ── POR QUÉ TOCA LA BASE ──────────────────────────────────────────────────
+ *
+ * Para ver que la cuenta siga habilitada. Una cuenta se puede dar de baja sin
+ * borrarla —`users.is_active`— y el token dura 7 días: si esto se mirara sólo
+ * en el login, dar de baja a alguien un lunes lo dejaría trabajando hasta el
+ * lunes siguiente. Que es justo lo que no se quiere cuando alguien da de baja
+ * una cuenta a las apuradas.
+ *
+ * Es un `findUnique` por clave primaria, la consulta más barata que hay. Es el
+ * mismo canje que ya se hizo con los permisos y por el mismo motivo: una
+ * consulta más a cambio de que la decisión valga en el acto.
+ */
+export const authMiddleware: Handler = async (ctx: Ctx) => {
   const sesion = leerSesion(ctx.req);
   if (!sesion) return json({ error: "No autorizado." }, 401);
+
+  const cuenta = await prisma.users.findUnique({
+    where: { id: sesion.id },
+    select: { is_active: true },
+  });
+
+  // Sin fila: la cuenta se borró y el token todavía no venció.
+  if (!cuenta) return json({ error: "No autorizado." }, 401);
+  if (!cuenta.is_active) {
+    return json({ error: "Esta cuenta está dada de baja. Hablá con el centro." }, 403);
+  }
+
   ctx.user = sesion;
   // `undefined` explícito y no una salida implícita: con noImplicitReturns
   // prendido, TypeScript no acepta que una función a veces devuelva y a veces

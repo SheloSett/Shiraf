@@ -3,6 +3,7 @@ import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middle
 import {
   activar,
   borrar,
+  activarCuenta,
   cambiarPermiso,
   crear,
   editar,
@@ -50,3 +51,6 @@ equipoRouter.put("/vinculo", authMiddleware, vincularCuenta);
 // tuviera podría ampliarse a sí mismo cualquier otro.
 equipoRouter.get("/empleadas", authMiddleware, listarEmpleadas);
 equipoRouter.put("/empleadas/:id/permiso", authMiddleware, cambiarPermiso);
+// Dar de baja sin borrar. El candado de "sólo la dueña" está adentro del
+// controlador, igual que en los dos de arriba y por el mismo motivo.
+equipoRouter.put("/empleadas/:id/activa", authMiddleware, activarCuenta);

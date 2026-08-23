@@ -429,5 +429,13 @@ export type RtaCorreccion = { count: number };
 
 /** Una empleada, con sus accesos tildados. */
 export type RtaEmpleadas = {
-  empleadas: { id: string; full_name: string; phone: string | null; permissions: string[] }[];
+  empleadas: {
+    id: string;
+    full_name: string;
+    phone: string | null;
+    email: string;
+    /** Si está en false, la cuenta está dada de baja y no puede entrar. */
+    is_active: boolean;
+    permissions: string[];
+  }[];
 };

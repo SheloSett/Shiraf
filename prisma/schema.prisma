@@ -136,6 +136,21 @@ model users {
   verify_token_expiry DateTime? @db.Timestamptz(6)
   email_verified_at   DateTime? @db.Timestamptz(6)
 
+  /**
+   * La cuenta puede entrar.
+   *
+   * Es la baja SIN borrar: la empleada que se va de licencia, la que dejó de
+   * trabajar pero cuyo historial se quiere conservar, la cuenta que hay que
+   * cerrar de urgencia un domingo. Borrarla era lo único que había, y borrar es
+   * definitivo.
+   *
+   * Se mira en `authMiddleware`, en cada pedido con sesión, no sólo al entrar:
+   * el token dura 7 días, así que si sólo se mirara en el login una cuenta
+   * suspendida seguiría trabajando una semana. Es el mismo razonamiento por el
+   * que los permisos tampoco viajan adentro del token.
+   */
+  is_active Boolean @default(true)
+
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 

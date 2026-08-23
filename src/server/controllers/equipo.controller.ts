@@ -418,6 +418,8 @@ export async function listarEmpleadas(ctx: Ctx) {
     where: { roles: { some: { role: "staff" } } },
     select: {
       id: true,
+      email: true,
+      is_active: true,
       profile: { select: { full_name: true, phone: true } },
       permissions: { select: { permission: true } },
     },
@@ -428,6 +430,8 @@ export async function listarEmpleadas(ctx: Ctx) {
       id: c.id,
       full_name: c.profile?.full_name ?? "Sin nombre",
       phone: c.profile?.phone ?? null,
+      email: c.email,
+      is_active: c.is_active,
       permissions: c.permissions.map((p) => p.permission as string),
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name, "es"));
@@ -473,4 +477,58 @@ export async function cambiarPermiso(ctx: Ctx) {
 /** ¿Es uno de los siete accesos que existen? El enum de la base ya no valida por sí solo. */
 function esPermiso(valor: string): valor is Permission {
   return (PERMISSION_VALUES as readonly string[]).includes(valor);
+}
+
+/**
+ * Da de baja una cuenta sin borrarla, o la vuelve a habilitar.
+ *
+ * ── POR QUÉ HACÍA FALTA ───────────────────────────────────────────────────
+ *
+ * Lo único que había era borrar, y borrar es definitivo. La empleada que se va
+ * tres meses de licencia, la que dejó de trabajar pero cuyo historial se quiere
+ * conservar, la cuenta que hay que cerrar un domingo a la noche por las dudas:
+ * en los tres casos borrar es demasiado y no hacer nada es poco.
+ *
+ * La baja vale EN EL ACTO, no cuando se le venza el token: `authMiddleware`
+ * mira `is_active` en cada pedido. Ver el comentario de allá.
+ *
+ * ── LOS MISMOS TRES CANDADOS QUE LA BAJA DEFINITIVA ───────────────────────
+ *
+ * Están escritos otra vez y no reusados a propósito: son la puerta de esta
+ * pantalla, y tienen que poder leerse acá sin ir a buscarlos a otro archivo.
+ *
+ *   · sólo la dueña, porque esto es repartir accesos;
+ *   · nadie se da de baja a sí mismo — quedaría afuera del panel que necesita
+ *     para volver a entrar;
+ *   · a una administradora no se la toca desde acá. El alta de admins vive
+ *     fuera de la app a propósito y la baja respeta la misma puerta.
+ */
+export async function activarCuenta(ctx: Ctx) {
+  exigirAdmin(await accesoDe(ctx.user!.id));
+
+  const userId = ctx.params["id"];
+  const activa = ctx.body["is_active"];
+
+  if (!userId) return json({ error: "Falta la cuenta." }, 400);
+  if (typeof activa !== "boolean") return json({ error: "Falta si se da de alta o de baja." }, 400);
+
+  if (userId === ctx.user!.id) {
+    return json({ error: "No podés dar de baja tu propia cuenta." }, 422);
+  }
+
+  const roles = await prisma.user_roles.findMany({
+    where: { user_id: userId },
+    select: { role: true },
+  });
+
+  if (roles.length === 0) return json({ error: "Esa cuenta no existe." }, 404);
+  if (roles.some((r) => r.role === "admin")) {
+    return json({ error: "No se puede dar de baja a una administradora desde el panel." }, 422);
+  }
+  if (!roles.some((r) => r.role === "staff")) {
+    return json({ error: "Esa cuenta no es de una empleada." }, 422);
+  }
+
+  await prisma.users.update({ where: { id: userId }, data: { is_active: activa } });
+  return json({ ok: true });
 }
