@@ -77,7 +77,7 @@ function AuthPage() {
       // La sesión vive en una cookie httpOnly, así que no hay nada que guardar
       // acá: lo único que hace falta es tirar lo que react-query recuerde de la
       // sesión anterior. Es lo que antes hacía onAuthStateChange.
-      await olvidarSesion(queryClient);
+      olvidarSesion(queryClient);
       await goToMyPlace();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo ingresar.");
