@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Play } from "lucide-react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SiteHeader } from "@/components/site-header";
@@ -58,24 +59,33 @@ function ServiceDetail() {
   });
 
   /**
-   * La galería sin la portada. YA NO SE USA — ver el bloque comentado más
-   * abajo, donde está el porqué.
+   * Todas las fotos y videos del tratamiento, en orden, con la portada primera.
    *
    * Va acá y no después de los early returns de abajo porque es un hook: si
    * quedara ahí, se ejecutaría en unos renders y en otros no, que es lo único
    * que React no perdona.
    *
-   * La portada se descarta por URL y no por posición: es lo que hace el trigger
-   * de la base —la primera IMAGEN, salteando videos— y compararla así evita
-   * tener que repetir esa regla acá y que las dos se desincronicen.
+   * La portada se identifica por URL y no por posición: es lo que hace el
+   * trigger de la base —la primera IMAGEN, salteando videos— y compararla así
+   * evita repetir esa regla acá y que las dos se desincronicen.
    */
-  // Sin uso desde que se sacó «La galería». Se deja comentado con ella:
-  //
-  // const gallery = useMemo(() => {
-  //   const media = service.data?.service_media ?? [];
-  //   const cover = service.data?.image_url;
-  //   return [...media].sort((a, b) => a.position - b.position).filter((m) => m.url !== cover);
-  // }, [service.data]);
+  const medios = useMemo(() => {
+    const todos = [...(service.data?.service_media ?? [])].sort((a, b) => a.position - b.position);
+    const portada = service.data?.image_url;
+    // La portada al frente aunque no sea la primera de la lista: puede haber un
+    // video en position 0, y el trigger igual eligió la primera imagen.
+    return todos.sort((a, b) => Number(b.url === portada) - Number(a.url === portada));
+  }, [service.data]);
+
+  /**
+   * Cuál se está mirando.
+   *
+   * Se guarda el índice y no el objeto para que al recargar los datos —cambió
+   * una foto desde el panel— siga apuntando a un lugar válido de la lista en vez
+   * de a un elemento que ya no está.
+   */
+  const [mirando, setMirando] = useState(0);
+  const activo = medios[Math.min(mirando, Math.max(medios.length - 1, 0))];
 
   if (service.isLoading) {
     return (
@@ -178,32 +188,101 @@ function ServiceDetail() {
           </Reveal>
         </div>
 
-        {/* Mismo campo oliva con grano que el panel del home: acá también es
-            donde entra la foto del tratamiento cuando la tengas. */}
-        {/* La foto del tratamiento. Sin foto queda el campo oliva con grano,
-            que era el marcador de posición desde el principio. */}
-        {/* Columnas 8 a 11, con la 12 libre.
+        {/*
+          La imagen del tratamiento, y todo lo que se aprendió mirándola con una
+          real cargada:
 
-            A diferencia del hero del home, acá la foto NO sangra hasta el borde
-            de la pantalla. Pegada al borde y con este ancho quedaba como una
-            tira contra el margen; suelta, el margen derecho de una columna es
-            el espejo del que ya tiene el texto sobre la izquierda, y la imagen
-            se apoya en la grilla en vez de escaparse de ella. */}
-        <div className="surface-olive grain relative hidden overflow-hidden lg:col-span-4 lg:col-start-8 lg:block">
-          {s.image_url && (
-            <img
-              src={imageUrl(s.image_url, "hero") ?? undefined}
-              alt={`Tratamiento de ${s.name} en Shiraf`}
-              /* object-CONTAIN y no object-cover, que era lo que había.
-                 `cover` llena el hueco recortando lo que sobre, y para una foto
-                 de la camilla está bien: da igual dónde se corte. Pero acá lo
-                 que se sube no siempre es una foto — el centro carga FLYERS, con
-                 el nombre del tratamiento, el precio y la duración dibujados
-                 adentro. A un flyer recortarlo le come justo eso.
-                 `contain` lo muestra entero y lo que sobra queda del campo oliva
-                 con grano, que ya estaba pensado como fondo. */
-              className="absolute inset-0 h-full w-full object-contain"
-            />
+          · **No se recorta.** Lo que el centro sube son FLYERS, con el nombre,
+            la duración y el precio dibujados adentro. `object-cover` —que es lo
+            que había— le comía justo eso.
+          · **No se encaja en un alto ajeno.** El primer intento fue
+            `object-contain` sobre el alto de la columna de texto, y quedó una
+            estampilla flotando entre dos franjas de oliva. Ahora la imagen manda:
+            se muestra a su ancho completo y la columna crece con ella.
+          · **Se ve en el celular.** Antes era `hidden lg:block`, o sea que en un
+            teléfono no se veía nunca. Con un flyer eso es esconder el contenido,
+            no un adorno.
+          · **Las demás se alcanzan.** Antes vivían en una sección aparte, «La
+            galería», que era una segunda pantalla repitiendo lo que la ficha ya
+            decía. Ahora son miniaturas debajo: se cambia la grande al tocarlas,
+            que es como funciona cualquier ficha de producto.
+
+          Columnas 7 a 11: una más que antes, porque un flyer con texto adentro
+          necesita ancho para leerse.
+        */}
+        <div className="mt-12 px-5 lg:col-span-5 lg:col-start-7 lg:mt-0 lg:px-0">
+          {activo ? (
+            <>
+              <div className="surface-olive grain overflow-hidden rounded-sm">
+                {activo.kind === "video" ? (
+                  /* `controls` y nada de autoplay: un video que arranca solo con
+                     sonido es molesto, y en celular se come los datos de alguien
+                     que quizás sólo quería el precio. `preload="none"` va por lo
+                     mismo — hasta que no le den play sólo baja el poster. */
+                  <video
+                    src={videoUrl(activo.url, "hero") ?? undefined}
+                    poster={videoPosterUrl(activo.url, "hero") ?? undefined}
+                    controls
+                    preload="none"
+                    playsInline
+                    className="block h-auto w-full"
+                  />
+                ) : (
+                  <img
+                    src={imageUrl(activo.url, "hero") ?? undefined}
+                    alt={`${s.name} en Shiraf`}
+                    className="block h-auto w-full"
+                  />
+                )}
+              </div>
+
+              {/* Las miniaturas sólo si hay más de una: con una sola sería una
+                  fila de un elemento señalando lo que ya se está mirando. */}
+              {medios.length > 1 && (
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {medios.map((m, i) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMirando(i)}
+                      aria-label={`Ver ${m.kind === "video" ? "el video" : "la foto"} ${i + 1}`}
+                      aria-current={i === mirando}
+                      className={`surface-olive grain relative h-20 w-20 shrink-0 overflow-hidden rounded-sm transition-opacity ${
+                        i === mirando
+                          ? "ring-2 ring-gold ring-offset-2 ring-offset-background"
+                          : "opacity-70 hover:opacity-100"
+                      }`}
+                    >
+                      <img
+                        /* Del video se muestra un fotograma: bajar el archivo
+                           entero para pintar un cuadradito de 80px no tiene
+                           sentido. Cloudinary lo devuelve desde la misma URL. */
+                        src={
+                          (m.kind === "video"
+                            ? videoPosterUrl(m.url, "thumb")
+                            : imageUrl(m.url, "thumb")) ?? undefined
+                        }
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                      {m.kind === "video" && (
+                        <span
+                          className="absolute inset-0 flex items-center justify-center bg-black/25"
+                          aria-hidden="true"
+                        >
+                          <Play className="h-5 w-5 fill-white text-white" />
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            /* Sin ninguna foto queda el campo oliva con grano, que era el
+               marcador de posición desde el principio del diseño. */
+            <div className="surface-olive grain hidden aspect-[3/4] rounded-sm lg:block" />
           )}
         </div>
       </section>
@@ -214,31 +293,13 @@ function ServiceDetail() {
           hace falta aire entre el botón y el filete. */}
       <OrganicRule className="mt-20 lg:mt-0" />
 
-      {/* ── «La galería» SACADA (23/8/2026, decisión del centro) ─────────────
-          Acá iba una sección que listaba el resto de las fotos y los videos del
-          tratamiento, debajo del hero.
+      {/* Acá iba «La galería»: una sección aparte que listaba el resto de las
+          fotos y los videos debajo del hero, con su propio título a media
+          pantalla. Se sacó porque repetía lo que la ficha ya dice y obligaba a
+          scrollear para ver una segunda foto.
 
-          Se saca porque no aporta: lo que el centro sube es UN flyer por
-          tratamiento —con el nombre, la duración y el precio dibujados adentro—
-          y ese flyer ya es la portada, que se ve arriba a media pantalla.
-          La galería quedaba entonces como una segunda fila de imágenes sueltas,
-          repitiendo o desordenando lo que la ficha ya dice.
-
-          Lo que NO se toca, a propósito:
-            · se pueden seguir cargando varias fotos y videos desde el panel;
-            · el trigger sync_service_cover sigue eligiendo la portada;
-            · si algún día se quiere mostrar de vuelta, es descomentar esto.
-
-          El código queda comentado y no borrado para que se vea qué había y por
-          qué se fue.
-
-      {gallery.length > 0 && (
-        <>
-          … la sección entera, con su <Reveal>, la grilla de 3 columnas y el
-          <video controls preload="none"> para los videos …
-        </>
-      )}
-      ─────────────────────────────────────────────────────────────────────── */}
+          Esas fotos no se perdieron: ahora son las miniaturas de arriba, al pie
+          de la imagen grande. */}
 
       {/* Quién lo realiza. Los horarios que se muestran son los de atención de
           cada profesional — datos públicos de professional_schedules — no la

@@ -213,3 +213,24 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       ningún lado. Los cumpleaños son acción comercial clásica en estética.
 - [ ] El favicon sigue siendo el de Lovable.
 - [ ] Fotos reales del centro. Sigue siendo el techo del diseño.
+
+
+
+
+## http://localhost:8081/admin/turnos
+1- falta poder tener una vista en detalle del turno con la posibilidad de ver los datos de la clienta y modificar el estado del turno
+
+
+
+## http://localhost:8081/admin/profesionales
+1- cuando creo a una profesional automaticamente deberia formar parte del "equipo", entonces en su creacio del profesional debo tener el campo de email y contraseño para que automaticamente ya pueda acceder
+
+2- cuando ponemos su horario solo tenemos un rango de horario por dia, es decir que si en el dia tiene su break y trabaja:
+LUNES 9:00 a 13:00
+14hrs no trabaja
+LUNES 15:00 a 17:00
+
+La idea es que sea algo onda:
+LUNES 9:00 a 13:00 - 15:00 a 17:00
+
+
