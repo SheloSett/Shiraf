@@ -90,3 +90,8 @@ scripts/usuarios.json
 # ignora igual, porque el compose de produccion se puede correr en cualquier
 # maquina para probarlo.
 backups/
+
+# La lista de pruebas a mano. NO va al repo por dos motivos: tiene las
+# contrasenas de las cuentas de prueba —y este repositorio es publico— y
+# ademas es un cuaderno de trabajo, no documentacion del proyecto.
+PRUEBAS.md
