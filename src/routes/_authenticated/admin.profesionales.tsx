@@ -160,6 +160,10 @@ function AdminProfessionals() {
    * que se quiere, porque renunció— pero lo pone a la vista para poder
    * reasignarlos antes.
    *
+   * Reasignar se hace turno por turno, desde la ficha de cada uno: «Pasárselo a
+   * otra profesional». Hasta que eso existió, este aviso recomendaba algo que
+   * no se podía hacer.
+   *
    * Ojo: leer turnos ajenos exige el permiso `appointments`. Sin él la RLS
    * devuelve vacío y el aviso no aparece. Es una limitación conocida y no un
    * bug: quien gestiona el equipo sin ver la agenda no tiene con qué avisar.
@@ -1133,7 +1137,9 @@ function AdminProfessionals() {
               desactivás, deja de aparecer en el sitio y no se le pueden sacar turnos nuevos, pero
               esos siguen en pie y la clienta no recibe ningún aviso.
               <span className="mt-3 block">
-                Conviene reasignarlos o cancelarlos desde Turnos antes de seguir.
+                Para pasárselos a otra: entrá a <strong>Turnos</strong>, abrí cada uno y usá
+                «Pasárselo a otra profesional». Sólo te va a ofrecer las que realizan ese
+                tratamiento.
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>

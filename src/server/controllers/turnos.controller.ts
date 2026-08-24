@@ -12,6 +12,7 @@ import type {
   RtaCorreccion,
   RtaMiAgenda,
   RtaPendientes,
+  RtaProfesionalesParaElTurno,
   RtaServiciosParaTurno,
   RtaTurnos,
   RtaTurnoEnDetalle,
@@ -485,4 +486,146 @@ export async function vincularInvitada(ctx: Ctx) {
 
   const count = await vincularTurnosDeInvitada(telefono, clientaId);
   return json({ count } satisfies RtaCorreccion);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cambiarle la profesional a un turno
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Las profesionales a las que se le puede pasar este turno.
+ *
+ * ── POR QUÉ NO ALCANZABA CON LA LISTA PÚBLICA ─────────────────────────────
+ *
+ * `/api/publico/servicios/:id/profesionales` ya devuelve quién hace un
+ * tratamiento, pero para elegir a dónde mudar un turno falta lo que importa:
+ * **quién tiene ese horario libre**. Sin eso hay que ir probando una por una y
+ * comerse el rechazo de la base cada vez.
+ *
+ * Cada candidata viene con `libre`, que se calcula acá y no en el WHERE porque
+ * la condición depende de dos columnas de la misma fila —`starts_at` y
+ * `duration_minutes`— y Prisma no sabe expresar eso sin SQL crudo. Es la misma
+ * decisión, con el mismo motivo, que en `miAgenda`.
+ *
+ * ⚠️ `libre` es una AYUDA PARA ELEGIR, no el candado. El candado sigue siendo
+ * el trigger `check_appointment_overlap`, que decide dentro de la misma
+ * transacción que la escritura. Entre que esta lista se dibuja y que se aprieta
+ * Cambiar puede entrar otra reserva, y ahí manda la base.
+ */
+export async function profesionalesParaElTurno(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta el turno." }, 400);
+
+  const turno = await prisma.appointments.findUnique({
+    where: { id },
+    select: { id: true, service_id: true, starts_at: true, duration_minutes: true },
+  });
+  if (!turno) return json({ error: "Ese turno no existe." }, 404);
+
+  // Si el tratamiento se borró del catálogo no hay con qué filtrar, así que se
+  // ofrecen todas las activas. Es el caso raro y la alternativa —no ofrecer
+  // ninguna— dejaría el turno sin poder reasignarse nunca.
+  const candidatas = await prisma.professionals.findMany({
+    where: {
+      is_active: true,
+      ...(turno.service_id ? { services: { some: { service_id: turno.service_id } } } : {}),
+    },
+    select: { id: true, full_name: true },
+    orderBy: { full_name: "asc" },
+  });
+
+  const termina = new Date(turno.starts_at.getTime() + turno.duration_minutes * 60_000);
+  // La ventana arranca 8 horas antes: un turno que empezó a la mañana no puede
+  // seguir pisando a la tarde, y así se traen pocas filas en vez de la agenda
+  // entera.
+  const desde = new Date(turno.starts_at.getTime() - 8 * 60 * 60_000);
+
+  const ocupadas = await prisma.appointments.findMany({
+    where: {
+      professional_id: { in: candidatas.map((c) => c.id) },
+      status: { in: ["pending", "confirmed"] },
+      id: { not: turno.id },
+      starts_at: { gte: desde, lt: termina },
+    },
+    select: { professional_id: true, starts_at: true, duration_minutes: true },
+  });
+
+  const pisadas = new Set(
+    ocupadas
+      // Dos rangos se pisan si cada uno empieza antes de que termine el otro. El
+      // `starts_at < termina` ya lo trajo el WHERE; falta la otra mitad.
+      .filter(
+        (a) => turno.starts_at < new Date(a.starts_at.getTime() + a.duration_minutes * 60_000),
+      )
+      .map((a) => a.professional_id),
+  );
+
+  return json({
+    profesionales: candidatas.map((c) => ({
+      id: c.id,
+      full_name: c.full_name,
+      libre: !pisadas.has(c.id),
+    })),
+  } satisfies RtaProfesionalesParaElTurno);
+}
+
+/**
+ * Le cambia la profesional a un turno, o lo deja sin asignar.
+ *
+ * ── POR QUÉ EXISTE ────────────────────────────────────────────────────────
+ *
+ * Al desactivar a una profesional, el panel avisaba que le quedaban turnos
+ * futuros y recomendaba "reasignarlos o cancelarlos". Reasignar no se podía
+ * hacer desde ningún lado: la única salida real era cancelarle el turno a la
+ * clienta y volver a sacarlo. El aviso mandaba a hacer algo que no existía.
+ *
+ * ── LO QUE SE VALIDA, Y LO QUE DEJA VALIDAR LA BASE ───────────────────────
+ *
+ * Acá: que la profesional exista, esté activa y haga ese tratamiento. Es la
+ * misma regla que `validarTurno` le aplica al alta, y no se le perdona a nadie
+ * —tampoco a la dueña— porque es una casilla del panel: si no está tildada, lo
+ * más probable es que sea un error de carga.
+ *
+ * La superposición NO se chequea acá, y es a propósito. La decide el trigger
+ * `check_appointment_overlap`, dentro de la misma transacción que el UPDATE.
+ * Mirarlo en código sería "fijate si está libre" y después "escribí", con lugar
+ * para que entre otra reserva en el medio. El router traduce el 23P01 del
+ * trigger al mensaje que ve la pantalla.
+ *
+ * `null` está permitido: el panel puede dejar un turno sin asignar y resolverlo
+ * después. Es lo mismo que ya deja hacer el alta.
+ */
+export async function cambiarProfesional(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta el turno." }, 400);
+
+  const crudo = ctx.body["professional_id"];
+  const nuevaId = typeof crudo === "string" && crudo !== "" ? crudo : null;
+
+  const turno = await prisma.appointments.findUnique({
+    where: { id },
+    select: { id: true, service_id: true },
+  });
+  if (!turno) return json({ error: "Ese turno no existe." }, 404);
+
+  if (nuevaId !== null) {
+    const profesional = await prisma.professionals.findFirst({
+      where: { id: nuevaId, is_active: true },
+      select: { id: true },
+    });
+    if (!profesional) return json({ error: "Esa profesional no está disponible." }, 422);
+
+    // Sin tratamiento no hay nada que comprobar: se borró del catálogo y el
+    // turno conserva sólo el nombre congelado.
+    if (turno.service_id) {
+      const hace = await prisma.professional_services.findFirst({
+        where: { professional_id: nuevaId, service_id: turno.service_id },
+        select: { id: true },
+      });
+      if (!hace) return json({ error: "Esa profesional no realiza ese tratamiento." }, 422);
+    }
+  }
+
+  await prisma.appointments.update({ where: { id }, data: { professional_id: nuevaId } });
+  return json({ ok: true });
 }

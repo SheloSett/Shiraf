@@ -439,3 +439,14 @@ export type RtaEmpleadas = {
     permissions: string[];
   }[];
 };
+
+/**
+ * Las profesionales a las que se le puede pasar un turno.
+ *
+ * `libre` dice si tiene ese horario disponible. Es una ayuda para elegir, no la
+ * regla: la superposición la decide la base al escribir, dentro de la misma
+ * transacción. Ver `profesionalesParaElTurno`.
+ */
+export type RtaProfesionalesParaElTurno = {
+  profesionales: { id: string; full_name: string; libre: boolean }[];
+};

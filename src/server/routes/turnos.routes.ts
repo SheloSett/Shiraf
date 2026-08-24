@@ -4,6 +4,7 @@ import {
   alcanceDeInvitada,
   calendario,
   cambiarEstado,
+  cambiarProfesional,
   clientasParaElegir,
   corregirInvitada,
   crear,
@@ -11,6 +12,7 @@ import {
   listar,
   miAgendaDeHoy,
   pendientes,
+  profesionalesParaElTurno,
   serviciosParaTurno,
   vincularInvitada,
 } from "@/server/controllers/turnos.controller";
@@ -34,6 +36,12 @@ turnosRouter.get("/", ...gestionarTurnos, listar);
 turnosRouter.get("/pendientes", ...gestionarTurnos, pendientes);
 turnosRouter.get("/calendario", ...gestionarTurnos, calendario);
 turnosRouter.put("/:id/estado", ...gestionarTurnos, cambiarEstado);
+
+// Pasarle el turno a otra profesional. El GET trae las candidatas —las que hacen
+// ese tratamiento— y dice cuáles tienen el horario libre. Dos segmentos, así que
+// no se pisan con las rutas de un solo segmento de más abajo.
+turnosRouter.get("/:id/profesionales", ...gestionarTurnos, profesionalesParaElTurno);
+turnosRouter.put("/:id/profesional", ...gestionarTurnos, cambiarProfesional);
 turnosRouter.post("/", ...gestionarTurnos, crear);
 
 // El formulario de «Nuevo turno».

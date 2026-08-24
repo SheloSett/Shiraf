@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { ArrowLeft, Clock, Mail, MessageCircle, Phone, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
-import { api } from "@/lib/api";
-import type { RtaTurnoEnDetalle } from "@/lib/api-tipos";
+import { api, apiPut } from "@/lib/api";
+import type { RtaProfesionalesParaElTurno, RtaTurnoEnDetalle } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, STATUS_LABEL, toStatus } from "@/lib/shiraf";
 import { appointmentWhatsappUrl } from "@/lib/notifications";
 import {
@@ -293,6 +294,12 @@ function FichaDelTurno() {
             )}
           </div>
 
+          {/* Reasignar sólo tiene sentido sobre un turno que se va a atender. Uno
+              cerrado no se mueve de profesional: ya pasó. */}
+          {(estado === "pending" || estado === "confirmed") && (
+            <CambiarProfesional turnoId={t.id} actualId={t.professionals?.id ?? null} />
+          )}
+
           {(estado === "completed" || estado === "cancelled") && (
             <p className="mt-4 text-sm text-muted-foreground">
               Este turno ya está cerrado como “{STATUS_LABEL[t.status]}”. No hay nada más que
@@ -304,6 +311,96 @@ function FichaDelTurno() {
 
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
       <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
+    </div>
+  );
+}
+
+/**
+ * Pasarle el turno a otra profesional.
+ *
+ * ── POR QUÉ ES UN COMPONENTE APARTE ───────────────────────────────────────
+ *
+ * Porque tiene sus propios hooks y la ficha los tendría que declarar antes de
+ * saber si el turno existe — arriba de los `return` tempranos, donde todavía no
+ * hay ni id de tratamiento ni horario que pedir. Acá se monta cuando ya hay
+ * turno y pide sus datos con eso a la vista.
+ *
+ * ── LO QUE MUESTRA Y LO QUE NO DECIDE ─────────────────────────────────────
+ *
+ * El desplegable trae sólo a las que hacen ese tratamiento, y marca «(ocupada)»
+ * a las que ya tienen algo a esa hora. Eso es una ayuda para elegir: la que
+ * decide de verdad es la base, dentro de la misma transacción que la escritura.
+ * Si entre que se dibuja la lista y se aprieta Cambiar entra otra reserva, el
+ * pedido vuelve con «Ese horario ya fue tomado con esa profesional» — y está
+ * bien que así sea.
+ */
+function CambiarProfesional({ turnoId, actualId }: { turnoId: string; actualId: string | null }) {
+  const queryClient = useQueryClient();
+  const [elegida, setElegida] = useState<string>(actualId ?? "");
+
+  const candidatas = useQuery({
+    queryKey: ["turno", turnoId, "profesionales"],
+    queryFn: async () =>
+      (await api<RtaProfesionalesParaElTurno>(`/api/turnos/${turnoId}/profesionales`))
+        .profesionales,
+  });
+
+  const mover = useMutation({
+    mutationFn: (professional_id: string | null) =>
+      apiPut(`/api/turnos/${turnoId}/profesional`, { professional_id }),
+    onSuccess: async () => {
+      // El prefijo alcanza para las dos: la ficha y su lista de candidatas.
+      await queryClient.invalidateQueries({ queryKey: ["turno", turnoId] });
+      await queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      toast.success("Turno reasignado.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const sinCambio = (elegida || null) === actualId;
+
+  return (
+    <div className="mt-6 border-t border-border pt-5">
+      <p className="text-sm font-medium text-foreground">Pasárselo a otra profesional</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Sólo aparecen las que realizan este tratamiento. La clienta no recibe ningún aviso: si hay
+        que contarle, mandale un mensaje.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <select
+          value={elegida}
+          onChange={(e) => setElegida(e.target.value)}
+          disabled={candidatas.isPending || mover.isPending}
+          aria-label="Profesional del turno"
+          className="h-10 min-w-56 rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <option value="">Sin asignar</option>
+          {candidatas.data?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.full_name}
+              {/* Ocupada no la saca de la lista: puede ser justo la que hay que
+                  poner, y el rechazo con el motivo se lee mejor que una opción
+                  que no está y no se sabe por qué. */}
+              {p.libre || p.id === actualId ? "" : " (ocupada a esa hora)"}
+            </option>
+          ))}
+        </select>
+
+        <Button
+          variant="outline"
+          disabled={sinCambio || mover.isPending}
+          onClick={() => mover.mutate(elegida || null)}
+        >
+          Cambiar
+        </Button>
+      </div>
+
+      {candidatas.data?.length === 0 && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          No hay ninguna otra profesional activa que realice este tratamiento.
+        </p>
+      )}
     </div>
   );
 }
