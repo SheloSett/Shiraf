@@ -192,9 +192,23 @@ function AdminCalendar() {
                         <span className="min-w-0">
                           <span className="font-medium">{formatTime(a.starts_at)}</span>{" "}
                           {a.services?.name}
-                          <span className="block text-muted-foreground">
-                            {a.professionals?.full_name}
-                          </span>
+                          {/* Sin profesional, la línea quedaba VACÍA: el turno
+                              se veía igual que cualquier otro y no había forma
+                              de notar que le falta quién lo atienda.
+
+                              Y con una profesional desactivada era peor: mostraba
+                              su nombre como si nada, cuando esa persona ya no
+                              viene. Los dos casos van en rojo, porque los dos
+                              son el mismo trabajo pendiente. */}
+                          {a.professionals && a.professionals.is_active ? (
+                            <span className="block text-muted-foreground">
+                              {a.professionals.full_name}
+                            </span>
+                          ) : (
+                            <span className="block font-semibold text-destructive">
+                              ⚠ {a.professionals ? "Ya no atiende" : "Sin asignar"}
+                            </span>
+                          )}
                         </span>
                         {/* El botón, dibujado y no insinuado. Antes era la
                             flecha suelta al 40% de opacidad que se encendía al

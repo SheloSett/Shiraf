@@ -220,7 +220,14 @@ function FichaDelTurno() {
 
           <Dato etiqueta="Profesional">
             {t.professionals?.full_name ?? (
-              <span className="text-muted-foreground">Sin asignar</span>
+              <span className="font-semibold text-destructive">Sin asignar</span>
+            )}
+            {/* Tiene nombre pero ya no atiende: es el caso que más se escapa,
+                porque la ficha muestra un nombre y parece resuelta. */}
+            {t.professionals && !t.professionals.is_active && (
+              <span className="mt-1 block text-xs font-semibold text-destructive">
+                Ya no atiende — hay que pasarle este turno a otra.
+              </span>
             )}
           </Dato>
 
@@ -297,7 +304,7 @@ function FichaDelTurno() {
           {/* Reasignar sólo tiene sentido sobre un turno que se va a atender. Uno
               cerrado no se mueve de profesional: ya pasó. */}
           {(estado === "pending" || estado === "confirmed") && (
-            <CambiarProfesional turnoId={t.id} actualId={t.professionals?.id ?? null} />
+            <CambiarProfesional turnoId={t.id} actual={t.professionals} />
           )}
 
           {(estado === "completed" || estado === "cancelled") && (
@@ -334,8 +341,15 @@ function FichaDelTurno() {
  * pedido vuelve con «Ese horario ya fue tomado con esa profesional» — y está
  * bien que así sea.
  */
-function CambiarProfesional({ turnoId, actualId }: { turnoId: string; actualId: string | null }) {
+function CambiarProfesional({
+  turnoId,
+  actual,
+}: {
+  turnoId: string;
+  actual: { id: string; full_name: string; is_active: boolean } | null;
+}) {
   const queryClient = useQueryClient();
+  const actualId = actual?.id ?? null;
   const [elegida, setElegida] = useState<string>(actualId ?? "");
 
   const candidatas = useQuery({
@@ -349,9 +363,17 @@ function CambiarProfesional({ turnoId, actualId }: { turnoId: string; actualId: 
     mutationFn: (professional_id: string | null) =>
       apiPut(`/api/turnos/${turnoId}/profesional`, { professional_id }),
     onSuccess: async () => {
-      // El prefijo alcanza para las dos: la ficha y su lista de candidatas.
+      // Las cuatro pantallas que muestran quién atiende este turno. Son las
+      // mismas que invalida `useCambiarEstadoDeTurno` y por el mismo motivo:
+      // olvidarse de una deja el nombre viejo en pantalla y parece que el
+      // cambio no se guardó.
+      //
+      // ⚠️ "appointments" a secas NO es ninguna clave de este proyecto — era el
+      // error que tenía esto: se invalidaba algo que no existe y ni el listado
+      // ni el calendario se enteraban del cambio.
       await queryClient.invalidateQueries({ queryKey: ["turno", turnoId] });
-      await queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-calendar"] });
       toast.success("Turno reasignado.");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -361,7 +383,16 @@ function CambiarProfesional({ turnoId, actualId }: { turnoId: string; actualId: 
 
   return (
     <div className="mt-6 border-t border-border pt-5">
-      <p className="text-sm font-medium text-foreground">Pasárselo a otra profesional</p>
+      <p
+        className={`text-sm font-medium ${
+          actual && actual.is_active ? "text-foreground" : "text-destructive"
+        }`}
+      >
+        Pasárselo a otra profesional
+        {/* Cuando el turno no tiene quién lo atienda, esto deja de ser una
+            opción y pasa a ser lo que hay que hacer. Se dice con el color. */}
+        {(!actual || !actual.is_active) && " — este turno lo necesita"}
+      </p>
       <p className="mt-1 text-sm text-muted-foreground">
         Sólo aparecen las que realizan este tratamiento. La clienta no recibe ningún aviso: si hay
         que contarle, mandale un mensaje.
@@ -376,6 +407,12 @@ function CambiarProfesional({ turnoId, actualId }: { turnoId: string; actualId: 
           className="h-10 min-w-56 rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           <option value="">Sin asignar</option>
+          {/* La actual, cuando ya no está entre las candidatas — porque se la
+              desactivó. Sin esta opción el desplegable arrancaba en blanco y no
+              se entendía a nombre de quién estaba el turno. */}
+          {actual && !actual.is_active && (
+            <option value={actual.id}>{actual.full_name} (ya no atiende)</option>
+          )}
           {candidatas.data?.map((p) => (
             <option key={p.id} value={p.id}>
               {p.full_name}

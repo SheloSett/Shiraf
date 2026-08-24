@@ -313,7 +313,8 @@ export type TurnoDelPanel = {
   guest_phone: string | null;
   guest_email: string | null;
   services: { name: string; price: number };
-  professionals: { full_name: string } | null;
+  /** `is_active` en false: ya no atiende, y este turno hay que reasignarlo. */
+  professionals: { full_name: string; is_active: boolean } | null;
   person: PersonaDelTurno;
 };
 
@@ -354,12 +355,21 @@ export type TurnoEnDetalle = {
    * cobró está en `price` del turno.
    */
   services: { id: string | null; name: string; price: number | null };
-  professionals: { id: string; full_name: string } | null;
+  /** `is_active` en false: ya no atiende, y este turno hay que reasignarlo. */
+  professionals: { id: string; full_name: string; is_active: boolean } | null;
   person: PersonaDelTurno;
 };
 
 export type RtaTurnoEnDetalle = { turno: TurnoEnDetalle };
-export type RtaPendientes = { total: number };
+/**
+ * Los contadores del panel.
+ *
+ * `total` son los turnos sin contestar; `sinProfesional`, los que se van a
+ * atender y no tienen a quién — ni asignada, ni una que siga atendiendo. El
+ * segundo es trabajo pendiente del centro, no un aviso: hasta que no se
+ * resuelva, ese día no hay nadie para atender a la clienta.
+ */
+export type RtaPendientes = { total: number; sinProfesional: number };
 
 export type TurnoDelCalendario = {
   id: string;
@@ -367,7 +377,8 @@ export type TurnoDelCalendario = {
   status: string;
   /** Siempre está: si el tratamiento se borró, sale el nombre congelado. */
   services: { name: string };
-  professionals: { full_name: string } | null;
+  /** `is_active` en false: ya no atiende, y este turno hay que reasignarlo. */
+  professionals: { full_name: string; is_active: boolean } | null;
 };
 
 export type RtaCalendario = { turnos: TurnoDelCalendario[] };

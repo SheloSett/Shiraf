@@ -18,7 +18,7 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { apiPost } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
-import { usePendingAppointments } from "@/hooks/usePendingAppointments";
+import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -161,6 +161,9 @@ function AdminLayout() {
   // Turnos esperando respuesta. Se pide sólo si la persona puede verlos: sin el
   // acceso, la RLS devuelve cero igual y la consulta sería al pedo.
   const pendingCount = usePendingAppointments(can("appointments"));
+  // Turnos que se van a atender y no tienen a quién. Es trabajo pendiente del
+  // centro, no un aviso: si nadie los resuelve, ese día no hay profesional.
+  const unassignedCount = useUnassignedAppointments(can("appointments"));
 
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
   const visibleNav = nav.filter((item) => allows(item.access));
@@ -251,13 +254,34 @@ function AdminLayout() {
                   >
                     <item.icon className="h-4 w-4" />
                     {item.label}
-                    {/* El contador de turnos por responder. Va en el menú y no
-                        sólo adentro de la sección para que se vea desde
-                        cualquier pantalla del panel: un turno pendiente es
-                        alguien esperando una respuesta. */}
-                    {item.to === "/admin/turnos" && pendingCount > 0 && (
-                      <span className="ml-auto min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums">
-                        {pendingCount > 99 ? "99+" : pendingCount}
+                    {/* Los dos contadores de Turnos. Van en el menú y no sólo
+                        adentro de la sección para que se vean desde cualquier
+                        pantalla del panel.
+
+                        El rojo va PRIMERO, y es el de los turnos sin profesional
+                        asignada. Un turno pendiente es alguien esperando una
+                        respuesta; uno sin profesional es un turno que va a
+                        llegar sin que haya nadie para atenderlo. El segundo no
+                        se resuelve solo ni salta a la vista, así que se le da el
+                        color que no se puede ignorar. */}
+                    {item.to === "/admin/turnos" && (unassignedCount > 0 || pendingCount > 0) && (
+                      <span className="ml-auto flex items-center gap-1">
+                        {unassignedCount > 0 && (
+                          <span
+                            title={`${unassignedCount} sin profesional asignada`}
+                            className="min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                          >
+                            {unassignedCount > 99 ? "99+" : unassignedCount}
+                          </span>
+                        )}
+                        {pendingCount > 0 && (
+                          <span
+                            title={`${pendingCount} esperando respuesta`}
+                            className="min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums"
+                          >
+                            {pendingCount > 99 ? "99+" : pendingCount}
+                          </span>
+                        )}
                       </span>
                     )}
                   </Link>

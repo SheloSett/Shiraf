@@ -1,4 +1,4 @@
-import type { appointment_status } from "@prisma/client";
+import type { appointment_status, Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
 import { miAgenda, vincularTurnosDeInvitada } from "@/server/services/agenda.service";
@@ -66,12 +66,62 @@ function personaDe(turno: ConPersona) {
 // La lista del panel
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Un turno que nadie va a atender.
+ *
+ * Los dos casos, y el segundo es el que engaña: la fila muestra un nombre, así
+ * que parece resuelta, pero esa profesional está desactivada y no viene más.
+ *
+ * Escrito una vez y usado en los dos lugares —el filtro de la tabla y el
+ * contador del menú— porque si se separan, el número diría una cosa y la lista
+ * mostraría otra. Ese desacuerdo es de los que nadie reporta: se asume que el
+ * número está mal y se lo ignora.
+ */
+// Tipado y no `as const`: con `as const` el array de OR queda readonly y Prisma
+// lo rechaza pidiendo uno mutable, con un error que habla de exactOptional y no
+// de esto.
+const SIN_QUIEN_LO_ATIENDA: Prisma.appointmentsWhereInput = {
+  OR: [{ professional_id: null }, { professional: { is_active: false } }],
+};
+
+/**
+ * La tabla de Turnos.
+ *
+ * ── LOS DOS FILTROS ───────────────────────────────────────────────────────
+ *
+ * `estado` es obligatorio y acepta los cuatro de siempre más `todos`, que es
+ * justamente "no filtres por estado". Sin ese valor no habría forma de ver un
+ * turno sin saber de antemano en qué estado quedó.
+ *
+ * `sinProfesional=1` deja sólo los que **no tienen quién los atienda**, y eso
+ * son DOS casos, no uno:
+ *
+ *   · el turno no tiene profesional asignada, y
+ *   · la tiene, pero esa profesional está desactivada.
+ *
+ * El segundo es el que se pasa por alto. La fila muestra un nombre, así que
+ * parece resuelta — y esa persona ya no atiende. Cuando se desactiva a alguien,
+ * sus turnos futuros NO se tocan a propósito (a veces es justo lo que se
+ * quiere), pero entonces quedan colgados sin que nada lo diga.
+ *
+ * Es lo que abre el cartel rojo de la pantalla: son trabajo pendiente del centro
+ * y hay que poder verlos todos juntos, sin ir pestaña por pestaña.
+ */
 export async function listar(ctx: Ctx) {
-  const estado = estadoDe(ctx.url.searchParams.get("estado"));
-  if (!estado) return json({ error: "Falta el estado." }, 400);
+  const crudo = ctx.url.searchParams.get("estado");
+  // `todos` no es un `appointment_status`, así que no pasa por `estadoDe`: se
+  // mira antes y se traduce a "sin filtro de estado".
+  const todos = crudo === "todos";
+  const estado = todos ? null : estadoDe(crudo);
+  if (!todos && !estado) return json({ error: "Falta el estado." }, 400);
+
+  const soloSinProfesional = ctx.url.searchParams.get("sinProfesional") === "1";
 
   const turnos = await prisma.appointments.findMany({
-    where: { status: estado },
+    where: {
+      ...(estado ? { status: estado } : {}),
+      ...(soloSinProfesional ? SIN_QUIEN_LO_ATIENDA : {}),
+    },
     orderBy: { starts_at: "asc" },
     select: {
       id: true,
@@ -84,7 +134,9 @@ export async function listar(ctx: Ctx) {
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
       price: true,
-      professional: { select: { full_name: true } },
+      // `is_active` viaja a la pantalla: es lo que le permite marcar en rojo al
+      // turno de una profesional que ya no atiende.
+      professional: { select: { full_name: true, is_active: true } },
     },
   });
 
@@ -113,10 +165,38 @@ export async function listar(ctx: Ctx) {
   } satisfies RtaTurnos);
 }
 
-/** Cuántos turnos esperan respuesta. Es el número del menú del panel. */
+/**
+ * Los dos números que el panel muestra sin que nadie los vaya a buscar.
+ *
+ * ── POR QUÉ VIAJAN JUNTOS ─────────────────────────────────────────────────
+ *
+ * Son dos consultas de conteo sobre la misma tabla y los dos los pinta el mismo
+ * menú lateral. En dos endpoints serían dos viajes y dos relojes de refresco
+ * distintos, con el resultado de que un número se actualiza y el otro no.
+ *
+ * ── QUÉ ES CADA UNO ───────────────────────────────────────────────────────
+ *
+ *   total          · turnos pedidos por la web que nadie contestó todavía.
+ *   sinProfesional · turnos que se van a atender y NO tienen a quién.
+ *
+ * El segundo es el que no se puede ignorar: el turno existe, la clienta lo
+ * espera, y el día que llegue no hay nadie para atenderla. Pasa cuando el centro
+ * lo carga sin decidir quién atiende, cuando se reasigna uno y se deja a medias,
+ * y —el caso que más se escapa— **cuando se desactiva a una profesional y sus
+ * turnos futuros quedan a su nombre**. Ese último ni siquiera se ve: la fila
+ * muestra un nombre como cualquier otra.
+ *
+ * Cancelados y realizados quedan afuera de esa cuenta: al primero no hay que
+ * asignarle a nadie y el segundo ya pasó.
+ */
 export async function pendientes() {
-  const total = await prisma.appointments.count({ where: { status: "pending" } });
-  return json({ total } satisfies RtaPendientes);
+  const [total, sinProfesional] = await Promise.all([
+    prisma.appointments.count({ where: { status: "pending" } }),
+    prisma.appointments.count({
+      where: { ...SIN_QUIEN_LO_ATIENDA, status: { in: ["pending", "confirmed"] } },
+    }),
+  ]);
+  return json({ total, sinProfesional } satisfies RtaPendientes);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,7 +236,7 @@ export async function detalle(ctx: Ctx) {
       service: { select: { id: true, name: true, price: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
-      professional: { select: { id: true, full_name: true } },
+      professional: { select: { id: true, full_name: true, is_active: true } },
     },
   });
 
@@ -210,7 +290,9 @@ export async function calendario(ctx: Ctx) {
       service: { select: { name: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
-      professional: { select: { full_name: true } },
+      // `is_active` va también acá: un turno de alguien que ya no atiende tiene
+      // que verse en el calendario, no sólo en la tabla.
+      professional: { select: { full_name: true, is_active: true } },
     },
   });
 

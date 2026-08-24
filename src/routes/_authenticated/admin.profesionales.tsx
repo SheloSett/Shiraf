@@ -187,6 +187,13 @@ function AdminProfessionals() {
     await queryClient.invalidateQueries({ queryKey: ["admin-professionals"] });
     // Las páginas públicas y el formulario de reserva leen los mismos datos.
     await queryClient.invalidateQueries({ queryKey: ["professionals"] });
+    // Y los turnos, que muestran a la profesional de cada uno. Desactivar a
+    // alguien deja sus turnos futuros a su nombre —a propósito— pero pasan a
+    // contar como "sin nadie que los atienda": el cartel rojo de Turnos y el
+    // número del menú tienen que reflejarlo en el momento, no en el próximo
+    // refresco.
+    await queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+    await queryClient.invalidateQueries({ queryKey: ["admin-calendar"] });
   }
 
   const save = useMutation({

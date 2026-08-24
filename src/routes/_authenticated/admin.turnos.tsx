@@ -16,14 +16,14 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEffect, useRef, useState } from "react";
-import { FileText, MessageCircle, Plus } from "lucide-react";
+import { FileText, MessageCircle, Plus, TriangleAlert } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
 // import { api, apiPut } from "@/lib/api";  ← `apiPut` se fue con la mutación.
 import { api } from "@/lib/api";
 import type { RtaTurnos } from "@/lib/api-tipos";
-import { usePendingAppointments } from "@/hooks/usePendingAppointments";
+import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
 import { formatDateTime, formatMoney, STATUS_LABEL, toStatus } from "@/lib/shiraf";
 import {
   appointmentWhatsappUrl,
@@ -53,24 +53,60 @@ import {
  * `exactOptionalPropertyTypes` esa diferencia hace que el router exija `search`
  * en cada <Link to="/admin/turnos">, aunque los dos params sean opcionales.
  */
-type Search = { estado?: Status; turno?: string };
+type Search = { estado?: Pestana; turno?: string; sinProfesional?: "1" };
 
 export const Route = createFileRoute("/_authenticated/admin/turnos")({
   validateSearch: (search: Record<string, unknown>): Search => {
     const parsed: Search = {};
-    // `toStatus` y no un cast: el `?estado=` lo puede escribir cualquiera a
+    // `aPestana` y no un cast: el `?estado=` lo puede escribir cualquiera a
     // mano, y un valor inventado tiene que caer en la pestaña por defecto y no
     // pedirle a la base un estado que no existe.
-    const estado = toStatus(search["estado"]);
+    const estado = aPestana(search["estado"]);
     if (estado) parsed.estado = estado;
     if (typeof search["turno"] === "string") parsed.turno = search["turno"];
+    // Sólo el texto "1" entra: es un filtro que se prende, no un valor.
+    // Cualquier otra cosa en la URL se ignora y la tabla muestra todo, que es el
+    // estado normal.
+    //
+    // "1" y no `true` porque el tipo de búsqueda de TODAS las rutas se junta en
+    // un `Record<string, string>` —lo arma `new URLSearchParams()` en
+    // recuperar.tsx— y un booleano ahí adentro no compila.
+    if (search["sinProfesional"] === "1") parsed.sinProfesional = "1";
     return parsed;
   },
   component: AdminAppointments,
 });
 
+/**
+ * Las pestañas de la tabla.
+ *
+ * Los cuatro estados de la base, más «Todos» — que no es un estado sino la
+ * ausencia del filtro. Sin esa quinta pestaña había que saber de antemano en qué
+ * estado quedó un turno para poder encontrarlo.
+ *
+ * `todos` viaja tal cual a la API, que lo entiende como "no filtres por estado".
+ * Ver `listar` en turnos.controller.ts.
+ */
 const FILTERS = ["pending", "confirmed", "completed", "cancelled"] as const;
 type Status = (typeof FILTERS)[number];
+
+const PESTANAS = [...FILTERS, "todos"] as const;
+type Pestana = (typeof PESTANAS)[number];
+
+/** El estado, o `todos`; null si es cualquier otra cosa. */
+function aPestana(valor: unknown): Pestana | null {
+  if (valor === "todos") return "todos";
+  return toStatus(valor);
+}
+
+/** Los carteles de las pestañas. `STATUS_LABEL` no conoce a «Todos». */
+const ETIQUETA_DE_PESTANA: Record<Pestana, string> = {
+  pending: STATUS_LABEL["pending"] ?? "Pendiente",
+  confirmed: STATUS_LABEL["confirmed"] ?? "Confirmado",
+  completed: STATUS_LABEL["completed"] ?? "Realizado",
+  cancelled: STATUS_LABEL["cancelled"] ?? "Cancelado",
+  todos: "Todos",
+};
 
 // ⬇️ MUDADO a src/hooks/useCambiarEstadoDeTurno.ts.
 //
@@ -127,7 +163,9 @@ function AdminAppointments() {
   // URL (ver `Search` arriba). Con el estado local, entrar por el enlace del
   // calendario mostraba siempre "Pendiente" y el turno buscado no aparecía.
   // const [filter, setFilter] = useState<Status>("pending");
-  const filter: Status = search.estado ?? "pending";
+  const filter: Pestana = search.estado ?? "pending";
+  /** El filtro rojo: sólo los turnos sin profesional asignada. */
+  const soloSinProfesional = search.sinProfesional === "1";
 
   /**
    * Cambiar de pestaña.
@@ -139,8 +177,20 @@ function AdminAppointments() {
    * El `turno` resaltado se cae a propósito al cambiar de pestaña: el resaltado
    * señala un turno puntual al que se vino a mirar, y ya no se está mirando.
    */
-  const setFilter = (next: Status) => {
+  const setFilter = (next: Pestana) => {
+    // El filtro de "sin profesional" NO se arrastra al cambiar de pestaña: es un
+    // recorte puntual que se vino a resolver, y quedárselo pegado haría que la
+    // tabla se viera medio vacía sin que se entienda por qué.
     void navigate({ to: "/admin/turnos", search: { estado: next }, replace: true });
+  };
+
+  /** Abre la lista de los que hay que asignar: todos los estados, sólo esos. */
+  const verSinProfesional = () => {
+    void navigate({
+      to: "/admin/turnos",
+      search: { estado: "todos", sinProfesional: "1" },
+      replace: true,
+    });
   };
   const [creating, setCreating] = useState(false);
   /** Invitada que se está vinculando a una cuenta, o null. */
@@ -151,14 +201,22 @@ function AdminAppointments() {
   // El mismo número que muestra el menú lateral: react-query comparte la
   // consulta, así que estar en esta pantalla no la pide dos veces.
   const pendingCount = usePendingAppointments();
+  // Los turnos que se van a atender y no tienen a quién. Mismo número que el
+  // punto rojo del menú: react-query comparte la consulta.
+  const unassignedCount = useUnassignedAppointments();
 
   const appointments = useQuery({
-    queryKey: ["admin-appointments", filter],
+    queryKey: ["admin-appointments", filter, soloSinProfesional],
     // `person` viene armada del servidor: una sola forma para el turno de una
     // clienta con cuenta y para el de una invitada, así la tabla no tiene que
     // saber cuál es cuál. Antes eso costaba una segunda consulta acá, para
     // buscar los profiles de los que sí tenían cuenta.
-    queryFn: async () => (await api<RtaTurnos>(`/api/turnos?estado=${filter}`)).turnos,
+    queryFn: async () =>
+      (
+        await api<RtaTurnos>(
+          `/api/turnos?estado=${filter}${soloSinProfesional ? "&sinProfesional=1" : ""}`,
+        )
+      ).turnos,
   });
 
   /**
@@ -263,16 +321,55 @@ function AdminAppointments() {
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
       <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
 
-      <Tabs value={filter} onValueChange={(v) => setFilter(v as Status)} className="mt-8">
+      {/* El cartel de los turnos sin profesional.
+
+          Va arriba de todo y en rojo a propósito: es la única cosa de esta
+          pantalla que NO se resuelve sola ni se nota mirando la tabla — la fila
+          de un turno sin asignar se ve igual que las demás, dice "Sin asignar"
+          en una columna del medio y listo. Si nadie lo agarra, el día del turno
+          llega y no hay quién atienda.
+
+          Aparece en todas las pestañas, incluso mientras se está mirando el
+          filtro que lo resuelve, y ahí cambia el botón por uno que vuelve. */}
+      {unassignedCount > 0 && (
+        <div className="mt-6 flex flex-wrap items-center gap-4 rounded-sm border-2 border-destructive bg-destructive/10 p-4">
+          <TriangleAlert className="h-5 w-5 shrink-0 text-destructive" />
+          <div className="flex-1">
+            <p className="font-medium text-foreground">
+              {unassignedCount === 1
+                ? "Hay 1 turno sin profesional asignada"
+                : `Hay ${unassignedCount} turnos sin profesional asignada`}
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {unassignedCount === 1 ? "Ese turno está" : "Esos turnos están"} tomado
+              {unassignedCount === 1 ? "" : "s"} y la clienta {unassignedCount === 1 ? "lo" : "los"}{" "}
+              espera, pero no hay nadie para atender
+              {unassignedCount === 1 ? "lo" : "los"}. Abrí cada uno y usá «Pasárselo a otra
+              profesional».
+            </p>
+          </div>
+          {soloSinProfesional ? (
+            <Button variant="outline" onClick={() => setFilter("pending")}>
+              Ver todos los turnos
+            </Button>
+          ) : (
+            <Button variant="destructive" onClick={verSinProfesional}>
+              Ver cuáles son
+            </Button>
+          )}
+        </div>
+      )}
+
+      <Tabs value={filter} onValueChange={(v) => setFilter(v as Pestana)} className="mt-8">
         <TabsList>
           {/* Sólo "Pendiente" lleva número: es el único estado que pide algo de
               quien mira la pantalla. Ponerle el conteo a las cuatro pestañas
               haría que ninguna llame la atención.
 
               Antes era `<TabsTrigger>{STATUS_LABEL[f]}</TabsTrigger>` a secas. */}
-          {FILTERS.map((f) => (
+          {PESTANAS.map((f) => (
             <TabsTrigger key={f} value={f} className="gap-2">
-              {STATUS_LABEL[f]}
+              {ETIQUETA_DE_PESTANA[f]}
               {f === "pending" && pendingCount > 0 && (
                 <span className="min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums">
                   {pendingCount > 99 ? "99+" : pendingCount}
@@ -358,7 +455,20 @@ function AdminAppointments() {
                   )}
                 </TableCell>
                 <TableCell>{a.services?.name}</TableCell>
-                <TableCell>{a.professionals?.full_name ?? "Sin asignar"}</TableCell>
+                <TableCell>
+                  {/* Sin asignar deja de ser un texto gris más: es lo que hay
+                      que resolver, y en una tabla de veinte filas hay que poder
+                      encontrarlo de un vistazo. */}
+                  {a.professionals?.full_name ?? (
+                    <Link
+                      to="/admin/turnos/$id"
+                      params={{ id: a.id }}
+                      className="inline-flex items-center gap-1.5 rounded-sm bg-destructive/15 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/25"
+                    >
+                      <TriangleAlert className="h-3 w-3" /> Sin asignar
+                    </Link>
+                  )}
+                </TableCell>
                 <TableCell>{formatMoney(a.services?.price)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
