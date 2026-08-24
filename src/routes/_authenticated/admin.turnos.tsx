@@ -164,7 +164,7 @@ function AdminAppointments() {
   // calendario mostraba siempre "Pendiente" y el turno buscado no aparecía.
   // const [filter, setFilter] = useState<Status>("pending");
   const filter: Pestana = search.estado ?? "pending";
-  /** El filtro rojo: sólo los turnos sin profesional asignada. */
+  /** El filtro rojo: sólo los turnos que nadie va a atender. */
   const soloSinProfesional = search.sinProfesional === "1";
 
   /**
@@ -321,13 +321,13 @@ function AdminAppointments() {
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
       <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
 
-      {/* El cartel de los turnos sin profesional.
+      {/* El cartel de los turnos que nadie va a atender.
 
           Va arriba de todo y en rojo a propósito: es la única cosa de esta
-          pantalla que NO se resuelve sola ni se nota mirando la tabla — la fila
-          de un turno sin asignar se ve igual que las demás, dice "Sin asignar"
-          en una columna del medio y listo. Si nadie lo agarra, el día del turno
-          llega y no hay quién atienda.
+          pantalla que NO se resuelve sola ni se nota mirando la tabla. La fila
+          de un turno sin asignar se ve igual que las demás, y la de uno con la
+          profesional desactivada se ve MEJOR todavía: muestra un nombre. Si
+          nadie lo agarra, el día del turno llega y no hay quién atienda.
 
           Aparece en todas las pestañas, incluso mientras se está mirando el
           filtro que lo resuelve, y ahí cambia el botón por uno que vuelve. */}
@@ -337,15 +337,13 @@ function AdminAppointments() {
           <div className="flex-1">
             <p className="font-medium text-foreground">
               {unassignedCount === 1
-                ? "Hay 1 turno sin profesional asignada"
-                : `Hay ${unassignedCount} turnos sin profesional asignada`}
+                ? "Hay 1 turno sin nadie que lo atienda"
+                : `Hay ${unassignedCount} turnos sin nadie que los atienda`}
             </p>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {unassignedCount === 1 ? "Ese turno está" : "Esos turnos están"} tomado
-              {unassignedCount === 1 ? "" : "s"} y la clienta {unassignedCount === 1 ? "lo" : "los"}{" "}
-              espera, pero no hay nadie para atender
-              {unassignedCount === 1 ? "lo" : "los"}. Abrí cada uno y usá «Pasárselo a otra
-              profesional».
+              O no tienen profesional asignada, o la que tienen está desactivada y ya no atiende. La
+              clienta {unassignedCount === 1 ? "lo" : "los"} espera igual. Abrí cada uno y usá
+              «Pasárselo a otra profesional».
             </p>
           </div>
           {soloSinProfesional ? (
@@ -456,16 +454,27 @@ function AdminAppointments() {
                 </TableCell>
                 <TableCell>{a.services?.name}</TableCell>
                 <TableCell>
-                  {/* Sin asignar deja de ser un texto gris más: es lo que hay
-                      que resolver, y en una tabla de veinte filas hay que poder
-                      encontrarlo de un vistazo. */}
-                  {a.professionals?.full_name ?? (
+                  {/* Los DOS casos que hay que resolver van en rojo y enlazados a
+                      la ficha, que es donde se reasigna:
+
+                        · sin profesional asignada;
+                        · con una profesional desactivada, que ya no atiende.
+
+                      El segundo es el que engaña. La fila mostraba el nombre como
+                      cualquier otra —"Valentina Ríos", texto negro— y parecía
+                      resuelta, cuando esa persona no viene más. */}
+                  {a.professionals && a.professionals.is_active ? (
+                    a.professionals.full_name
+                  ) : (
                     <Link
                       to="/admin/turnos/$id"
                       params={{ id: a.id }}
                       className="inline-flex items-center gap-1.5 rounded-sm bg-destructive/15 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/25"
                     >
-                      <TriangleAlert className="h-3 w-3" /> Sin asignar
+                      <TriangleAlert className="h-3 w-3 shrink-0" />
+                      {a.professionals
+                        ? `${a.professionals.full_name} · ya no atiende`
+                        : "Sin asignar"}
                     </Link>
                   )}
                 </TableCell>
