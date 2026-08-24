@@ -190,8 +190,18 @@ function AdminCalendar() {
                     >
                       <span className="flex items-start justify-between gap-1">
                         <span className="min-w-0">
-                          <span className="font-medium">{formatTime(a.starts_at)}</span>{" "}
-                          {a.services?.name}
+                          {/* Tres líneas, en el orden en que se las busca:
+                              QUIÉN viene, a qué, y con quién.
+
+                              La clienta arriba y en negrita porque es el dato
+                              por el que se mira un calendario — "¿quién viene el
+                              martes?"—, y antes no estaba: la celda mostraba
+                              hora, tratamiento y profesional, y para saber de
+                              quién era el turno había que abrirlo. */}
+                          <span className="block truncate font-semibold">
+                            {formatTime(a.starts_at)} · {a.person.name}
+                          </span>
+                          <span className="block truncate">{a.services.name}</span>
                           {/* Sin profesional, la línea quedaba VACÍA: el turno
                               se veía igual que cualquier otro y no había forma
                               de notar que le falta quién lo atienda.
@@ -201,11 +211,11 @@ function AdminCalendar() {
                               viene. Los dos casos van en rojo, porque los dos
                               son el mismo trabajo pendiente. */}
                           {a.professionals && a.professionals.is_active ? (
-                            <span className="block text-muted-foreground">
+                            <span className="block truncate text-muted-foreground">
                               {a.professionals.full_name}
                             </span>
                           ) : (
-                            <span className="block font-semibold text-destructive">
+                            <span className="block truncate font-semibold text-destructive">
                               ⚠ {a.professionals ? "Ya no atiende" : "Sin asignar"}
                             </span>
                           )}

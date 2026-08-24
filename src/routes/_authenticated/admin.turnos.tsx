@@ -90,7 +90,11 @@ export const Route = createFileRoute("/_authenticated/admin/turnos")({
 const FILTERS = ["pending", "confirmed", "completed", "cancelled"] as const;
 type Status = (typeof FILTERS)[number];
 
-const PESTANAS = [...FILTERS, "todos"] as const;
+// «Todos» va PRIMERA, y no al final después de los cuatro estados: es la que se
+// abre cuando no se está buscando nada en particular, y las otras cuatro son
+// recortes de ésa. Leída de izquierda a derecha, la fila va de lo más amplio a
+// lo más específico.
+const PESTANAS = ["todos", ...FILTERS] as const;
 type Pestana = (typeof PESTANAS)[number];
 
 /** El estado, o `todos`; null si es cualquier otra cosa. */

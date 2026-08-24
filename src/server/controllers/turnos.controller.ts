@@ -122,7 +122,17 @@ export async function listar(ctx: Ctx) {
       ...(estado ? { status: estado } : {}),
       ...(soloSinProfesional ? SIN_QUIEN_LO_ATIENDA : {}),
     },
-    orderBy: { starts_at: "asc" },
+    // Los últimos que salieron, arriba.
+    //
+    // Era `starts_at: "asc"`, o sea el turno más viejo primero — y con eso la
+    // tabla arrancaba mostrando turnos que ya pasaron y había que bajar hasta el
+    // final para ver lo último que entró. En una pantalla que se abre para ver
+    // "qué hay de nuevo", lo nuevo tiene que estar arriba.
+    //
+    // El desempate por `starts_at` es para los turnos que el centro carga de a
+    // varios: se dan de alta en el mismo segundo, y sin segundo criterio el
+    // orden entre ellos queda a lo que devuelva la base.
+    orderBy: [{ created_at: "desc" }, { starts_at: "desc" }],
     select: {
       id: true,
       starts_at: true,
@@ -293,6 +303,12 @@ export async function calendario(ctx: Ctx) {
       // `is_active` va también acá: un turno de alguien que ya no atiende tiene
       // que verse en el calendario, no sólo en la tabla.
       professional: { select: { full_name: true, is_active: true } },
+      // De quién es el turno. El calendario mostraba tratamiento y profesional
+      // pero NO a la clienta, que es el dato por el que se mira un calendario:
+      // "¿quién viene el martes?". Es el mismo `DATOS_DE_LA_PERSONA` de la
+      // tabla, así que la invitada y la clienta con cuenta llegan con la misma
+      // forma y `personaDe` resuelve cuál es cuál.
+      ...DATOS_DE_LA_PERSONA,
     },
   });
 
@@ -303,6 +319,7 @@ export async function calendario(ctx: Ctx) {
       status: t.status,
       services: { name: nombreDelTratamiento(t) },
       professionals: t.professional,
+      person: personaDe(t),
     })),
   } satisfies RtaCalendario);
 }

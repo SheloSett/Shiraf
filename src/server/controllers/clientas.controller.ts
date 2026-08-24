@@ -4,7 +4,13 @@ import { accesoDe, puede } from "@/server/services/authz.service";
 import { idsDelEquipo } from "@/server/services/agenda.service";
 import { exigirAlcanceDeClienta, nombreDelTratamiento } from "@/server/services/turnos.service";
 import { comoNumero } from "@/server/serializar";
-import type { RtaClientas, RtaEquipo, RtaMiCuenta, RtaMisTurnos } from "@/lib/api-tipos";
+import type {
+  RtaClientas,
+  RtaEquipo,
+  RtaFichaDeClienta,
+  RtaMiCuenta,
+  RtaMisTurnos,
+} from "@/lib/api-tipos";
 
 /**
  * Las clientas: la lista del panel y el espacio propio de cada una.
@@ -216,4 +222,104 @@ export async function cancelarMiTurno(ctx: Ctx) {
 
   await prisma.appointments.update({ where: { id }, data: { status: "cancelled" } });
   return json({ ok: true });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La ficha de una clienta
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Todo lo que el centro sabe de una clienta, para el panel lateral.
+ *
+ * ── POR QUÉ NO ALCANZABA CON LA LISTA ─────────────────────────────────────
+ *
+ * La tabla de Clientes muestra una fila por persona y ahí entra lo que entra:
+ * nombre, teléfono, tres números y las notas recortadas a media celda. Para
+ * saber qué se le hizo a alguien había que ir a Turnos y buscarla a ojo entre
+ * todos los turnos de todas.
+ *
+ * ── LOS MISMOS RECORTES QUE LA LISTA, Y POR LOS MISMOS MOTIVOS ────────────
+ *
+ * La puerta la abre `clients_contact` **o** `appointments` (lo pide la ruta),
+ * pero adentro cada cosa pide lo suyo:
+ *
+ *   · las notas clínicas       → `clients_notes`. Son alergias, embarazos,
+ *     antecedentes: el permiso existe justamente para que no las vea cualquiera
+ *     que pueda leer un teléfono.
+ *   · el historial de turnos   → `appointments`. Quien sólo tiene el contacto no
+ *     puede ver cuándo vino ni qué se hizo, igual que en la lista.
+ *
+ * Se recorta EN EL SERVIDOR y no escondiendo cosas en la pantalla: lo que no
+ * corresponde no viaja.
+ */
+export async function verClienta(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta la clienta." }, 400);
+
+  const acceso = await accesoDe(ctx.user!.id);
+  const veNotas = puede(acceso, "clients_notes");
+  const veTurnos = puede(acceso, "appointments");
+
+  const ficha = await prisma.profiles.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      full_name: true,
+      phone: true,
+      birth_date: true,
+      created_at: true,
+      user: { select: { email: true, is_active: true } },
+    },
+  });
+  if (!ficha) return json({ error: "Esa clienta no existe." }, 404);
+
+  const nota = veNotas
+    ? await prisma.client_notes.findUnique({ where: { client_id: id }, select: { body: true } })
+    : null;
+
+  // Los suyos, del más nuevo al más viejo: la última visita es lo primero que se
+  // busca al abrir una ficha.
+  const turnos = veTurnos
+    ? await prisma.appointments.findMany({
+        where: { client_id: id },
+        orderBy: { starts_at: "desc" },
+        select: {
+          id: true,
+          starts_at: true,
+          status: true,
+          price: true,
+          service: { select: { name: true } },
+          // El nombre congelado, por si el tratamiento ya no está en el catálogo:
+          // el historial tiene que seguir diciendo qué se le hizo.
+          service_name: true,
+          professional: { select: { full_name: true } },
+        },
+      })
+    : [];
+
+  const salida: RtaFichaDeClienta = {
+    clienta: {
+      id: ficha.id,
+      full_name: ficha.full_name,
+      phone: ficha.phone,
+      // `birth_date` es una columna `date`: se manda como "1990-05-23" y no como
+      // instante, para que la pantalla no le reste un día según la zona horaria.
+      birth_date: ficha.birth_date ? ficha.birth_date.toISOString().slice(0, 10) : null,
+      created_at: ficha.created_at.toISOString(),
+      email: ficha.user?.email ?? null,
+      cuentaActiva: ficha.user?.is_active ?? null,
+      notes: veNotas ? (nota?.body ?? null) : null,
+      puedeVerNotas: veNotas,
+      puedeVerTurnos: veTurnos,
+      turnos: turnos.map((t) => ({
+        id: t.id,
+        starts_at: t.starts_at.toISOString(),
+        status: t.status,
+        price: comoNumero(t.price),
+        service: nombreDelTratamiento(t),
+        professional: t.professional?.full_name ?? null,
+      })),
+    },
+  };
+  return json(salida);
 }

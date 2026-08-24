@@ -379,6 +379,8 @@ export type TurnoDelCalendario = {
   services: { name: string };
   /** `is_active` en false: ya no atiende, y este turno hay que reasignarlo. */
   professionals: { full_name: string; is_active: boolean } | null;
+  /** De quién es el turno: con cuenta o invitada, la misma forma para las dos. */
+  person: PersonaDelTurno;
 };
 
 export type RtaCalendario = { turnos: TurnoDelCalendario[] };
@@ -461,3 +463,38 @@ export type RtaEmpleadas = {
 export type RtaProfesionalesParaElTurno = {
   profesionales: { id: string; full_name: string; libre: boolean }[];
 };
+
+/**
+ * La ficha completa de una clienta, para el panel lateral de Clientes.
+ *
+ * `puedeVerNotas` y `puedeVerTurnos` los decide el SERVIDOR y viajan para que la
+ * pantalla sepa distinguir «no hay nada anotado» de «no te corresponde verlo».
+ * Sin esa diferencia, una empleada con el contacto pero sin las notas vería una
+ * ficha que dice "sin notas" y creería que la clienta no tiene ninguna.
+ */
+export type FichaDeClienta = {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+  /** "1990-05-23". Sólo la fecha: la columna es `date`. */
+  birth_date: string | null;
+  created_at: string;
+  /** null si la clienta no tiene cuenta (la cargó el centro como invitada). */
+  email: string | null;
+  /** null sin cuenta; false si la cuenta está dada de baja. */
+  cuentaActiva: boolean | null;
+  notes: string | null;
+  puedeVerNotas: boolean;
+  puedeVerTurnos: boolean;
+  turnos: {
+    id: string;
+    starts_at: string;
+    status: string;
+    price: number;
+    /** Congelado: sigue diciendo qué fue aunque el tratamiento ya no exista. */
+    service: string;
+    professional: string | null;
+  }[];
+};
+
+export type RtaFichaDeClienta = { clienta: FichaDeClienta };

@@ -9,6 +9,7 @@ import {
   listar,
   miFicha,
   misTurnos,
+  verClienta,
 } from "@/server/controllers/clientas.controller";
 
 /**
@@ -34,6 +35,10 @@ const verClientas: Handler = async (ctx: Ctx) => {
 // ── La lista del panel ──────────────────────────────────────────────────────
 clientasRouter.get("/clientas", authMiddleware, verClientas, listar);
 clientasRouter.get("/clientas/equipo", authMiddleware, verClientas, equipo);
+// ⚠️ DESPUÉS de "/clientas/equipo": las rutas se prueban en el orden en que se
+// declaran y gana la primera que matchea. Declarada antes, "/clientas/:id" se
+// comería a "equipo" y el panel pediría la ficha de una clienta con ese id.
+clientasRouter.get("/clientas/:id", authMiddleware, verClientas, verClienta);
 
 // ── Mi cuenta: sin permisos, sólo sesión ────────────────────────────────────
 // Lo que protege esta mitad no es un permiso sino que TODO sale de la sesión:
