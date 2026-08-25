@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { sesionQuery } from "@/lib/sesion";
+import { puedeEntrarAlPanel, sesionQuery } from "@/lib/sesion";
 import type { AccessRequirement, Permission } from "@/lib/permissions";
 
 /**
@@ -45,7 +45,10 @@ export function useAccess() {
      * profesional que tiene su ficha vinculada: adentro no va a ver más que su
      * propia agenda, pero la puerta es la misma.
      */
-    canEnterPanel: isAdmin || isStaff || Boolean(professionalId),
+    // La misma función que usa el `beforeLoad` de /admin, y no la condición
+    // escrita otra vez: si las dos se separan, un día una suma un caso y la otra
+    // no, y el síntoma es una pantalla que rebota a alguien que sí puede entrar.
+    canEnterPanel: puedeEntrarAlPanel(sesion.data ?? null),
     permissions,
     can,
     /**

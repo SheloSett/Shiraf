@@ -1,4 +1,11 @@
-import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  redirect,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -20,8 +27,35 @@ import { apiPost } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
 import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
+import { puedeEntrarAlPanel } from "@/lib/sesion";
 
 export const Route = createFileRoute("/_authenticated/admin")({
+  /**
+   * A la clienta se la rebota, no se le muestra una pared.
+   *
+   * Antes, escribir /admin en la barra estando conectada como clienta abría una
+   * pantalla que decía «Acceso restringido». Técnicamente correcto y en la
+   * práctica desconcertante: para quien no es del centro, /admin no es "una
+   * sección que no te toca", es una dirección que no significa nada. Se la manda
+   * a su cuenta, que es a donde quería llegar.
+   *
+   * ── POR QUÉ EN `beforeLoad` Y NO EN EL COMPONENTE ─────────────────────────
+   *
+   * Porque acá pasa ANTES de dibujar nada. Con un `useEffect` adentro del
+   * componente, la pantalla alcanza a pintar el cartel y recién después salta —
+   * un parpadeo que se lee como un error.
+   *
+   * La sesión ya viene resuelta por el `beforeLoad` de `_authenticated`, que es
+   * el que además garantiza que acá abajo haya alguien conectada: sin sesión
+   * nunca se llega hasta este punto.
+   *
+   * ⚠️ Esto NO es seguridad. Cada endpoint exige lo suyo del otro lado de la
+   * API, y eso es lo que protege los datos. Esto es que la puerta lleve a algún
+   * lado en vez de a una pared.
+   */
+  beforeLoad: ({ context }) => {
+    if (!puedeEntrarAlPanel(context.user)) throw redirect({ to: "/mi-cuenta" });
+  },
   head: () => ({
     meta: [
       { title: "Panel de administración — Shiraf" },
@@ -188,22 +222,44 @@ function AdminLayout() {
     }
   }, [loading, allowed, location.pathname, landing, navigate]);
 
+  /**
+   * El respaldo del `beforeLoad` de arriba.
+   *
+   * Ese es el que rebota a la clienta antes de dibujar nada, y en la práctica es
+   * el que actúa siempre. Éste cubre el caso raro que aquél no puede ver: que la
+   * cuenta pierda el acceso MIENTRAS la pantalla está abierta —le dan de baja la
+   * ficha de profesional, la sacan del equipo—. Ahí no hay navegación nueva, así
+   * que `beforeLoad` no vuelve a correr, y sin esto el panel se quedaría
+   * dibujado para alguien que ya no debería verlo.
+   */
+  useEffect(() => {
+    if (!loading && !canEnterPanel) navigate({ to: "/mi-cuenta", replace: true });
+  }, [loading, canEnterPanel, navigate]);
+
   if (loading) {
     return <p className="p-10 text-sm text-muted-foreground">Verificando permisos…</p>;
   }
 
   if (!canEnterPanel) {
-    return (
-      <div className="mx-auto max-w-md px-5 py-24 text-center">
-        <h1 className="font-display text-3xl text-foreground">Acceso restringido</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Esta sección es sólo para el equipo de Shiraf.
-        </p>
-        <Button asChild className="mt-6">
-          <Link to="/mi-cuenta">Ir a mi cuenta</Link>
-        </Button>
-      </div>
-    );
+    // Ya se está yendo: lo dispara el efecto de acá arriba. Se dibuja una línea
+    // de paso y no el cartel de «Acceso restringido», que se alcanzaba a ver un
+    // instante antes de saltar y se leía como un error.
+    //
+    // ⬇️ El cartel viejo. Se comenta y no se borra porque es el rastro de por
+    //    qué esto cambió: para quien no es del centro, /admin no es "una sección
+    //    que no te toca", es una dirección que no significa nada. Decirle que
+    //    tiene el acceso restringido es contestarle una pregunta que no hizo.
+    //
+    //    <div className="mx-auto max-w-md px-5 py-24 text-center">
+    //      <h1 className="font-display text-3xl text-foreground">Acceso restringido</h1>
+    //      <p className="mt-3 text-sm text-muted-foreground">
+    //        Esta sección es sólo para el equipo de Shiraf.
+    //      </p>
+    //      <Button asChild className="mt-6">
+    //        <Link to="/mi-cuenta">Ir a mi cuenta</Link>
+    //      </Button>
+    //    </div>
+    return <p className="p-10 text-sm text-muted-foreground">Te llevamos a tu cuenta…</p>;
   }
 
   return (

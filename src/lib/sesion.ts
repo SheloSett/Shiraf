@@ -123,3 +123,22 @@ export function olvidarSesion(queryClient: QueryClient): void {
 export function esDelCentro(sesion: Sesion | null): boolean {
   return sesion?.roles.includes("admin") === true || sesion?.roles.includes("staff") === true;
 }
+
+/**
+ * ¿Esta cuenta puede abrir el panel?
+ *
+ * Es `esDelCentro` **más la profesional con su ficha vinculada**: adentro no va
+ * a ver nada más que su propia agenda, pero la puerta es la misma. Sin ese
+ * tercer caso, una profesional que sólo tiene su agenda quedaría afuera.
+ *
+ * ── POR QUÉ ESTÁ ACÁ Y NO ADENTRO DE `useAccess` ──────────────────────────
+ *
+ * Porque la pregunta se hace en DOS momentos y con dos formas distintas: el
+ * `beforeLoad` de /admin la hace con la sesión en la mano, antes de dibujar
+ * nada, y el componente la hace con el hook. Si cada uno la escribiera por su
+ * lado, un día uno de los dos sumaría un caso y el otro no — y el síntoma sería
+ * una pantalla que rebota a alguien que sí puede entrar, o al revés.
+ */
+export function puedeEntrarAlPanel(sesion: Sesion | null): boolean {
+  return esDelCentro(sesion) || Boolean(sesion?.professionalId);
+}
