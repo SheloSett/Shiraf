@@ -19,16 +19,10 @@ Nada de esto se corrió todavía en el servidor.
 - [ ] `docker compose up -d` en el VPS. Levanta `db → migrate → app` más el
       contenedor de backups.
 - [ ] Completar el `.env` de allá. Las que no pueden faltar:
-      `POSTGRES_PASSWORD`, `JWT_SECRET`, `APP_URL`, las cuatro de Cloudinary y
-      `REMINDERS_SECRET`. El compose corta el arranque si falta alguna.
+      `POSTGRES_PASSWORD`, `JWT_SECRET`, `APP_URL` y las cuatro de Cloudinary.
+      El compose corta el arranque si falta alguna.
 - [ ] Cargar los datos con `db:seed` y ponerle contraseña a las 4 cuentas desde
       "recuperar contraseña" — quedaron con una imposible de acertar a propósito.
-- [ ] **El cron de recordatorios.** Deja `pg_cron` y pasa al cron del sistema:
-
-      0 10 * * *  curl -fsS -X POST https://shiraf.com.ar/api/recordatorios -H "Authorization: Bearer $REMINDERS_SECRET"
-
-          A las 10 de Buenos Aires, no en UTC. Se acabó la conversión.
-
 - [ ] **Restaurar un backup, una vez.** Un backup que nunca se restauró es una
       suposición. Y sacar una copia fuera del VPS: en el mismo disco no sirve.
 
@@ -43,7 +37,7 @@ páginas— pero **nadie hizo clic en nada**. Es lo primero que conviene hacer:
 - [ ] Reservar como clienta desde `/reservar`.
 - [ ] Registrarse con el mail de una invitada y ver que se le pasen sus turnos.
 
-### 🟢 Dos cosas que se destrabaron solas al migrar
+### 🟢 Tres cosas que se destrabaron al migrar
 
 - **Las plantillas de mail en castellano.** Supabase no las dejaba editar sin
   SMTP propio y a la clienta le llegaba un mail en inglés. Ahora las manda la
@@ -51,6 +45,11 @@ páginas— pero **nadie hizo clic en nada**. Es lo primero que conviene hacer:
   y verificar `shiraf.com.ar` — ver más abajo.
 - **Las migraciones a mano.** Se acabó copiar SQL en el editor web: el esquema
   se sincroniza con `npm run db:sync`.
+- **El cron de los recordatorios.** Ya no hay nada que programar en el VPS ni
+  ningún secreto que generar: la app es un proceso propio y el reloj corre
+  adentro, como en el ecommerce. Se programa solo al arrancar el contenedor, a
+  las 10 y a las 13 de Buenos Aires. Ver
+  [`reminders.service.ts`](src/server/services/reminders.service.ts).
 
 ### ⬜ Fase 8 — limpieza. Hecha, salvo el último paso.
 

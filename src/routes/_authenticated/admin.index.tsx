@@ -9,7 +9,7 @@ import type { RtaCalendario } from "@/lib/api-tipos";
 // `toStatus` se usaba cuando el botón enlazaba a la lista y había que elegirle
 // la pestaña. Ahora va derecho a la ficha del turno, que no necesita el estado.
 // import { formatTime, STATUS_LABEL, toStatus, WEEKDAYS } from "@/lib/shiraf";
-import { formatTime, STATUS_LABEL, WEEKDAYS } from "@/lib/shiraf";
+import { estadoVisible, formatTime, quienAtiende, STATUS_LABEL, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: AdminCalendar,
@@ -18,12 +18,10 @@ export const Route = createFileRoute("/_authenticated/admin/")({
 /**
  * El color de un turno en la grilla.
  *
- * Son DOS cosas cruzadas, no una: el estado que le puso el panel y si la hora
- * del turno ya pasó. Un pendiente de la semana que viene es agenda por delante;
- * el mismo pendiente del martes pasado es un turno que ya se vivió y que nadie
- * cerró. Son situaciones opuestas con el mismo `status`, así que lo vencido se
- * decide ANTES que el estado y se lleva el rojizo: es lo único del calendario
- * que pide que alguien vaya a hacer algo.
+ * QUÉ estado tiene un turno lo decide `estadoVisible` en lib/shiraf.ts —ahí
+ * vive la regla de qué cuenta como vencido, y vive en un solo lugar para que la
+ * grilla, la lista de Turnos y la ficha no puedan discrepar sobre el mismo
+ * turno—. Acá quedó sólo lo que es propio del calendario: qué color le toca.
  *
  * Antes esto era un ternario anidado acá abajo con sólo tres ramas —cancelado,
  * confirmado y "todo lo demás"—. El problema era ese "todo lo demás": los cuatro
@@ -33,21 +31,77 @@ export const Route = createFileRoute("/_authenticated/admin/")({
  * `now` llega en null mientras no hidrató (ver abajo); sin reloj no se puede
  * saber qué venció, así que en ese rato los turnos se pintan por estado nomás.
  */
-function appointmentTone(status: string, startsAt: string, now: number | null) {
-  if (status === "cancelled") return "bg-muted text-muted-foreground line-through";
+type Tono = {
+  /** El fondo y el color del texto principal de la pastilla. */
+  pastilla: string;
+  /** La línea de la profesional, que va un escalón por debajo. */
+  secundario: string;
+  /** El «⚠ Sin asignar» / «⚠ Ya no atiende». */
+  aviso: string;
+};
 
-  // Realizado: mismo oliva que confirmado, pero con la barra sólida al costado y
-  // el texto apagado. Se distingue del confirmado sin sumar un color nuevo a una
-  // paleta que ya tiene cuatro, y se lee como lo que es: archivo, nada por hacer.
-  if (status === "completed")
-    return "border-l-2 border-primary bg-primary/10 text-muted-foreground";
+// Lo que vale para cuatro de los cinco estados. El realizado es el que se
+// aparta, porque es el único con el fondo cargado.
+const SECUNDARIO = "text-muted-foreground";
+const AVISO = "text-destructive";
 
-  // Pendiente o confirmado con la hora ya pasada.
-  if (now !== null && new Date(startsAt).getTime() < now)
-    return "bg-destructive/12 text-foreground";
+function appointmentTone(status: string, startsAt: string, now: number | null): Tono {
+  switch (estadoVisible(status, startsAt, now)) {
+    case "cancelled":
+      return {
+        pastilla: "bg-muted text-muted-foreground line-through",
+        secundario: SECUNDARIO,
+        aviso: AVISO,
+      };
 
-  if (status === "confirmed") return "bg-primary/10 text-foreground";
-  return "bg-gold/15 text-foreground";
+    // Realizado: el mismo oliva que el confirmado, pero MUCHO más cargado.
+    //
+    // Antes era el tinte del confirmado —el mismo /10— con una barra de 2px al
+    // costado, y en una pastilla de 11px eso no alcanzaba: dos estados opuestos se
+    // veían del mismo color y había que apuntar el ojo al borde izquierdo para
+    // saber cuál era cuál. El salto de /10 a /35 corre el fondo de casi blanco
+    // (L≈0.93) a un oliva medio (L≈0.78), y como las otras cuatro pastillas viven
+    // todas entre 0.93 y 0.96, el realizado queda siendo el ÚNICO tono medio de la
+    // grilla: se lo ubica de un vistazo, y sin sumarle un quinto color a la paleta.
+    //
+    // El texto vuelve a `foreground`. Sobre este fondo el gris apagado quedaba en
+    // 2.4:1 y dejaba de leerse; el problema que resolvía —que el realizado no grite
+    // al lado de lo que sí pide acción— ya lo resuelve el fondo, que no es rojo ni
+    // dorado. La barra al costado se va: era el único diferenciador, y ahora sobra.
+    //
+    // Y por eso la función devuelve los tres colores juntos y no sólo el fondo:
+    // sobre /35 el gris de `muted-foreground` cae a 3.65:1 y el mínimo AA para
+    // texto chico es 4.5:1. Se midió, no se estimó. La línea de la profesional
+    // pasa entonces a `foreground` (9.66:1) y la jerarquía la sigue marcando el
+    // peso: el nombre de la clienta es el único en semibold.
+    //
+    // El aviso rojo se queda en 3.57:1 y es una decisión, no un olvido. Bajar el
+    // fondo hasta que el rojo pase pediría /13, que es no cambiar nada. Y en un
+    // turno REALIZADO ese aviso no pide hacer nada —la profesional ya no atiende,
+    // pero el turno ya pasó—, así que sí corresponde que grite menos que en uno
+    // por venir, donde el fondo es claro y el rojo llega a 4.73:1. Sigue en
+    // negrita y con el ⚠ adelante, y queda por encima del umbral de 3:1.
+    case "completed":
+      return {
+        pastilla: "bg-primary/35 text-foreground",
+        secundario: "text-foreground",
+        aviso: AVISO,
+      };
+
+    // Lo único de la grilla que pide que alguien vaya a hacer algo.
+    case "overdue":
+      return {
+        pastilla: "bg-destructive/12 text-foreground",
+        secundario: SECUNDARIO,
+        aviso: AVISO,
+      };
+
+    case "confirmed":
+      return { pastilla: "bg-primary/10 text-foreground", secundario: SECUNDARIO, aviso: AVISO };
+
+    case "pending":
+      return { pastilla: "bg-gold/15 text-foreground", secundario: SECUNDARIO, aviso: AVISO };
+  }
 }
 
 function AdminCalendar() {
@@ -143,9 +197,23 @@ function AdminCalendar() {
           </div>
         ))}
         {cells.map((day, i) => (
+          // El día de hoy se marca con un ARO dorado, no con un fondo.
+          //
+          // El fondo era `bg-gold-soft/20`, y ahí había dos cosas mal cruzadas.
+          // Una: las celdas se apoyan sobre el contenedor de la grilla, que es
+          // `bg-border` para dibujar las líneas con `gap-px` — así que ese 20%
+          // no se mezclaba con el crema de la celda sino con el gris de las
+          // líneas. La otra: `gold-soft` (L 0.87) y `border` (L 0.89) están casi
+          // a la misma altura, así que la mezcla daba L≈0.886. Es decir, el gris
+          // exacto del hueco que queda después del 31. Hoy y "esto ni es del mes"
+          // no se parecían: eran el mismo color.
+          //
+          // Un aro no depende de con qué se mezcla ni de si el valor coincide con
+          // algo: se ve por contorno. Y deja la celda en `bg-card` como todas,
+          // que en el día de hoy es justo la que suele tener más turnos adentro.
           <div
             key={i}
-            className={`min-h-28 p-2 ${day === todayDay ? "bg-gold-soft/20" : "bg-card"}`}
+            className={`min-h-28 bg-card p-2 ${day === todayDay ? "ring-2 ring-inset ring-gold" : ""}`}
           >
             {day && (
               <>
@@ -176,21 +244,19 @@ function AdminCalendar() {
                     tanda del día. La vuelta de la ficha sigue llevando a la
                     lista con su pestaña y su fila marcada. */}
                 <div className="mt-1 space-y-1">
-                  {(byDay[day] ?? []).map((a) => (
-                    <Link
-                      key={a.id}
-                      to="/admin/turnos/$id"
-                      params={{ id: a.id }}
-                      title="Ver el turno con sus detalles"
-                      className={`group block rounded-sm px-1.5 py-1 text-[11px] leading-tight transition-shadow hover:ring-1 hover:ring-primary/40 ${appointmentTone(
-                        a.status,
-                        a.starts_at,
-                        now,
-                      )}`}
-                    >
-                      <span className="flex items-start justify-between gap-1">
-                        <span className="min-w-0">
-                          {/* Tres líneas, en el orden en que se las busca:
+                  {(byDay[day] ?? []).map((a) => {
+                    const tono = appointmentTone(a.status, a.starts_at, now);
+                    return (
+                      <Link
+                        key={a.id}
+                        to="/admin/turnos/$id"
+                        params={{ id: a.id }}
+                        title="Ver el turno con sus detalles"
+                        className={`group block rounded-sm px-1.5 py-1 text-[11px] leading-tight transition-shadow hover:ring-1 hover:ring-primary/40 ${tono.pastilla}`}
+                      >
+                        <span className="flex items-start justify-between gap-1">
+                          <span className="min-w-0">
+                            {/* Tres líneas, en el orden en que se las busca:
                               QUIÉN viene, a qué, y con quién.
 
                               La clienta arriba y en negrita porque es el dato
@@ -198,11 +264,11 @@ function AdminCalendar() {
                               martes?"—, y antes no estaba: la celda mostraba
                               hora, tratamiento y profesional, y para saber de
                               quién era el turno había que abrirlo. */}
-                          <span className="block truncate font-semibold">
-                            {formatTime(a.starts_at)} · {a.person.name}
-                          </span>
-                          <span className="block truncate">{a.services.name}</span>
-                          {/* Sin profesional, la línea quedaba VACÍA: el turno
+                            <span className="block truncate font-semibold">
+                              {formatTime(a.starts_at)} · {a.person.name}
+                            </span>
+                            <span className="block truncate">{a.services.name}</span>
+                            {/* Sin profesional, la línea quedaba VACÍA: el turno
                               se veía igual que cualquier otro y no había forma
                               de notar que le falta quién lo atienda.
 
@@ -210,32 +276,56 @@ function AdminCalendar() {
                               su nombre como si nada, cuando esa persona ya no
                               viene. Los dos casos van en rojo, porque los dos
                               son el mismo trabajo pendiente. */}
-                          {a.professionals && a.professionals.is_active ? (
-                            <span className="block truncate text-muted-foreground">
-                              {a.professionals.full_name}
-                            </span>
-                          ) : (
-                            <span className="block truncate font-semibold text-destructive">
-                              ⚠ {a.professionals ? "Ya no atiende" : "Sin asignar"}
-                            </span>
-                          )}
-                        </span>
-                        {/* El botón, dibujado y no insinuado. Antes era la
+                            {(() => {
+                              const q = quienAtiende(
+                                a.professionals,
+                                a.professional_name,
+                                a.status,
+                                a.starts_at,
+                                now,
+                              );
+
+                              // El ⚠ rojo queda sólo donde todavía sirve. Sobre
+                              // la pastilla de un turno que ya pasó era ruido:
+                              // gritaba por algo que no se puede resolver bien.
+                              if (q.caso === "asignada" || q.caso === "historica") {
+                                return (
+                                  <span className={`block truncate ${tono.secundario}`}>
+                                    {q.nombre}
+                                  </span>
+                                );
+                              }
+                              if (!q.seArregla) {
+                                return (
+                                  <span className={`block truncate ${tono.secundario}`}>
+                                    {q.caso === "desactivada" ? q.nombre : "Sin registrar"}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className={`block truncate font-semibold ${tono.aviso}`}>
+                                  ⚠ {q.caso === "desactivada" ? "Ya no atiende" : "Sin asignar"}
+                                </span>
+                              );
+                            })()}
+                          </span>
+                          {/* El botón, dibujado y no insinuado. Antes era la
                             flecha suelta al 40% de opacidad que se encendía al
                             pasar el mouse: sobre una pastilla de color ya de por
                             sí clarita no se veía, y un botón que hay que
                             descubrir pasando el mouse por encima no es un botón.
                             Con recuadro, fondo propio y sombra se lee como algo
                             apretable estando quieto, que es cuando se lo busca. */}
-                        <span
-                          aria-hidden
-                          className="mt-px inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border border-foreground/25 bg-background/80 text-foreground shadow-sm transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground"
-                        >
-                          <ArrowUpRight className="h-3 w-3" />
+                          <span
+                            aria-hidden
+                            className="mt-px inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border border-foreground/25 bg-background/80 text-foreground shadow-sm transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground"
+                          >
+                            <ArrowUpRight className="h-3 w-3" />
+                          </span>
                         </span>
-                      </span>
-                    </Link>
-                  ))}
+                      </Link>
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -255,8 +345,12 @@ function AdminCalendar() {
           <span className="h-3 w-3 rounded-sm bg-primary/25" /> {STATUS_LABEL["confirmed"]}
         </span>
         <span className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-sm border-l-2 border-primary bg-primary/25" />{" "}
-          {STATUS_LABEL["completed"]}
+          {/* Los cuadraditos van más cargados que la pastilla que representan
+              —el confirmado es /10 en la grilla y /25 acá— porque 12px de color
+              se leen más flojos que una pastilla entera. El realizado sigue esa
+              misma cuenta y va a /70: lo que importa es que el salto contra el
+              confirmado se note igual acá abajo que arriba. */}
+          <span className="h-3 w-3 rounded-sm bg-primary/70" /> {STATUS_LABEL["completed"]}
         </span>
         <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-destructive/30" /> Vencido sin cerrar

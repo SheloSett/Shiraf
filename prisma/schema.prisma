@@ -365,6 +365,20 @@ model appointments {
   // `appointments_names_its_service` de reglas.sql exige que haya nombre o
   // service_id, así que un turno sin ninguno de los dos no se puede escribir.
   service_name    String?
+  // El nombre de la profesional, congelado por el mismo motivo que el del
+  // tratamiento: es lo que deja BORRAR una ficha del equipo sin que los turnos
+  // que esa persona atendió queden diciendo "sin asignar".
+  //
+  // Sin esto, borrar una profesional dejaba `professional_id` en NULL (la FK es
+  // SetNull) y el historial pasaba a ser indistinguible de un turno que nunca
+  // tuvo a nadie. Y peor: la pantalla lo marcaba en rojo pidiendo que se le
+  // asignara alguien, cosa que en un turno de hace dos meses sería inventar
+  // quién atendió.
+  //
+  // A diferencia de `service_name`, acá NO hay CHECK que exija uno de los dos:
+  // un turno sin profesional y sin nombre es legítimo — es el que el centro
+  // carga sin decidir todavía quién atiende.
+  professional_name String?
   guest_name      String?
   guest_phone     String?
   guest_email     String?

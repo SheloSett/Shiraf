@@ -38,6 +38,135 @@ export function toStatus(value: unknown): AppointmentStatus | null {
 }
 
 /**
+ * El estado que se le MUESTRA a una persona, que son cinco y no cuatro.
+ *
+ * La base guarda cuatro (`STATUSES`). El quinto, «Vencido», no es una columna:
+ * es el cruce de un turno que sigue en pendiente o confirmado con una hora que
+ * ya pasó. Son situaciones opuestas con el mismo `status` —un pendiente de la
+ * semana que viene es agenda por delante; el mismo pendiente del martes pasado
+ * es un turno que se vivió y que nadie cerró— y quien mira la pantalla necesita
+ * distinguirlas.
+ *
+ * Vivía suelto adentro del calendario, en la función que elegía el color. Subió
+ * acá cuando la lista de Turnos y la ficha tuvieron que mostrar lo mismo: la
+ * regla es una sola y tiene que decidirse en un solo lugar, o las tres pantallas
+ * terminan discrepando sobre el mismo turno.
+ */
+export type EstadoVisible = AppointmentStatus | "overdue";
+
+export const ESTADO_VISIBLE_LABEL: Record<EstadoVisible, string> = {
+  pending: "Pendiente",
+  confirmed: "Confirmado",
+  completed: "Realizado",
+  cancelled: "Cancelado",
+  overdue: "Vencido",
+};
+
+/**
+ * El estado de un turno tal como hay que mostrarlo.
+ *
+ * Lo vencido se decide ANTES que el estado guardado: es lo único de la agenda
+ * que pide que alguien vaya a hacer algo.
+ *
+ * Un cancelado o un realizado NUNCA vencen — ya están cerrados, que pase la
+ * hora no les cambia nada. Sólo vence lo que quedó abierto.
+ *
+ * `now` en null es «todavía no sé qué hora es», y devuelve el estado guardado
+ * sin más. Sirve para el rato entre que el servidor manda el HTML y el navegador
+ * lo hidrata: ahí la fecha del servidor está en UTC y a las 23:35 de Argentina
+ * allá ya es el día siguiente, así que decidir qué venció daría distinto en cada
+ * lado y React se quejaría del cambio.
+ */
+export function estadoVisible(status: string, startsAt: string, now: number | null): EstadoVisible {
+  const guardado = toStatus(status);
+  if (!guardado) return "pending";
+
+  const abierto = guardado === "pending" || guardado === "confirmed";
+  if (abierto && now !== null && new Date(startsAt).getTime() < now) return "overdue";
+
+  return guardado;
+}
+
+/**
+ * Cuántas horas antes puede la CLIENTA tocar su propio turno.
+ *
+ * Cancelar o reprogramar desde «Mi cuenta» tiene un corte: pasado ese margen, el
+ * turno ya no lo mueve ella. Un hueco que se libera dos horas antes no se vuelve
+ * a llenar y la profesional se queda con la mañana partida; y si viene una
+ * reprogramación sobre la hora, la agenda del día ya está armada.
+ *
+ * El corte es SÓLO para la clienta. El centro sigue pudiendo mover y cancelar
+ * cualquier cosa desde el panel, que es donde se resuelven las excepciones —la
+ * que llama por teléfono, la que se descompuso—: ahí hay alguien decidiendo.
+ *
+ * Vive acá porque lo miran los dos lados: el servidor, que es el que de verdad
+ * lo impide, y la pantalla, que apaga el botón y explica por qué. Si estuvieran
+ * escritos por separado, el día que cambie el número uno de los dos se olvida.
+ */
+export const HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO = 6;
+
+/**
+ * Le quedan horas de sobra para tocarlo, o ya está encima.
+ *
+ * `now` en null —todavía no hidrató— devuelve `true`: sin reloj no se puede
+ * decidir, y es el servidor el que manda. Apagar el botón en ese rato lo
+ * mostraría deshabilitado por un instante en un turno que sí se puede cancelar.
+ */
+export function laClientaTodaviaPuede(startsAt: string, now: number | null): boolean {
+  if (now === null) return true;
+  const margen = HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO * 60 * 60 * 1000;
+  return new Date(startsAt).getTime() - now >= margen;
+}
+
+/**
+ * Quién atiende (o atendió) un turno.
+ *
+ * Son CUATRO situaciones y las pantallas sólo distinguían dos:
+ *
+ *   asignada     · tiene profesional y sigue atendiendo.
+ *   desactivada  · la tiene, pero está dada de baja.
+ *   historica    · no tiene ficha, pero sí el nombre congelado: la borraron.
+ *   sinAsignar   · no tiene ni ficha ni nombre. Nunca se le asignó a nadie.
+ *
+ * `historica` no existía, y es la que rompía el historial. Al borrar a una
+ * profesional la FK deja `professional_id` en NULL, así que el turno que ESA
+ * persona atendió en agosto pasaba a verse idéntico a uno sin asignar: en rojo y
+ * pidiendo que se le pusiera alguien. Ponerle alguien hoy sería escribir que la
+ * atendió una persona que no la atendió. Por eso el nombre se congela en
+ * `appointments.professional_name`, igual que el del tratamiento.
+ *
+ * `seArregla` es lo otro: dice si todavía tiene sentido pedir que se resuelva.
+ * Sólo un turno abierto y por venir se arregla asignando a alguien; uno vencido,
+ * realizado o cancelado, no. Es lo que decide si va en rojo o en gris, y sale de
+ * `estadoVisible` para que no haya dos criterios de "esto ya pasó".
+ *
+ * Devuelve la DECISIÓN, no el texto: cada pantalla la escribe como le entra. En
+ * la grilla del calendario hay 11px y dos palabras; en la ficha hay un renglón
+ * entero.
+ */
+export type QuienAtiende =
+  | { caso: "asignada"; nombre: string }
+  | { caso: "desactivada"; nombre: string; seArregla: boolean }
+  | { caso: "historica"; nombre: string }
+  | { caso: "sinAsignar"; seArregla: boolean };
+
+export function quienAtiende(
+  profesional: { full_name: string; is_active: boolean } | null | undefined,
+  nombreCongelado: string | null | undefined,
+  status: string,
+  startsAt: string,
+  now: number | null,
+): QuienAtiende {
+  const estado = estadoVisible(status, startsAt, now);
+  const seArregla = estado === "pending" || estado === "confirmed";
+
+  if (profesional?.is_active) return { caso: "asignada", nombre: profesional.full_name };
+  if (profesional) return { caso: "desactivada", nombre: profesional.full_name, seArregla };
+  if (nombreCongelado) return { caso: "historica", nombre: nombreCongelado };
+  return { caso: "sinAsignar", seArregla };
+}
+
+/**
  * Un tramo de atención: un día y un rango de horas.
  *
  * Se llama tramo y no "horario" porque un día puede tener más de uno. La base y

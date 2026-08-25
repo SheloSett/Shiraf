@@ -1,15 +1,27 @@
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Clock, Mail, MessageCircle, Phone, User } from "lucide-react";
+import { ArrowLeft, Clock, Mail, MessageCircle, Phone, Trash2, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { EstadoTurno } from "@/components/admin/estado-turno";
+import { quienAtiende } from "@/lib/shiraf";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
 import { api, apiPut } from "@/lib/api";
 import type { RtaProfesionalesParaElTurno, RtaTurnoEnDetalle } from "@/lib/api-tipos";
-import { formatDateTime, formatMoney, STATUS_LABEL, toStatus } from "@/lib/shiraf";
+import { formatDateTime, formatMoney, toStatus } from "@/lib/shiraf";
 import { appointmentWhatsappUrl } from "@/lib/notifications";
 import {
   NOTIFIES,
@@ -17,6 +29,8 @@ import {
   toNotifiable,
   useCambiarEstadoDeTurno,
 } from "@/hooks/useCambiarEstadoDeTurno";
+import { useBorrarTurno } from "@/hooks/useBorrarTurno";
+import { useReprogramarTurno } from "@/hooks/useReprogramarTurno";
 
 /**
  * La ficha de un turno.
@@ -70,6 +84,10 @@ function FichaDelTurno() {
   const [linking, setLinking] = useState<GuestToLink | null>(null);
   /** Invitada a la que se le están corrigiendo los datos, o null. */
   const [editing, setEditing] = useState<GuestToEdit | null>(null);
+  /** ¿Está abierto el cartel que pregunta si se borra el turno? */
+  const [borrandoTurno, setBorrandoTurno] = useState(false);
+
+  const navigate = useNavigate();
 
   const turno = useQuery({
     // La clave arranca con "turno" a propósito: el hook que cambia el estado
@@ -80,6 +98,10 @@ function FichaDelTurno() {
   });
 
   const setStatus = useCambiarEstadoDeTurno();
+  const reprogramar = useReprogramarTurno();
+  // El valor del <input type="datetime-local">, que es hora LOCAL sin zona.
+  const [nuevoHorario, setNuevoHorario] = useState("");
+  const borrar = useBorrarTurno();
 
   if (turno.isPending) {
     return <p className="text-sm text-muted-foreground">Buscando el turno…</p>;
@@ -108,6 +130,16 @@ function FichaDelTurno() {
    * normal, y hacer esperar a que termine el bloque sería una molestia.
    */
   const todaviaNoEmpezo = new Date(t.starts_at) > new Date();
+  /**
+   * Un turno que todavía se va a atender NO se borra: se cancela.
+   *
+   * Es la misma regla que aplica el servidor —ver `turnos.controller → borrar`—
+   * y el motivo es que cancelar es lo único que le avisa a la clienta. Borrar
+   * derecho el turno de mañana le libera el horario al centro y la deja
+   * viniendo igual, sin que nadie le haya dicho nada.
+   */
+  const seBorra = !((estado === "pending" || estado === "confirmed") && todaviaNoEmpezo);
+
   const aviso = estado ? NOTIFIES[estado] : undefined;
   const whatsapp = aviso ? appointmentWhatsappUrl(aviso, toNotifiable(t)) : null;
 
@@ -135,9 +167,12 @@ function FichaDelTurno() {
             {formatDateTime(t.starts_at)}
           </h1>
         </div>
-        <Badge variant="outline" className="text-sm">
-          {STATUS_LABEL[t.status] ?? t.status}
-        </Badge>
+        <EstadoTurno
+          status={t.status}
+          startsAt={t.starts_at}
+          now={Date.now()}
+          className="text-sm"
+        />
       </div>
 
       <div className="mt-8 space-y-6">
@@ -219,16 +254,61 @@ function FichaDelTurno() {
           </Dato>
 
           <Dato etiqueta="Profesional">
-            {t.professionals?.full_name ?? (
-              <span className="font-semibold text-destructive">Sin asignar</span>
-            )}
-            {/* Tiene nombre pero ya no atiende: es el caso que más se escapa,
-                porque la ficha muestra un nombre y parece resuelta. */}
-            {t.professionals && !t.professionals.is_active && (
-              <span className="mt-1 block text-xs font-semibold text-destructive">
-                Ya no atiende — hay que pasarle este turno a otra.
-              </span>
-            )}
+            {(() => {
+              const q = quienAtiende(
+                t.professionals,
+                t.professional_name,
+                t.status,
+                t.starts_at,
+                Date.now(),
+              );
+
+              if (q.caso === "asignada") return q.nombre;
+
+              // Se borró del equipo, pero el turno guarda quién lo atendió. Es
+              // el dato correcto y no hay nada que hacer con él: se muestra como
+              // información, sin rojo y sin pedir nada.
+              if (q.caso === "historica") {
+                return (
+                  <>
+                    {q.nombre}
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      Ya no trabaja en el centro. Queda anotada porque es quien atendió este turno.
+                    </span>
+                  </>
+                );
+              }
+
+              if (q.caso === "desactivada") {
+                return (
+                  <>
+                    {q.nombre}
+                    <span
+                      className={`mt-1 block text-xs ${q.seArregla ? "font-semibold text-destructive" : "text-muted-foreground"}`}
+                    >
+                      {q.seArregla
+                        ? "Ya no atiende — hay que pasarle este turno a otra."
+                        : "Ya no atiende. Este turno ya pasó, así que queda a su nombre."}
+                    </span>
+                  </>
+                );
+              }
+
+              // Nunca tuvo a nadie. Sólo es un problema si todavía se puede
+              // resolver: en un turno que ya pasó, asignarle alguien ahora sería
+              // anotar que la atendió quien no la atendió.
+              return q.seArregla ? (
+                <span className="font-semibold text-destructive">Sin asignar</span>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">Sin registrar</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    No quedó anotado quién lo atendió, y el turno ya pasó. Asignarle alguien ahora
+                    diría que la atendió una persona que quizá no fue.
+                  </span>
+                </>
+              );
+            })()}
           </Dato>
 
           <Dato icono={<Clock className="h-3 w-3" />} etiqueta="Duración">
@@ -258,34 +338,49 @@ function FichaDelTurno() {
         <section className="rounded-sm border border-border bg-card p-6">
           <h2 className="font-display text-xl text-foreground">Qué hacer con este turno</h2>
 
+          {/* ── LOS CAMBIOS DE ESTADO, SIEMPRE TODOS ──────────────────────
+              Antes cada botón tenía su propia condición y sólo salían los del
+              "camino feliz": pendiente ofrecía confirmar, confirmado ofrecía
+              realizado, y un turno cerrado no ofrecía NADA — decía «no hay nada
+              más que hacerle». Un clic al lado dejaba el turno mal para siempre,
+              porque la tabla tampoco lo deja tocar.
+
+              Ahora están los cuatro estados menos el que el turno ya tiene, que
+              es el único que no tiene sentido ofrecer. Esta es la pantalla donde
+              se arregla cualquier cosa; la tabla quedó con lo de todos los días.
+
+              El servidor nunca puso trabas: `cambiarEstado` acepta cualquier
+              transición y su única regla —que no se puede marcar realizado algo
+              que todavía no empezó— es la misma que aplica el `disabled`. */}
           <div className="mt-5 flex flex-wrap gap-2">
-            {estado === "pending" && (
-              <Button onClick={() => cambiarA("confirmed")} disabled={setStatus.isPending}>
-                Confirmar
-              </Button>
-            )}
-            {estado === "confirmed" && (
-              <Button
-                variant="outline"
-                onClick={() => cambiarA("completed")}
+            {(
+              [
+                ["confirmed", "Confirmar"],
+                ["completed", "Marcar realizado"],
+                ["cancelled", "Cancelar el turno"],
+                ["pending", "Volver a pendiente"],
+              ] as const
+            )
+              .filter(([otro]) => otro !== estado)
+              .map(([otro, texto]) => {
                 // Un turno que todavía no empezó no se pudo haber realizado. El
                 // servidor lo rechaza igual; acá se apaga para no ofrecer algo
-                // que va a fallar.
-                disabled={setStatus.isPending || todaviaNoEmpezo}
-                title={todaviaNoEmpezo ? "Todavía no llegó la hora de este turno" : undefined}
-              >
-                Marcar realizado
-              </Button>
-            )}
-            {(estado === "pending" || estado === "confirmed") && (
-              <Button
-                variant="ghost"
-                onClick={() => cambiarA("cancelled")}
-                disabled={setStatus.isPending}
-              >
-                Cancelar el turno
-              </Button>
-            )}
+                // que va a fallar, y el título dice por qué.
+                const bloqueado = otro === "completed" && todaviaNoEmpezo;
+                return (
+                  <Button
+                    key={otro}
+                    // Cancelar en `ghost` para que no compita: es la salida, no
+                    // lo que se viene a hacer.
+                    variant={otro === "cancelled" ? "ghost" : "outline"}
+                    disabled={setStatus.isPending || bloqueado}
+                    title={bloqueado ? "Todavía no llegó la hora de este turno" : undefined}
+                    onClick={() => cambiarA(otro)}
+                  >
+                    {texto}
+                  </Button>
+                );
+              })}
 
             {/* Reenviar el aviso, para cuando el del toast se pasó de largo o el
                 mensaje no llegó. Sale con el texto del estado en el que el turno
@@ -301,23 +396,130 @@ function FichaDelTurno() {
             )}
           </div>
 
+          {/* ── REPROGRAMAR ──────────────────────────────────────────────
+              La salida de un turno vencido. A uno que se pasó de hora no se le
+              puede inventar una profesional ni darlo por realizado si no pasó;
+              lo que corresponde es correrlo de fecha. Hasta ahora la única forma
+              era cancelarlo y cargarlo de nuevo, que le pierde el historial.
+
+              Sirve igual para uno por venir: la clienta que avisa que no llega,
+              la profesional que se enferma.
+
+              Cerrado no se muestra —realizado ya pasó, cancelado ya no va—: si
+              hay que revivirlo, primero se le cambia el estado con los botones
+              de arriba. Son dos decisiones y conviene que sean dos clics. */}
+          {estado !== "completed" && estado !== "cancelled" && (
+            <div className="mt-6 border-t border-border pt-5">
+              <p className="text-sm font-medium text-foreground">Reprogramar el turno</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Se le avisa a la clienta con el horario nuevo. Si ese horario ya está tomado con la
+                misma profesional, la base lo frena y no se guarda nada.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  type="datetime-local"
+                  aria-label="Nuevo día y hora del turno"
+                  value={nuevoHorario}
+                  onChange={(e) => setNuevoHorario(e.target.value)}
+                  className="h-10 rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!nuevoHorario || reprogramar.isPending}
+                  onClick={() =>
+                    reprogramar.mutate(
+                      {
+                        id: t.id,
+                        // `datetime-local` da "2026-08-25T14:30" sin zona, que
+                        // `new Date` interpreta como hora local — la del centro,
+                        // que es la que se acaba de tipear. De ahí sale el
+                        // instante absoluto que guarda la base.
+                        startsAt: new Date(nuevoHorario).toISOString(),
+                        // El aviso lleva el horario NUEVO, no el que el turno
+                        // todavía tiene en pantalla.
+                        notify: {
+                          ...toNotifiable(t),
+                          startsAt: new Date(nuevoHorario).toISOString(),
+                        },
+                      },
+                      { onSuccess: () => setNuevoHorario("") },
+                    )
+                  }
+                >
+                  {reprogramar.isPending ? "Moviendo…" : "Reprogramar"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Reasignar sólo tiene sentido sobre un turno que se va a atender. Uno
               cerrado no se mueve de profesional: ya pasó. */}
           {(estado === "pending" || estado === "confirmed") && (
             <CambiarProfesional turnoId={t.id} actual={t.professionals} />
           )}
 
-          {(estado === "completed" || estado === "cancelled") && (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Este turno ya está cerrado como “{STATUS_LABEL[t.status]}”. No hay nada más que
-              hacerle.
-            </p>
+          {/* ── SACARLO DE LA AGENDA PARA SIEMPRE ────────────────────────
+              Abajo de todo, detrás de una línea y con el botón en gris: es la
+              única acción de esta pantalla que no se deshace, y no es la que se
+              vino a hacer. Arriba están los estados, que es lo de todos los
+              días; esto es para el turno que nunca tendría que haber existido.
+
+              Mientras el turno se pueda atender no aparece: ahí lo que
+              corresponde es cancelarlo, que además le avisa a la clienta. */}
+          {seBorra && (
+            <div className="mt-6 border-t border-border pt-5">
+              <p className="text-sm text-muted-foreground">
+                ¿Este turno nunca existió —se cargó dos veces, o en el día equivocado—? Se puede
+                borrar de la base. Cancelarlo, en cambio, lo deja escrito.
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="mt-3 text-destructive hover:text-destructive"
+                onClick={() => setBorrandoTurno(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" /> Eliminar el turno
+              </Button>
+            </div>
           )}
         </section>
       </div>
 
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
       <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
+
+      <AlertDialog open={borrandoTurno} onOpenChange={setBorrandoTurno}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-2xl">
+              ¿Eliminar este turno?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t.person.name} · {formatDateTime(t.starts_at)}
+              <span className="mt-3 block">
+                Se borra de la base y no queda registro de que existió: ni en la lista, ni en el
+                calendario, ni en el historial de la clienta.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Mejor no</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={borrar.isPending}
+              onClick={() =>
+                borrar.mutate(t.id, {
+                  // Esta pantalla es la del turno que se acaba de borrar: quedarse
+                  // sería mirar una ficha que ya no existe. Se vuelve a la lista.
+                  onSuccess: () => void navigate({ to: "/admin/turnos", search: {} }),
+                })
+              }
+            >
+              Eliminar el turno
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

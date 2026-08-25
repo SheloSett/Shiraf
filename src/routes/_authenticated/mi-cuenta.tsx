@@ -12,8 +12,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiPut } from "@/lib/api";
-import type { RtaMiCuenta, RtaMisTurnos } from "@/lib/api-tipos";
-import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
+import { ReprogramarTurnoDialog } from "@/components/reprogramar-turno-dialog";
+import type { MiTurno, RtaMiCuenta, RtaMisTurnos } from "@/lib/api-tipos";
+import {
+  formatDateTime,
+  formatMoney,
+  HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO,
+  laClientaTodaviaPuede,
+  STATUS_LABEL,
+} from "@/lib/shiraf";
 import { passwordProblem } from "@/lib/password";
 import { isTeamAccount } from "@/lib/roles";
 
@@ -117,6 +124,9 @@ function AccountPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /** El turno abierto en el diálogo de cambiar, o null. */
+  const [reprogramando, setReprogramando] = useState<MiTurno | null>(null);
+
   const cancel = useMutation({
     mutationFn: (id: string) => apiPut(`/api/mi-cuenta/turnos/${id}/cancelar`),
     onSuccess: () => {
@@ -168,9 +178,35 @@ function AccountPage() {
                   <span className="text-sm text-muted-foreground">
                     {formatMoney(a.services?.price)}
                   </span>
-                  <Button size="sm" variant="ghost" onClick={() => cancel.mutate(a.id)}>
-                    Cancelar
-                  </Button>
+                  {/* Cancelar sale sólo con margen. Pasadas las horas del
+                      corte el botón se va y queda dicho qué hacer, en vez de
+                      dejarlo ahí para que el servidor lo rechace después del
+                      clic — que enseña la regla en el peor momento y parece un
+                      error del sitio.
+
+                      El servidor la comprueba igual, en `cancelarMiTurno`:
+                      esto es cortesía, no el candado. */}
+                  {laClientaTodaviaPuede(a.starts_at, now) ? (
+                    <>
+                      {/* Cambiar antes que cancelar, y con más peso: es lo que
+                          la clienta quiere casi siempre —no puede ESE día, no
+                          que no quiere venir— y es lo que al centro le conviene
+                          que elija, porque así el lugar no se pierde. */}
+                      <Button size="sm" variant="outline" onClick={() => setReprogramando(a)}>
+                        Cambiar
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => cancel.mutate(a.id)}>
+                        Cancelar
+                      </Button>
+                    </>
+                  ) : (
+                    <span
+                      className="text-xs text-muted-foreground"
+                      title={`Faltan menos de ${HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO} horas`}
+                    >
+                      Para cambiarlo o cancelarlo, escribinos
+                    </span>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -302,6 +338,11 @@ function AccountPage() {
           </CardContent>
         </Card>
       </section>
+
+      <ReprogramarTurnoDialog
+        turno={reprogramando}
+        onOpenChange={(abierto) => !abierto && setReprogramando(null)}
+      />
 
       <SiteFooter />
     </div>

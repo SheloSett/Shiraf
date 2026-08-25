@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Trash2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -12,7 +14,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { api } from "@/lib/api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { api, apiDelete } from "@/lib/api";
 import type { RtaClientas, RtaFichaDeClienta } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
 import { useAccess } from "@/hooks/useAccess";
@@ -23,10 +35,48 @@ export const Route = createFileRoute("/_authenticated/admin/clientes")({
 });
 
 function AdminClients() {
-  const { can } = useAccess();
+  const { can, isAdmin } = useAccess();
   const canSeeNotes = can("clients_notes");
   /** La clienta cuya ficha está abierta en el panel lateral, o null. */
   const [viendo, setViendo] = useState<{ id: string; nombre: string } | null>(null);
+  /**
+   * La clienta que se está por borrar, o null.
+   *
+   * Lleva los dos conteos además del nombre: el cartel tiene que decir cuántos
+   * turnos se van con ella, que es lo que hace irreversible al borrado y lo que
+   * no se ve mirando el botón.
+   */
+  const [borrando, setBorrando] = useState<{
+    id: string;
+    nombre: string;
+    total: number;
+    done: number;
+  } | null>(null);
+
+  const queryClient = useQueryClient();
+
+  /**
+   * Borrar la cuenta de una clienta.
+   *
+   * El servidor la frena si tiene turnos por venir sin cancelar y contesta con
+   * el motivo escrito; el toast lo muestra tal cual y el cartel queda abierto,
+   * porque después de cancelar esos turnos la decisión sigue en pie.
+   */
+  const borrar = useMutation({
+    mutationFn: async (id: string) => await apiDelete(`/api/clientas/${id}`),
+    onSuccess: (_dato, id) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-clients"] });
+      // Los turnos que se fueron con ella salen de la lista y del calendario.
+      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-calendar"] });
+      setBorrando(null);
+      // Por si la ficha abierta era justo la suya: quedaría un panel pidiendo
+      // una clienta que ya no está.
+      setViendo((actual) => (actual?.id === id ? null : actual));
+      toast.success("Clienta eliminada.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const clients = useQuery({
     // El permiso entra en la clave: sin esto, quien lo tenga y quien no
@@ -77,7 +127,7 @@ function AdminClients() {
                   una fila de "—": así no queda la duda de si la clienta no
                   escribió nada o si es que no se puede ver. */}
               {canSeeNotes && <TableHead>Notas clínicas</TableHead>}
-              <TableHead className="w-24 text-right">Ficha</TableHead>
+              <TableHead className="w-32 text-right">Ficha</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -108,13 +158,39 @@ function AdminClients() {
                   </TableCell>
                 )}
                 <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setViendo({ id: c.id, nombre: c.full_name ?? "Sin nombre" })}
-                  >
-                    Ver ficha
-                  </Button>
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setViendo({ id: c.id, nombre: c.full_name ?? "Sin nombre" })}
+                    >
+                      Ver ficha
+                    </Button>
+
+                    {/* Sólo la dueña, y el servidor exige lo mismo: quien tiene
+                        «Ver datos de clientas» lee teléfonos y fichas, que es
+                        una cosa; borrar una cuenta con todo su historial es
+                        otra, y no se deshace. Ver `borrarClienta`. */}
+                    {isAdmin && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-9 w-9 text-destructive hover:text-destructive"
+                        aria-label={`Eliminar a ${c.full_name ?? "esta clienta"}`}
+                        title="Eliminar la clienta"
+                        onClick={() =>
+                          setBorrando({
+                            id: c.id,
+                            nombre: c.full_name ?? "Sin nombre",
+                            total: c.total,
+                            done: c.done,
+                          })
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -137,6 +213,45 @@ function AdminClients() {
       </div>
 
       <FichaDeClienta clienta={viendo} onClose={() => setViendo(null)} />
+
+      {/* Borrar una clienta.
+
+          El cartel cuenta los turnos porque es la parte que sorprende: la
+          cuenta se borra con todo lo que cuelga de ella —la ficha, las notas
+          clínicas y los turnos— y eso se lleva puesto el historial del centro,
+          no sólo el de la clienta. Con los números adelante la decisión se toma
+          sabiendo qué se pierde. */}
+      <AlertDialog open={!!borrando} onOpenChange={(next) => !next && setBorrando(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-2xl">
+              ¿Eliminar a {borrando?.nombre}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borra su cuenta con su ficha y sus notas clínicas, y no hay vuelta atrás.
+              {borrando && borrando.total > 0 && (
+                <span className="mt-3 block font-medium text-destructive">
+                  Se van también sus {borrando.total} {borrando.total === 1 ? "turno" : "turnos"}
+                  {borrando.done > 0 && ` —${borrando.done} de ellos ya realizados—`}: desaparecen
+                  de la lista, del calendario y de la facturación del centro.
+                </span>
+              )}
+              <span className="mt-3 block">
+                Si tiene turnos por venir hay que cancelarlos primero, así recibe el aviso.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Mejor no</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={borrar.isPending}
+              onClick={() => borrando && borrar.mutate(borrando.id)}
+            >
+              Eliminar la clienta
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -190,9 +305,15 @@ function FichaDeClienta({
 
   return (
     <Sheet open={clienta !== null} onOpenChange={(next) => !next && onClose()}>
-      {/* `side="left"` y ancho generoso: el historial son filas de tres datos y
-          con un panel angosto cada turno ocuparía tres renglones. */}
-      <SheetContent side="left" className="w-full overflow-y-auto sm:max-w-lg">
+      {/* Abre por la DERECHA, que es de donde se la llamó: el botón «Ver ficha»
+          es la última columna de la tabla, contra el borde derecho. Abriendo por
+          la izquierda el panel aparecía en la punta opuesta a la que se acababa
+          de tocar, y encima tapaba el menú lateral. Es además el lado que usan
+          los otros dos Sheet de la app.
+
+          El ancho generoso se queda: el historial son filas de tres datos y con
+          un panel angosto cada turno ocuparía tres renglones. */}
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
           <SheetTitle className="font-display text-2xl">{clienta?.nombre}</SheetTitle>
         </SheetHeader>

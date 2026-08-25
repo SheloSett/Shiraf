@@ -60,7 +60,12 @@ import {
  */
 
 /** Los eventos que le hablan a la clienta. "new-request" le habla al centro. */
-const TO_CLIENT: readonly AppointmentEvent[] = ["confirmed", "cancelled", "reminder"];
+const TO_CLIENT: readonly AppointmentEvent[] = [
+  "confirmed",
+  "cancelled",
+  "reminder",
+  "rescheduled",
+];
 
 // ── El mail, en HTML ────────────────────────────────────────────────────────
 // Escrito con las mismas restricciones que las plantillas de emails:
@@ -195,9 +200,10 @@ async function sendEmail(input: {
  * Busca el turno, redacta el aviso y lo manda.
  *
  * Vive aparte del createServerFn porque tiene dos entradas: el panel, que llega
- * autenticado por el middleware, y la tarea del recordatorio, que no es ninguna
- * persona y se identifica con un secreto. La autorización la resuelve cada una
- * antes de llamar acá; esto ya asume que se puede.
+ * autenticado por el middleware, y la tarea del recordatorio, que no llega de
+ * ninguna persona —la dispara el reloj de `reminders.service.ts`, adentro del
+ * proceso—. La autorización la resuelve cada una antes de llamar acá; esto ya
+ * asume que se puede.
  */
 export async function deliverAppointmentEmail(
   appointmentId: string,

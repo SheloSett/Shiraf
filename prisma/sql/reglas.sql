@@ -61,6 +61,25 @@ UPDATE appointments a
  WHERE s.id = a.service_id
    AND a.service_name IS NULL;
 
+-- ── 1.1 ter  Y quién lo atendió ─────────────────────────────────────────────
+--
+-- Mismo relleno que el de arriba, para `professional_name`. Corre en cada push
+-- y es idempotente por el `IS NULL`.
+--
+-- ⚠️ Esto sólo puede recuperar el nombre de las profesionales que TODAVÍA
+-- existen. Las que ya se borraron dejaron `professional_id` en NULL y su nombre
+-- no está en ningún lado: ese historial ya se perdió y no hay de dónde sacarlo.
+-- Por eso importa que esto corra ANTES de la próxima baja del equipo.
+--
+-- No lleva CHECK: un turno sin profesional y sin nombre es válido —es el que el
+-- centro carga sin decidir aún quién atiende—, al revés que con el tratamiento.
+UPDATE appointments a
+   SET professional_name = pr.full_name
+  FROM professionals pr
+ WHERE pr.id = a.professional_id
+   AND a.professional_name IS NULL;
+
+
 ALTER TABLE "appointments" DROP CONSTRAINT IF EXISTS appointments_names_its_service;
 ALTER TABLE "appointments"
   ADD CONSTRAINT appointments_names_its_service

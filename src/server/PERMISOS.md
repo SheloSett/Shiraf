@@ -47,7 +47,7 @@ Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 | ✅  | `update appointments`             | UPDATE | Ídem, y vale para leer **y** para escribir     | 20260813070000 | turnos.controller → cambiarEstado (ruta: `appointments`) · clientas.controller → cancelarMiTurno + exigirAlcanceDeClienta     |
 | ✅  | `staff create appointments`       | INSERT | Permiso `appointments`                         | 20260813070000 | turnos.controller → crear (ruta: `appointments`)                                                                              |
 | ✅  | `clients create own appointments` | INSERT | `client_id = uid`. La más vieja y sigue viva   | 20260805164122 | reservar.controller → reservar (el client_id sale de la sesión, no del body)                                                  |
-| ✅  | `delete appointments`             | DELETE | Permiso `appointments`                         | 20260813070000 | sin endpoint: un turno se cancela, no se borra                                                                                |
+| ✅  | `delete appointments`             | DELETE | Permiso `appointments`                         | 20260813070000 | turnos.controller → borrar (ruta: `appointments`). Sólo si el turno ya no se va a atender: lo que se puede atender se cancela |
 
 ## Fichas de clientas — `profiles` (3)
 
@@ -70,6 +70,19 @@ Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 > ofrezca una casilla que promete un candado inexistente, y **`puede()` no lo
 > aplica**. Acá hay que chequear los dos permisos explícitamente, como hacía la
 > policy. Para eso está `puedeAlguno()` en `authz.service.ts`.
+
+> ### Borrar una clienta no estaba entre las 39, y por eso es de la dueña
+>
+> Ninguna policy permitía borrar un `profile`: en Supabase las cuentas se
+> borraban con la Admin API, fuera del alcance de la RLS. `DELETE
+> /api/clientas/:id` es nuevo, así que no hay regla vieja de la cual copiar el
+> candado — y con el mismo criterio fail-closed del resto del archivo se le
+> puso `exigirAdmin()`, el que ya usa la baja de una empleada.
+>
+> El candado está **adentro del controller y no en la ruta**
+> (`clientas.controller → borrarClienta`): el middleware de las otras rutas de
+> `/clientas` deja pasar a quien tiene `clients_contact` **o** `appointments`,
+> que es leer, no borrar cuentas con su historial.
 
 ## Notas clínicas — `client_notes` (3)
 

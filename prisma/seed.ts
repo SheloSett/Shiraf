@@ -419,7 +419,9 @@ async function main() {
   // post-push corre ANTES que el seed en el arranque del contenedor: sin esto,
   // una base recién sembrada quedaría con los turnos sin nombre congelado hasta
   // el push siguiente. El `IS NULL` lo hace idempotente en los dos lugares.
-  await prisma.`
+  // `$executeRaw` y no `$queryRaw`: esto escribe, no lee. La plantilla no
+  // interpola nada, así que no hay nada que escapar.
+  await prisma.$executeRaw`
     UPDATE appointments a
        SET service_name = s.name
       FROM services s

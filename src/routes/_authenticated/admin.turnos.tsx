@@ -15,8 +15,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { EstadoTurno } from "@/components/admin/estado-turno";
+import { estadoVisible, quienAtiende } from "@/lib/shiraf";
 import { useEffect, useRef, useState } from "react";
-import { FileText, MessageCircle, Plus, TriangleAlert } from "lucide-react";
+import { FileText, MessageCircle, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
@@ -39,13 +51,14 @@ import {
   toNotifiable,
   useCambiarEstadoDeTurno,
 } from "@/hooks/useCambiarEstadoDeTurno";
+import { useBorrarTurno } from "@/hooks/useBorrarTurno";
 
 /**
  * Qué mira la pantalla, escrito en la URL.
  *
  * `estado` es la pestaña y `turno` el turno que hay que resaltar. Los dos
  * existen por el mismo motivo: desde el calendario se hace clic en un turno y
- * hay que aterrizar en ÉL, no en la lista de pendientes por defecto. Guardar la
+ * hay que aterrizar en ÉL, no en la lista sin filtrar. Guardar la
  * pestaña acá y no en un useState tiene además dos regalos: el botón "atrás"
  * del navegador vuelve a la pestaña anterior, y el enlace se puede compartir.
  *
@@ -163,11 +176,31 @@ function AdminAppointments() {
   const navigate = useNavigate();
   const search = Route.useSearch();
 
+  // El reloj, para la columna «Estado»: de acá sale qué turno está vencido.
+  //
+  // `Date.now()` derecho y no el useState-tras-hidratar del calendario, porque
+  // acá no hace falta: las filas sólo existen cuando `appointments.data` tiene
+  // algo, y eso pasa recién cuando responde la query, ya en el navegador. El
+  // servidor nunca llega a pintar una fila, así que no hay dos renders que
+  // puedan discrepar. En el calendario sí hacía falta: ahí el círculo de «hoy»
+  // se dibuja desde el mes que se está mirando, que existe desde el servidor.
+  const ahora = Date.now();
+
   // Comentado, no borrado: la pestaña dejó de vivir en un useState y pasó a la
   // URL (ver `Search` arriba). Con el estado local, entrar por el enlace del
   // calendario mostraba siempre "Pendiente" y el turno buscado no aparecía.
   // const [filter, setFilter] = useState<Status>("pending");
-  const filter: Pestana = search.estado ?? "pending";
+  //
+  // Sin `?estado=` en la URL se abre «Todos», que es lo que ya decía el
+  // comentario de PESTANAS acá arriba —«la que se abre cuando no se está
+  // buscando nada en particular»— mientras el código abría «Pendiente».
+  //
+  // Entrar por «Pendiente» convertía la pantalla en una bandeja de tareas: quien
+  // venía a buscar un turno que ya estaba confirmado o realizado —que es la
+  // mayoría— caía en una lista donde no estaba, y muchas veces vacía, sin que
+  // nada explicara que había un filtro puesto. Lo pendiente igual no se pierde:
+  // el menú lateral le lleva la cuenta con el globito.
+  const filter: Pestana = search.estado ?? "todos";
   /** El filtro rojo: sólo los turnos que nadie va a atender. */
   const soloSinProfesional = search.sinProfesional === "1";
 
@@ -201,6 +234,16 @@ function AdminAppointments() {
   const [linking, setLinking] = useState<GuestToLink | null>(null);
   /** Invitada a la que se le están corrigiendo los datos, o null. */
   const [editing, setEditing] = useState<GuestToEdit | null>(null);
+  /**
+   * El turno que se está por borrar, o null.
+   *
+   * Se guarda el nombre y la fecha además del id: el cartel de confirmación
+   * tiene que decir CUÁL turno se va, y con el diálogo abierto la fila que se
+   * apretó ya no está a la vista.
+   */
+  const [borrando, setBorrando] = useState<{ id: string; quien: string; cuando: string } | null>(
+    null,
+  );
 
   // El mismo número que muestra el menú lateral: react-query comparte la
   // consulta, así que estar en esta pantalla no la pide dos veces.
@@ -241,6 +284,7 @@ function AdminAppointments() {
   // Lo mismo de antes, ahora compartido con la ficha del turno. Se usa igual:
   // setStatus.mutate({ id, status, notify }).
   const setStatus = useCambiarEstadoDeTurno();
+  const borrar = useBorrarTurno();
 
   // ⬇️ MUDADO a src/hooks/useCambiarEstadoDeTurno.ts.
   //
@@ -325,6 +369,51 @@ function AdminAppointments() {
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
       <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
 
+      {/* Borrar un turno.
+
+          El cartel dice de quién y de cuándo era, porque es lo único que queda
+          en pantalla del turno que se está por perder. Y aclara la diferencia
+          con cancelar, que es la confusión posible: el turno cancelado se sigue
+          viendo tachado en la lista y éste no va a quedar en ningún lado. */}
+      <AlertDialog open={!!borrando} onOpenChange={(next) => !next && setBorrando(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-2xl">
+              ¿Eliminar este turno?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {borrando?.quien} · {borrando?.cuando}
+              <span className="mt-3 block">
+                Se borra de la base y no queda registro de que existió: ni en la lista, ni en el
+                calendario, ni en el historial de la clienta. Es para el turno que se cargó dos
+                veces o en el día equivocado.
+              </span>
+              <span className="mt-3 block">
+                Si lo que pasa es que la clienta no viene, cancelalo en vez de borrarlo: así queda
+                escrito que ese horario se había tomado.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Mejor no</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={borrar.isPending}
+              onClick={() =>
+                borrando &&
+                borrar.mutate(borrando.id, {
+                  // Se cierra sólo si salió bien: si el servidor lo rechazó —un
+                  // turno que todavía se va a atender—, el cartel queda abierto
+                  // y el toast explica por qué.
+                  onSuccess: () => setBorrando(null),
+                })
+              }
+            >
+              Eliminar el turno
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* El cartel de los turnos que nadie va a atender.
 
           Va arriba de todo y en rojo a propósito: es la única cosa de esta
@@ -391,74 +480,112 @@ function AdminAppointments() {
               <TableHead>Tratamiento</TableHead>
               <TableHead>Profesional</TableHead>
               <TableHead>Valor</TableHead>
+              <TableHead>Estado</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {appointments.data?.map((a) => (
-              <TableRow
-                key={a.id}
-                ref={a.id === highlighted ? highlightedRow : null}
-                // El turno al que se vino desde el calendario, marcado con el
-                // mismo dorado suave con el que la grilla marca el día de hoy:
-                // es "acá estás", no un estado nuevo del turno.
-                className={a.id === highlighted ? "bg-gold-soft/25" : ""}
-              >
-                <TableCell className="whitespace-nowrap">{formatDateTime(a.starts_at)}</TableCell>
-                <TableCell>
-                  <span className="flex items-center gap-2">
-                    {a.person.name}
-                    {/* Marcar la invitada evita que se la busque en Clientes y
+            {appointments.data?.map((a) => {
+              // ── QUÉ BOTONES VAN EN ESTA FILA ────────────────────────────
+              //
+              // Sale del estado DE LA FILA, no de la pestaña abierta.
+              //
+              // Antes las tres condiciones miraban `filter`, y funcionaban de
+              // casualidad: estando en «Pendiente» todas las filas eran
+              // pendientes, así que mirar la pestaña o mirar la fila daba lo
+              // mismo. En «Todos» se rompe, y de las dos maneras: «Cancelar»
+              // aparecía hasta en un turno ya cancelado, y «Confirmar» y
+              // «Marcar realizado» no aparecían NUNCA —porque `filter` vale
+              // "todos" y nunca es igual a "pending" ni a "confirmed"—, así que
+              // desde la pestaña por defecto no se podía cerrar ningún turno.
+              const estado = estadoVisible(a.status, a.starts_at, ahora);
+
+              // «Cancelar» es el único botón de estado que queda en la tabla, y
+              // sólo sobre un turno que sigue en pie. Vencido queda afuera: ahí
+              // lo que hay que decidir es si se hizo o no se hizo, y eso no es un
+              // clic al pasar sino algo para mirar adentro del turno.
+              //
+              // «Confirmar» y «Marcar realizado» se fueron de acá. Eran cambios
+              // de estado apretables al pasar, en una fila junto a otros tres
+              // botones, y desde la lista no se deshacen. Viven en «Ver turno»,
+              // que además es la única pantalla que puede corregir un turno ya
+              // cerrado. Nada quedó sin lugar: todo se hace ahí.
+              const seCancela = estado === "pending" || estado === "confirmed";
+
+              // Borrar es lo contrario de cancelar, y por eso los dos botones
+              // nunca aparecen juntos: mientras el turno todavía se puede
+              // atender, lo que corresponde es cancelarlo —es lo único que le
+              // avisa a la clienta—. Recién cuando ya está cerrado (realizado o
+              // cancelado) o vencido tiene sentido sacarlo de la agenda.
+              //
+              // El servidor lo rechaza igual, con el motivo escrito; acá se
+              // esconde para no ofrecer algo que va a fallar.
+              const seBorra = estado !== "pending" && estado !== "confirmed";
+
+              return (
+                <TableRow
+                  key={a.id}
+                  ref={a.id === highlighted ? highlightedRow : null}
+                  // El turno al que se vino desde el calendario, marcado con el
+                  // mismo dorado suave con el que la grilla marca el día de hoy:
+                  // es "acá estás", no un estado nuevo del turno.
+                  className={a.id === highlighted ? "bg-gold-soft/25" : ""}
+                >
+                  <TableCell className="whitespace-nowrap">{formatDateTime(a.starts_at)}</TableCell>
+                  <TableCell>
+                    <span className="flex items-center gap-2">
+                      {a.person.name}
+                      {/* Marcar la invitada evita que se la busque en Clientes y
                         no aparezca: no tiene ficha porque no tiene cuenta. */}
-                    {a.person.isGuest && (
-                      <>
-                        <Badge variant="outline" className="font-normal text-[10px]">
-                          sin cuenta
-                        </Badge>
-                        {/* Editar va sin condición, al revés que vincular: sus
+                      {a.person.isGuest && (
+                        <>
+                          <Badge variant="outline" className="font-normal text-[10px]">
+                            sin cuenta
+                          </Badge>
+                          {/* Editar va sin condición, al revés que vincular: sus
                             datos viven en este turno y siempre se pueden
                             corregir. Es más, el caso más útil es justo el que
                             no tiene teléfono todavía. */}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setEditing({
-                              appointmentId: a.id,
-                              name: a.guest_name ?? "",
-                              phone: a.guest_phone,
-                              email: a.guest_email,
-                            })
-                          }
-                          className="text-[10px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
-                        >
-                          editar
-                        </button>
-                        {/* Sólo con teléfono: es el dato con el que se buscan
-                            los demás turnos de la misma persona. */}
-                        {a.person.phone && (
                           <button
                             type="button"
                             onClick={() =>
-                              setLinking({ name: a.person.name, phone: a.person.phone })
+                              setEditing({
+                                appointmentId: a.id,
+                                name: a.guest_name ?? "",
+                                phone: a.guest_phone,
+                                email: a.guest_email,
+                              })
                             }
                             className="text-[10px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
                           >
-                            vincular
+                            editar
                           </button>
-                        )}
-                      </>
-                    )}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{a.person.phone}</span>
-                  {a.client_notes && (
-                    <span className="mt-1 block max-w-52 text-xs italic text-muted-foreground">
-                      “{a.client_notes}”
+                          {/* Sólo con teléfono: es el dato con el que se buscan
+                            los demás turnos de la misma persona. */}
+                          {a.person.phone && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLinking({ name: a.person.name, phone: a.person.phone })
+                              }
+                              className="text-[10px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                            >
+                              vincular
+                            </button>
+                          )}
+                        </>
+                      )}
                     </span>
-                  )}
-                </TableCell>
-                <TableCell>{a.services?.name}</TableCell>
-                <TableCell>
-                  {/* Los DOS casos que hay que resolver van en rojo y enlazados a
+                    <span className="text-xs text-muted-foreground">{a.person.phone}</span>
+                    {a.client_notes && (
+                      <span className="mt-1 block max-w-52 text-xs italic text-muted-foreground">
+                        “{a.client_notes}”
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>{a.services?.name}</TableCell>
+                  <TableCell>
+                    {/* Los DOS casos que hay que resolver van en rojo y enlazados a
                       la ficha, que es donde se reasigna:
 
                         · sin profesional asignada;
@@ -467,119 +594,146 @@ function AdminAppointments() {
                       El segundo es el que engaña. La fila mostraba el nombre como
                       cualquier otra —"Valentina Ríos", texto negro— y parecía
                       resuelta, cuando esa persona no viene más. */}
-                  {a.professionals && a.professionals.is_active ? (
-                    a.professionals.full_name
-                  ) : (
-                    <Link
-                      to="/admin/turnos/$id"
-                      params={{ id: a.id }}
-                      className="inline-flex items-center gap-1.5 rounded-sm bg-destructive/15 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/25"
-                    >
-                      <TriangleAlert className="h-3 w-3 shrink-0" />
-                      {a.professionals
-                        ? `${a.professionals.full_name} · ya no atiende`
-                        : "Sin asignar"}
-                    </Link>
-                  )}
-                </TableCell>
-                <TableCell>{formatMoney(a.services?.price)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    {/* La ficha del turno: los datos de la clienta, el valor y
-                        el resto de lo que en una fila de tabla no entra. Va
-                        primera y en gris para que no le compita al botón del
-                        estado, que es la acción de todos los días. */}
-                    <Button asChild size="sm" variant="ghost">
-                      <Link to="/admin/turnos/$id" params={{ id: a.id }}>
-                        <FileText className="mr-2 h-4 w-4" /> Ver ficha
-                      </Link>
-                    </Button>
+                    {(() => {
+                      const q = quienAtiende(
+                        a.professionals,
+                        a.professional_name,
+                        a.status,
+                        a.starts_at,
+                        ahora,
+                      );
 
-                    {/* Reenviar el aviso, para cuando el del toast se pasó de
+                      // Ya no está en el equipo, pero quedó escrito quién atendió.
+                      // Nunca en rojo ni enlazado: no hay nada que resolver acá,
+                      // el turno simplemente pertenece al pasado.
+                      if (q.caso === "historica") {
+                        return (
+                          <span className="text-muted-foreground">
+                            {q.nombre} <span className="opacity-70">· ya no trabaja acá</span>
+                          </span>
+                        );
+                      }
+
+                      if (q.caso === "asignada") return q.nombre;
+
+                      const texto =
+                        q.caso === "desactivada" ? `${q.nombre} · ya no atiende` : "Sin asignar";
+
+                      // El chip rojo enlazado queda SÓLO para lo que todavía se
+                      // puede arreglar. En un turno que ya pasó mandaba a una
+                      // ficha donde no hay nada correcto que hacer.
+                      // Un turno que ya pasó sin nada registrado NO es "sin
+                      // asignar": eso afirmaría que no la atendió nadie, y no lo
+                      // sabemos — puede ser una profesional borrada de antes de
+                      // que el nombre se congelara. "Sin registrar" dice lo que
+                      // realmente pasa, que es que el dato no está.
+                      if (!q.seArregla) {
+                        return (
+                          <span className="text-muted-foreground">
+                            {q.caso === "sinAsignar" ? "Sin registrar" : texto}
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <Link
+                          to="/admin/turnos/$id"
+                          params={{ id: a.id }}
+                          className="inline-flex items-center gap-1.5 rounded-sm bg-destructive/15 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/25"
+                        >
+                          <TriangleAlert className="h-3 w-3 shrink-0" />
+                          {texto}
+                        </Link>
+                      );
+                    })()}
+                  </TableCell>
+                  <TableCell>{formatMoney(a.services?.price)}</TableCell>
+                  <TableCell>
+                    <EstadoTurno status={a.status} startsAt={a.starts_at} now={ahora} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {/* «Ver turno» y no «Ver ficha»: en este panel «ficha» ya
+                        es la de la clienta —la de Clientes, con las notas
+                        clínicas y el historial—, así que llamar igual a las dos
+                        cosas obligaba a adivinar cuál se abría.
+
+                        Es además la puerta a todo lo que esta tabla ya no
+                        ofrece: cambiarle el estado, reasignarle la profesional
+                        y corregir un turno cerrado. */}
+                      <Button asChild size="sm" variant="ghost">
+                        <Link to="/admin/turnos/$id" params={{ id: a.id }}>
+                          <FileText className="mr-2 h-4 w-4" /> Ver turno
+                        </Link>
+                      </Button>
+
+                      {/* Reenviar el aviso, para cuando el del toast se pasó de
                         largo o el mensaje no llegó. Sale con el texto del
                         estado en el que el turno está AHORA, que es lo que la
                         clienta necesita saber. Sin teléfono no hay enlace
                         posible y el botón no aparece. */}
-                    {(() => {
-                      const event = NOTIFIES[a.status as Status];
-                      const url = event ? appointmentWhatsappUrl(event, toNotifiable(a)) : null;
-                      if (!url) return null;
-                      return (
+                      {(() => {
+                        const event = NOTIFIES[a.status as Status];
+                        const url = event ? appointmentWhatsappUrl(event, toNotifiable(a)) : null;
+                        if (!url) return null;
+                        return (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Abrir WhatsApp con el aviso escrito"
+                            onClick={() => openWhatsapp(url)}
+                          >
+                            <MessageCircle className="mr-2 h-4 w-4" /> Avisar
+                          </Button>
+                        );
+                      })()}
+
+                      {seCancela && (
                         <Button
                           size="sm"
                           variant="ghost"
-                          title="Abrir WhatsApp con el aviso escrito"
-                          onClick={() => openWhatsapp(url)}
+                          onClick={() =>
+                            setStatus.mutate({
+                              id: a.id,
+                              status: "cancelled",
+                              notify: toNotifiable(a),
+                            })
+                          }
                         >
-                          <MessageCircle className="mr-2 h-4 w-4" /> Avisar
+                          Cancelar
                         </Button>
-                      );
-                    })()}
+                      )}
 
-                    {filter === "pending" && (
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          setStatus.mutate({
-                            id: a.id,
-                            status: "confirmed",
-                            notify: toNotifiable(a),
-                          })
-                        }
-                      >
-                        Confirmar
-                      </Button>
-                    )}
-                    {filter === "confirmed" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        // Un turno que todavía no empezó no se pudo haber
-                        // realizado. El servidor lo rechaza igual; acá se apaga
-                        // el botón para no ofrecer algo que va a fallar, y el
-                        // título dice por qué está apagado.
-                        disabled={new Date(a.starts_at) > new Date()}
-                        title={
-                          new Date(a.starts_at) > new Date()
-                            ? "Todavía no llegó la hora de este turno"
-                            : undefined
-                        }
-                        onClick={() =>
-                          setStatus.mutate({
-                            id: a.id,
-                            status: "completed",
-                            notify: toNotifiable(a),
-                          })
-                        }
-                      >
-                        Marcar realizado
-                      </Button>
-                    )}
-                    {filter !== "cancelled" && filter !== "completed" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          setStatus.mutate({
-                            id: a.id,
-                            status: "cancelled",
-                            notify: toNotifiable(a),
-                          })
-                        }
-                      >
-                        Cancelar
-                      </Button>
-                    )}
-                    {(filter === "cancelled" || filter === "completed") && (
-                      <Badge variant="outline">{STATUS_LABEL[a.status]}</Badge>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                      {/* Último y como ícono: es la acción más definitiva de la
+                        fila y la que menos se usa. Con texto le competía de
+                        igual a igual a «Confirmar», que es la de todos los
+                        días. */}
+                      {seBorra && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-9 w-9 text-destructive hover:text-destructive"
+                          aria-label={`Eliminar el turno de ${a.person.name}`}
+                          title="Eliminar el turno"
+                          onClick={() =>
+                            setBorrando({
+                              id: a.id,
+                              quien: a.person.name,
+                              cuando: formatDateTime(a.starts_at),
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {appointments.data?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   No hay turnos en este estado.
                 </TableCell>
               </TableRow>

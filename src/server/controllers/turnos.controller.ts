@@ -67,10 +67,21 @@ function personaDe(turno: ConPersona) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Un turno que nadie va a atender.
+ * Un turno que nadie va a atender — y que TODAVÍA SE PUEDE ATENDER.
  *
- * Los dos casos, y el segundo es el que engaña: la fila muestra un nombre, así
- * que parece resuelta, pero esa profesional está desactivada y no viene más.
+ * Los dos casos de "nadie", y el segundo es el que engaña: la fila muestra un
+ * nombre, así que parece resuelta, pero esa profesional está desactivada y no
+ * viene más.
+ *
+ * El `starts_at` en el futuro es la tercera condición, y es la que faltaba. Un
+ * turno de hace dos meses sin profesional no es trabajo pendiente: es historia,
+ * y muchas veces historia de alguien que se borró del equipo. Contarlo hacía que
+ * el cartel reclamara asignarle a alguien, y asignarle a alguien HOY un turno de
+ * agosto sería escribir que la atendió una persona que no la atendió.
+ *
+ * Se arma como función y no como constante porque `new Date()` tiene que
+ * evaluarse en cada pedido: como constante de módulo, el corte quedaría clavado
+ * en el arranque del proceso.
  *
  * Escrito una vez y usado en los dos lugares —el filtro de la tabla y el
  * contador del menú— porque si se separan, el número diría una cosa y la lista
@@ -80,9 +91,10 @@ function personaDe(turno: ConPersona) {
 // Tipado y no `as const`: con `as const` el array de OR queda readonly y Prisma
 // lo rechaza pidiendo uno mutable, con un error que habla de exactOptional y no
 // de esto.
-const SIN_QUIEN_LO_ATIENDA: Prisma.appointmentsWhereInput = {
+const sinQuienLoAtienda = (): Prisma.appointmentsWhereInput => ({
   OR: [{ professional_id: null }, { professional: { is_active: false } }],
-};
+  starts_at: { gte: new Date() },
+});
 
 /**
  * La tabla de Turnos.
@@ -120,7 +132,7 @@ export async function listar(ctx: Ctx) {
   const turnos = await prisma.appointments.findMany({
     where: {
       ...(estado ? { status: estado } : {}),
-      ...(soloSinProfesional ? SIN_QUIEN_LO_ATIENDA : {}),
+      ...(soloSinProfesional ? sinQuienLoAtienda() : {}),
     },
     // Los últimos que salieron, arriba.
     //
@@ -147,6 +159,9 @@ export async function listar(ctx: Ctx) {
       // `is_active` viaja a la pantalla: es lo que le permite marcar en rojo al
       // turno de una profesional que ya no atiende.
       professional: { select: { full_name: true, is_active: true } },
+      // El nombre congelado: es lo único que queda cuando la ficha del equipo se
+      // borró, y sin esto el turno viejo se vería igual que uno sin asignar.
+      professional_name: true,
     },
   });
 
@@ -170,6 +185,7 @@ export async function listar(ctx: Ctx) {
         price: comoNumero(t.service ? t.service.price : t.price),
       },
       professionals: t.professional,
+      professional_name: t.professional_name,
       person: personaDe(t),
     })),
   } satisfies RtaTurnos);
@@ -197,13 +213,15 @@ export async function listar(ctx: Ctx) {
  * muestra un nombre como cualquier otra.
  *
  * Cancelados y realizados quedan afuera de esa cuenta: al primero no hay que
- * asignarle a nadie y el segundo ya pasó.
+ * asignarle a nadie y el segundo ya pasó. Y desde `sinQuienLoAtienda`, también
+ * quedan afuera los que siguen abiertos pero cuya hora ya pasó: ésos tampoco se
+ * arreglan asignando a nadie.
  */
 export async function pendientes() {
   const [total, sinProfesional] = await Promise.all([
     prisma.appointments.count({ where: { status: "pending" } }),
     prisma.appointments.count({
-      where: { ...SIN_QUIEN_LO_ATIENDA, status: { in: ["pending", "confirmed"] } },
+      where: { ...sinQuienLoAtienda(), status: { in: ["pending", "confirmed"] } },
     }),
   ]);
   return json({ total, sinProfesional } satisfies RtaPendientes);
@@ -247,6 +265,8 @@ export async function detalle(ctx: Ctx) {
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
       professional: { select: { id: true, full_name: true, is_active: true } },
+      // Ver el comentario en el select de la lista.
+      professional_name: true,
     },
   });
 
@@ -276,6 +296,7 @@ export async function detalle(ctx: Ctx) {
         price: t.service ? comoNumero(t.service.price) : null,
       },
       professionals: t.professional,
+      professional_name: t.professional_name,
       person: personaDe(t),
     },
   } satisfies RtaTurnoEnDetalle);
@@ -303,6 +324,9 @@ export async function calendario(ctx: Ctx) {
       // `is_active` va también acá: un turno de alguien que ya no atiende tiene
       // que verse en el calendario, no sólo en la tabla.
       professional: { select: { full_name: true, is_active: true } },
+      // El nombre congelado: es lo único que queda cuando la ficha del equipo se
+      // borró, y sin esto el turno viejo se vería igual que uno sin asignar.
+      professional_name: true,
       // De quién es el turno. El calendario mostraba tratamiento y profesional
       // pero NO a la clienta, que es el dato por el que se mira un calendario:
       // "¿quién viene el martes?". Es el mismo `DATOS_DE_LA_PERSONA` de la
@@ -319,6 +343,7 @@ export async function calendario(ctx: Ctx) {
       status: t.status,
       services: { name: nombreDelTratamiento(t) },
       professionals: t.professional,
+      professional_name: t.professional_name,
       person: personaDe(t),
     })),
   } satisfies RtaCalendario);
@@ -371,6 +396,140 @@ export async function cambiarEstado(ctx: Ctx) {
   }
 
   await prisma.appointments.update({ where: { id }, data: { status: estado } });
+  return json({ ok: true });
+}
+
+/**
+ * Borrar un turno de la base, para siempre.
+ *
+ * ── ESTO NO REEMPLAZA A CANCELAR, Y LA DIFERENCIA IMPORTA ─────────────────
+ *
+ * Cancelar deja el turno escrito: queda el horario que se había tomado, el
+ * tratamiento, el precio y el hecho de que esa clienta canceló. Borrar no deja
+ * nada. Sirve para lo que NUNCA fue un turno —el que se cargó dos veces, el que
+ * se cargó en el día equivocado, el de prueba— y para nada más.
+ *
+ * `PERMISOS.md` decía «sin endpoint: un turno se cancela, no se borra». La
+ * policy `delete appointments` existía igual y pedía el permiso `appointments`;
+ * esta ruta es esa policy, y pide lo mismo.
+ *
+ * ── 🔴 UN TURNO QUE TODAVÍA SE VA A ATENDER NO SE BORRA ───────────────────
+ *
+ * Se cancela primero. No es burocracia: cancelar es lo único que dispara el
+ * aviso a la clienta —el mail y el WhatsApp salen del cambio de estado, ver
+ * `useCambiarEstadoDeTurno`— así que borrar derecho un turno de mañana le libera
+ * el horario al centro y deja a la clienta viniendo a las 11:30 sin que nadie le
+ * haya dicho nada.
+ *
+ * Ya cancelado, o vencido, o realizado, se borra sin más: ahí no hay nadie
+ * esperando del otro lado.
+ *
+ * El chequeo va ADENTRO del `deleteMany` y no en un `findUnique` previo para que
+ * la regla y el borrado sean una sola operación: entre leer el estado y borrar,
+ * alguien puede estar confirmando ese mismo turno desde el calendario.
+ */
+export async function borrar(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta el turno." }, 400);
+
+  // El `OR` es la regla escrita al derecho —"ya está cerrado, **o** ya pasó"— y
+  // no un `NOT` de las dos condiciones juntas: `NOT` con dos campos se lee de dos
+  // maneras distintas y la que documenta Prisma ("todas dan false") sería un NOR,
+  // que dejaría sin borrar justo al turno vencido, que es el caso más común.
+  const { count } = await prisma.appointments.deleteMany({
+    where: {
+      id,
+      OR: [{ status: { notIn: ["pending", "confirmed"] } }, { starts_at: { lte: new Date() } }],
+    },
+  });
+
+  // No se borró nada, y hay dos motivos posibles. Se distinguen recién acá para
+  // no hacer una consulta de más en el camino normal, que es el que anda.
+  if (count === 0) {
+    const existe = await prisma.appointments.findUnique({ where: { id }, select: { id: true } });
+    if (!existe) return json({ error: "Ese turno no existe." }, 404);
+    return json(
+      {
+        error:
+          "Este turno todavía se va a atender. Cancelalo primero —así la clienta recibe el aviso— y después se puede borrar.",
+      },
+      409,
+    );
+  }
+
+  return json({ ok: true });
+}
+
+/**
+ * Moverle el día y la hora a un turno.
+ *
+ * ── PARA QUÉ ──────────────────────────────────────────────────────────────
+ *
+ * Es lo que faltaba para un turno VENCIDO. Un turno que se pasó de hora sin que
+ * nadie lo cerrara no se arregla asignándole una profesional —eso sería anotar
+ * que la atendió alguien que no la atendió— ni marcándolo realizado si no pasó.
+ * Lo que corresponde es correrlo a una fecha nueva, y hasta ahora la única forma
+ * era cancelarlo y volver a cargarlo, que le pierde el historial y el número de
+ * turno.
+ *
+ * Vale también para uno por venir: la clienta que avisa que no llega, la
+ * profesional que se enferma.
+ *
+ * ── LO QUE NO HACE ────────────────────────────────────────────────────────
+ *
+ * No toca el estado. Un pendiente sigue pendiente y un confirmado sigue
+ * confirmado: mover la hora no cambia si el centro ya dijo que sí. Un vencido,
+ * al correrse al futuro, deja de estar vencido solo — «vencido» no es una
+ * columna sino la hora comparada con el reloj (ver `estadoVisible`).
+ *
+ * Un turno CERRADO no se mueve. Realizado ya pasó y cancelado ya no va; si hay
+ * que revivirlo, primero se le cambia el estado y después se lo reprograma. Son
+ * dos decisiones distintas y conviene que sean dos clics distintos.
+ *
+ * ── LO QUE SÍ HACE, Y ES FÁCIL DE OLVIDAR ─────────────────────────────────
+ *
+ * Limpia `reminded_at`. Si al turno ya se le mandó el recordatorio del día
+ * previo, moverlo sin borrar esa marca haría que el recordatorio de la fecha
+ * NUEVA no salga nunca: la tarea busca por `reminded_at IS NULL` (ver el índice
+ * `appointments_pending_reminder_idx`). La clienta se quedaría sin aviso justo
+ * en el turno que le cambiamos, que es cuando más falta hace.
+ *
+ * La superposición NO se chequea acá: la decide el trigger
+ * `check_appointment_overlap` dentro de la misma transacción del UPDATE —mirarlo
+ * en código sería "fijate si está libre" y después "escribí", con lugar para que
+ * entre otra reserva en el medio—. El router traduce su 23P01 al mensaje que ve
+ * la pantalla.
+ */
+export async function reprogramar(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta el turno." }, 400);
+
+  const crudo = ctx.body["starts_at"];
+  if (typeof crudo !== "string") return json({ error: "Falta el horario nuevo." }, 400);
+  const starts_at = new Date(crudo);
+  if (Number.isNaN(starts_at.getTime())) {
+    return json({ error: "Ese horario no se entiende." }, 400);
+  }
+
+  const turno = await prisma.appointments.findUnique({
+    where: { id },
+    select: { id: true, status: true },
+  });
+  if (!turno) return json({ error: "Ese turno no existe." }, 404);
+
+  if (turno.status === "completed" || turno.status === "cancelled") {
+    return json(
+      {
+        error: "Ese turno está cerrado. Cambiale el estado primero y después reprogramalo.",
+      },
+      422,
+    );
+  }
+
+  await prisma.appointments.update({
+    where: { id },
+    data: { starts_at, reminded_at: null },
+  });
   return json({ ok: true });
 }
 
@@ -700,6 +859,10 @@ export async function cambiarProfesional(ctx: Ctx) {
 
   const crudo = ctx.body["professional_id"];
   const nuevaId = typeof crudo === "string" && crudo !== "" ? crudo : null;
+  // El nombre congelado acompaña SIEMPRE al id, en los dos sentidos: al asignar
+  // se escribe, y al desasignar se borra. Dejarlo pegado haría que un turno sin
+  // profesional siguiera diciendo el nombre de la anterior.
+  let nuevoNombre: string | null = null;
 
   const turno = await prisma.appointments.findUnique({
     where: { id },
@@ -710,9 +873,10 @@ export async function cambiarProfesional(ctx: Ctx) {
   if (nuevaId !== null) {
     const profesional = await prisma.professionals.findFirst({
       where: { id: nuevaId, is_active: true },
-      select: { id: true },
+      select: { id: true, full_name: true },
     });
     if (!profesional) return json({ error: "Esa profesional no está disponible." }, 422);
+    nuevoNombre = profesional.full_name;
 
     // Sin tratamiento no hay nada que comprobar: se borró del catálogo y el
     // turno conserva sólo el nombre congelado.
@@ -725,6 +889,9 @@ export async function cambiarProfesional(ctx: Ctx) {
     }
   }
 
-  await prisma.appointments.update({ where: { id }, data: { professional_id: nuevaId } });
+  await prisma.appointments.update({
+    where: { id },
+    data: { professional_id: nuevaId, professional_name: nuevoNombre },
+  });
   return json({ ok: true });
 }

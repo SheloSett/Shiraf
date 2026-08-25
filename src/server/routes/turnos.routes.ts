@@ -2,8 +2,10 @@ import { createRouter } from "@/server/http";
 import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middleware";
 import {
   alcanceDeInvitada,
+  borrar,
   calendario,
   cambiarEstado,
+  reprogramar,
   cambiarProfesional,
   clientasParaElegir,
   corregirInvitada,
@@ -36,6 +38,9 @@ turnosRouter.get("/", ...gestionarTurnos, listar);
 turnosRouter.get("/pendientes", ...gestionarTurnos, pendientes);
 turnosRouter.get("/calendario", ...gestionarTurnos, calendario);
 turnosRouter.put("/:id/estado", ...gestionarTurnos, cambiarEstado);
+// Moverle el día y la hora. Es la salida de un turno vencido: no se le puede
+// inventar una profesional ni darlo por realizado, pero sí correrlo de fecha.
+turnosRouter.put("/:id/horario", ...gestionarTurnos, reprogramar);
 
 // Pasarle el turno a otra profesional. El GET trae las candidatas —las que hacen
 // ese tratamiento— y dice cuáles tienen el horario libre. Dos segmentos, así que
@@ -63,3 +68,8 @@ turnosRouter.get("/mi-agenda", authMiddleware, miAgendaDeHoy);
 // solo segmento — y el síntoma sería el panel entero pidiendo un turno con id
 // "pendientes".
 turnosRouter.get("/:id", ...gestionarTurnos, detalle);
+
+// El mismo path y el mismo permiso que el de arriba: la policy `delete
+// appointments` pedía `appointments`, igual que la de leer. Lo que decide qué se
+// puede borrar y qué no es el estado del turno, y eso lo mira el controller.
+turnosRouter.delete("/:id", ...gestionarTurnos, borrar);

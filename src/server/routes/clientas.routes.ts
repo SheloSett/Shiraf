@@ -3,7 +3,9 @@ import { authMiddleware } from "@/server/middleware/auth.middleware";
 import { json, type Ctx, type Handler } from "@/server/http";
 import { accesoDe, exigirAlguno } from "@/server/services/authz.service";
 import {
+  borrarClienta,
   cancelarMiTurno,
+  reprogramarMiTurno,
   equipo,
   guardarMiFicha,
   listar,
@@ -39,6 +41,12 @@ clientasRouter.get("/clientas/equipo", authMiddleware, verClientas, equipo);
 // declaran y gana la primera que matchea. Declarada antes, "/clientas/:id" se
 // comería a "equipo" y el panel pediría la ficha de una clienta con ese id.
 clientasRouter.get("/clientas/:id", authMiddleware, verClientas, verClienta);
+// ⚠️ Sin `verClientas`, y no es un olvido: el candado de esta ruta es `admin` y
+// está adentro del controller, igual que en las de Equipo y por el mismo motivo.
+// Poniéndole el middleware de arriba, cualquiera con `clients_contact` —o con
+// `appointments`, que lo arrastra— podría borrar cuentas con su historial. Ver
+// borrarClienta.
+clientasRouter.delete("/clientas/:id", authMiddleware, borrarClienta);
 
 // ── Mi cuenta: sin permisos, sólo sesión ────────────────────────────────────
 // Lo que protege esta mitad no es un permiso sino que TODO sale de la sesión:
@@ -47,3 +55,6 @@ clientasRouter.get("/mi-cuenta", authMiddleware, miFicha);
 clientasRouter.put("/mi-cuenta", authMiddleware, guardarMiFicha);
 clientasRouter.get("/mi-cuenta/turnos", authMiddleware, misTurnos);
 clientasRouter.put("/mi-cuenta/turnos/:id/cancelar", authMiddleware, cancelarMiTurno);
+// Moverse el propio turno: día, hora y profesional. Mismo corte de horas que
+// cancelar, y las mismas reglas de agenda que reservar de cero.
+clientasRouter.put("/mi-cuenta/turnos/:id/reprogramar", authMiddleware, reprogramarMiTurno);

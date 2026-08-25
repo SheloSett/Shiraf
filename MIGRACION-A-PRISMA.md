@@ -684,6 +684,12 @@ Perder tiempo acá es el error más caro, porque además rompe cosas que hoy and
   ecommerce (`services/cron.service.js`), pero eso es mover un archivo: hacelo en
   un commit aparte, no mezclado con un cambio de lógica.
 
+  > ✅ **Hecho.** La mudanza se hizo junto con el cambio que la volvió necesaria:
+  > el archivo ya no es sólo la corrida, ahora también trae el reloj que la
+  > dispara (`node-cron`, como en el ecommerce). El endpoint
+  > `POST /api/recordatorios` y `REMINDERS_SECRET` se borraron: existían porque
+  > el cron era de afuera y no tenía sesión.
+
 > ### ⚠️ Mudar archivos y cambiarles el contenido, nunca en el mismo commit
 >
 > Los tres `*.functions.ts` de hoy terminan bajo `src/server/`, y varios `lib/`
@@ -1766,13 +1772,13 @@ Casi todo está armado. Lo que falta es correrlo allá.
    quedaron puestos, y corta la cadena si falta alguno.
 2. **Variables nuevas** en el `.env` del VPS: `POSTGRES_PASSWORD`,
    `DATABASE_URL`, `JWT_SECRET`, `APP_URL`. Las de `SUPABASE_*` se van.
-3. **El cron de recordatorios** deja `pg_cron` y pasa al cron del sistema:
-
-   ```
-   0 10 * * *  curl -fsS -X POST https://shiraf.com.ar/api/recordatorios -H "Authorization: Bearer $REMINDERS_SECRET"
-   ```
-
-   A las 10 de Buenos Aires, no en UTC — se acabó la conversión.
+3. **El cron de recordatorios no hay que programarlo.** Esto decía que
+   `pg_cron` pasaba al crontab del sistema, con un `curl` y el secreto en el
+   header. Se hizo mejor: el reloj se mudó **adentro del proceso**, como en el
+   ecommerce (`services/cron.service.js`), y se programa solo al arrancar el
+   contenedor. No hay crontab que escribir, ni `REMINDERS_SECRET` que generar,
+   ni endpoint público que dispare mails. Ver
+   `src/server/services/reminders.service.ts`.
 
 4. **El backup ya está** (`pg-backup`, rotación 7/4/6, igual que en el
    ecommerce). Lo que falta es **una copia fuera del VPS**: un backup en el

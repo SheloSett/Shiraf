@@ -8,49 +8,28 @@ type ServerEntry = {
 };
 
 /**
- * El endpoint que dispara los recordatorios del día siguiente.
+ * El reloj de los recordatorios del día siguiente.
  *
- * Va acá, interceptado antes de TanStack, y no como una server function, porque
- * quien lo llama es un cron: no tiene sesión, no manda un JWT y no puede pasar
- * por requireSupabaseAuth. Se identifica con un secreto en el header.
+ * Acá había un endpoint —`POST /api/recordatorios`, con un secreto en un
+ * header— porque quien lo disparaba era un cron de afuera: `pg_cron` desde
+ * Supabase primero, el crontab del VPS después. Ninguno de los dos tenía sesión,
+ * y de ahí el secreto.
  *
- * POST y no GET a propósito. Un GET lo dispara cualquier cosa que ande mirando
- * URLs —un prefetch del navegador, un escáner, el preview de un enlace pegado en
- * un chat— y esto le manda mails a clientas reales. Que haga falta un POST no es
- * seguridad (el secreto es la seguridad), es evitar que se ejecute por accidente.
+ * Ya no hace falta ninguna de las dos cosas. La app corre como un proceso Node
+ * en su propio contenedor, así que el reloj vive adentro, igual que en
+ * `Ecommerce_mm`. El detalle —y los dos casos en los que no arranca— está en
+ * `server/services/reminders.service.ts`.
  *
- * Cómo programarlo está en emails/README.md.
+ * Va en el cuerpo del módulo y no adentro de `fetch`: se programa una vez, al
+ * arrancar el servidor, y no una vez por pedido. El import es dinámico por lo
+ * mismo que los routers de más abajo —para no arrastrar Prisma al arranque de
+ * una petición que sólo quiere servir una página— y el `.catch` está para que
+ * un problema al programarlo quede en el log en vez de tumbar el arranque: el
+ * sitio tiene que levantar aunque los recordatorios no.
  */
-const REMINDERS_PATH = "/api/recordatorios";
-
-async function handleReminders(request: Request): Promise<Response> {
-  const { isAuthorizedReminderRequest, runDailyReminders } = await import("./lib/reminders.server");
-
-  if (request.method !== "POST") {
-    return json({ error: "Usá POST." }, 405);
-  }
-
-  if (!isAuthorizedReminderRequest(request)) {
-    // Sin detalle de por qué falló: decir "falta configurar el secreto" le
-    // cuenta a quien está probando la puerta que la puerta existe y no tiene
-    // llave puesta.
-    return json({ error: "No autorizado." }, 401);
-  }
-
-  try {
-    return json(await runDailyReminders(), 200);
-  } catch (error) {
-    console.error("[recordatorios]", error);
-    return json({ error: error instanceof Error ? error.message : "Falló la corrida." }, 500);
-  }
-}
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8" },
-  });
-}
+void import("./server/services/reminders.service")
+  .then((m) => m.iniciarRecordatorios())
+  .catch((error: unknown) => console.error("[recordatorios] No se pudieron programar:", error));
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
@@ -94,15 +73,9 @@ export default {
     try {
       const pathname = new URL(request.url).pathname;
 
-      // Antes de TanStack: esta ruta no es una página ni una server function.
-      if (pathname === REMINDERS_PATH) {
-        return await handleReminders(request);
-      }
-
-      // Las cuentas: /api/auth/*. Van acá y no como server functions por el
-      // mismo motivo que los recordatorios —no son páginas— y por uno propio:
-      // el login TIENE que poder correr sin sesión, y las server functions de
-      // este proyecto pasan todas por el middleware que exige una.
+      // Las cuentas: /api/auth/*. Van acá y no como server functions porque el
+      // login TIENE que poder correr sin sesión, y las server functions de este
+      // proyecto pasan todas por el middleware que exige una.
       //
       // El import va adentro y no arriba para que el router y sus controllers
       // —que arrastran Prisma, bcrypt y jsonwebtoken— no entren en el arranque

@@ -1,9 +1,14 @@
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { accesoDe, puede } from "@/server/services/authz.service";
+import { accesoDe, exigirAdmin, puede } from "@/server/services/authz.service";
 import { idsDelEquipo } from "@/server/services/agenda.service";
-import { exigirAlcanceDeClienta, nombreDelTratamiento } from "@/server/services/turnos.service";
+import {
+  exigirAlcanceDeClienta,
+  nombreDelTratamiento,
+  validarTurno,
+} from "@/server/services/turnos.service";
 import { comoNumero } from "@/server/serializar";
+import { HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO, laClientaTodaviaPuede } from "@/lib/shiraf";
 import type {
   RtaClientas,
   RtaEquipo,
@@ -168,6 +173,10 @@ export async function misTurnos(ctx: Ctx) {
       service_name: true,
       price: true,
       professional: { select: { full_name: true } },
+      // Los dos ids los necesita «Reprogramar»: con el del tratamiento busca
+      // quiénes lo hacen, y con el de la profesional preselecciona la actual.
+      service_id: true,
+      professional_id: true,
     },
     orderBy: { starts_at: "desc" },
   });
@@ -191,6 +200,8 @@ export async function misTurnos(ctx: Ctx) {
         category: t.service?.category ?? null,
       },
       professionals: t.professional,
+      service_id: t.service_id,
+      professional_id: t.professional_id,
     })),
   } satisfies RtaMisTurnos);
 }
@@ -211,7 +222,7 @@ export async function cancelarMiTurno(ctx: Ctx) {
   const userId = ctx.user!.id;
   const turno = await prisma.appointments.findFirst({
     where: { id, client_id: userId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, starts_at: true },
   });
 
   // 404 y no 403 si el turno es de otra: decir "existe pero no es tuyo" ya
@@ -220,7 +231,120 @@ export async function cancelarMiTurno(ctx: Ctx) {
 
   exigirAlcanceDeClienta(await accesoDe(userId), turno, { status: "cancelled" });
 
+  // El corte de las horas. Se comprueba ACÁ y no sólo escondiendo el botón: la
+  // pantalla se puede saltear con un pedido a mano, y esto es una regla del
+  // negocio, no una comodidad de la interfaz.
+  //
+  // Sólo alcanza a la clienta. El centro cancela cuando quiere desde el panel,
+  // que es otro endpoint (`cambiarEstado`) y no pasa por acá.
+  if (!laClientaTodaviaPuede(turno.starts_at.toISOString(), Date.now())) {
+    return json(
+      {
+        error: `Este turno ya está a menos de ${HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO} horas: no se puede cancelar solo. Escribinos y lo vemos.`,
+      },
+      422,
+    );
+  }
+
   await prisma.appointments.update({ where: { id }, data: { status: "cancelled" } });
+  return json({ ok: true });
+}
+
+/**
+ * La clienta se mueve su propio turno.
+ *
+ * ── QUÉ PUEDE ELEGIR ──────────────────────────────────────────────────────
+ *
+ * El día, la hora y la profesional — la misma u otra, con tal de que haga ese
+ * tratamiento. El tratamiento NO se cambia: eso es otro turno, con otro precio y
+ * otra duración, y para eso está reservar de nuevo.
+ *
+ * ── LAS REGLAS, Y DE DÓNDE SALE CADA UNA ──────────────────────────────────
+ *
+ * 1. El turno es suyo. Sale del `client_id` de la sesión, nunca de un id que
+ *    venga en el pedido. Si no es suyo devuelve 404 y no 403: decir "existe pero
+ *    no es tuyo" ya confirma que ese turno existe.
+ *
+ * 2. No está cerrado. Un realizado ya pasó y un cancelado ya no va.
+ *
+ * 3. Le queda margen. El mismo corte que para cancelar, y se mide sobre el
+ *    horario que el turno tiene AHORA: lo que se está pidiendo es soltar ese
+ *    lugar, y soltarlo dos horas antes deja el hueco sin llenar igual que
+ *    cancelarlo. El horario NUEVO no lleva ese corte, porque reservar tampoco lo
+ *    lleva: si el sitio deja sacar un turno para dentro de una hora, moverlo a
+ *    dentro de una hora no puede estar peor visto.
+ *
+ * 4. El horario nuevo sirve de verdad. Eso lo decide `validarTurno` con el
+ *    acceso de la clienta —no el del centro—, así que acá SÍ se exige lo que al
+ *    panel se le perdona: que no sea en el pasado, que la profesional esté
+ *    activa, que haga ese tratamiento y que el horario entre en su agenda.
+ *
+ * Y la superposición la sigue decidiendo el trigger, dentro de la transacción
+ * del UPDATE. El router traduce su 23P01.
+ */
+export async function reprogramarMiTurno(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta el turno." }, 400);
+
+  const userId = ctx.user!.id;
+  const turno = await prisma.appointments.findFirst({
+    where: { id, client_id: userId },
+    select: { id: true, status: true, starts_at: true, service_id: true },
+  });
+  if (!turno) return json({ error: "Ese turno no existe." }, 404);
+
+  if (turno.status === "completed" || turno.status === "cancelled") {
+    return json({ error: "Ese turno ya está cerrado." }, 422);
+  }
+
+  if (!laClientaTodaviaPuede(turno.starts_at.toISOString(), Date.now())) {
+    return json(
+      {
+        error: `Este turno ya está a menos de ${HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO} horas: no se puede mover solo. Escribinos y lo vemos.`,
+      },
+      422,
+    );
+  }
+
+  // Sin tratamiento no hay nada que reprogramar: se borró del catálogo y el
+  // turno conserva sólo el nombre congelado, así que no se puede saber quién lo
+  // hace ni cuánto dura.
+  if (!turno.service_id) {
+    return json({ error: "Ese tratamiento ya no está disponible. Escribinos y lo vemos." }, 422);
+  }
+
+  const crudo = ctx.body["starts_at"];
+  if (typeof crudo !== "string") return json({ error: "Falta el horario nuevo." }, 400);
+  const starts_at = new Date(crudo);
+  if (Number.isNaN(starts_at.getTime())) {
+    return json({ error: "Ese horario no se entiende." }, 400);
+  }
+
+  const profesionalId = ctx.body["professional_id"];
+  if (typeof profesionalId !== "string" || !profesionalId) {
+    return json({ error: "Hay que elegir una profesional." }, 400);
+  }
+
+  const validado = await validarTurno(await accesoDe(userId), {
+    service_id: turno.service_id,
+    professional_id: profesionalId,
+    starts_at,
+  });
+
+  // El precio y la duración NO se tocan: son los del día que se reservó. Mover
+  // la hora no es volver a comprar.
+  await prisma.appointments.update({
+    where: { id },
+    data: {
+      starts_at,
+      professional_id: profesionalId,
+      professional_name: validado.professional_name,
+      // Si ya se le había mandado el recordatorio, el de la fecha nueva no
+      // saldría nunca: la tarea busca por `reminded_at IS NULL`.
+      reminded_at: null,
+    },
+  });
+
   return json({ ok: true });
 }
 
@@ -322,4 +446,92 @@ export async function verClienta(ctx: Ctx) {
     },
   };
   return json(salida);
+}
+
+/**
+ * Borrar la cuenta de una clienta, con todo lo suyo.
+ *
+ * ── QUÉ SE VA CON ELLA ────────────────────────────────────────────────────
+ *
+ * Todo, y hay que decirlo antes de apretar el botón: la cuenta, su ficha, sus
+ * notas clínicas y **sus turnos**. Cae solo por las claves foráneas, que son
+ * ON DELETE CASCADE — es la decisión que ya estaba tomada en el esquema y no se
+ * discute acá: los turnos de una clienta son de la clienta.
+ *
+ * Eso quiere decir que borrar a alguien que vino veinte veces se lleva veinte
+ * turnos realizados del historial del centro. Es exactamente lo que hay que
+ * hacer cuando una clienta pide que le borren los datos, y es una pérdida cuando
+ * lo que se quería era sólo sacarla de la lista. La pantalla lo cuenta con los
+ * números a la vista antes de confirmar.
+ *
+ * ── LOS CUATRO CANDADOS ───────────────────────────────────────────────────
+ *
+ *   · Sólo la dueña. NO alcanza con `clients_contact`: quien tiene esa casilla
+ *     lee teléfonos y fichas, que es una cosa; borrar una cuenta con su historial
+ *     es otra, y es de las que no se deshacen. Mismo criterio que la baja de una
+ *     empleada, que también es `exigirAdmin()`.
+ *   · Nadie se borra a sí mismo: quedaría afuera del panel en el acto.
+ *   · Una cuenta del equipo no se borra desde acá. La lista de Clientes esconde
+ *     al equipo, así que llegar hasta acá con el id de una empleada es pedirlo a
+ *     mano — pero la baja de una empleada tiene sus propias reglas (que no sea
+ *     otra admin, que sea staff) y viven en Equipo.
+ *   · Con turnos por venir sin cancelar, no se borra. Ver abajo.
+ *
+ * ── 🔴 LOS TURNOS POR VENIR FRENAN EL BORRADO ────────────────────────────
+ *
+ * Mismo motivo que en `turnos.controller → borrar`: el aviso a la clienta sale
+ * de cancelar, no de borrar. Sin este freno, borrar la cuenta le libera el
+ * horario al centro —el turno desaparece de la agenda— y la clienta se presenta
+ * igual el martes a las 11:30 porque nadie le dijo nada. Se cancelan primero, y
+ * ahí sí.
+ *
+ * La cuenta y el borrado NO van en una transacción a propósito: si entre las dos
+ * consultas alguien reserva un turno, ese turno se pierde con la cuenta, que es
+ * lo mismo que habría pasado un segundo antes. Lo que el freno evita es el
+ * descuido, no una carrera de milisegundos.
+ */
+export async function borrarClienta(ctx: Ctx) {
+  exigirAdmin(await accesoDe(ctx.user!.id));
+
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta la clienta." }, 400);
+  if (id === ctx.user!.id) return json({ error: "No podés borrar tu propia cuenta." }, 422);
+
+  const cuenta = await prisma.users.findUnique({
+    where: { id },
+    select: { roles: { select: { role: true } } },
+  });
+  if (!cuenta) return json({ error: "Esa clienta no existe." }, 404);
+
+  if (cuenta.roles.some((r) => r.role === "admin" || r.role === "staff")) {
+    return json(
+      { error: "Esa cuenta es del equipo, no de una clienta. Se da de baja desde Equipo." },
+      422,
+    );
+  }
+
+  const porVenir = await prisma.appointments.count({
+    where: {
+      client_id: id,
+      status: { in: ["pending", "confirmed"] },
+      starts_at: { gt: new Date() },
+    },
+  });
+
+  if (porVenir > 0) {
+    return json(
+      {
+        error:
+          porVenir === 1
+            ? "No se puede eliminar: tiene 1 turno por venir. Cancelalo primero, así recibe el aviso."
+            : `No se puede eliminar: tiene ${porVenir} turnos por venir. Cancelalos primero, así recibe el aviso.`,
+      },
+      409,
+    );
+  }
+
+  // El resto cae solo: profile, client_notes, roles, permisos y appointments son
+  // ON DELETE CASCADE.
+  await prisma.users.delete({ where: { id } });
+  return json({ ok: true });
 }

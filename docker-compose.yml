@@ -125,9 +125,12 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
-      # El secreto que autoriza a POST /api/recordatorios, que dispara el cron
-      # del VPS. Sin esto el endpoint responde 401 a todo.
-      REMINDERS_SECRET: ${REMINDERS_SECRET:?falta REMINDERS_SECRET en .env}
+
+      # Acá vivía REMINDERS_SECRET, que era obligatoria —con `:?`, o sea que sin
+      # ella el contenedor no levantaba— y ya no existe. Era la llave de
+      # POST /api/recordatorios, el endpoint que disparaba un cron de afuera.
+      # Ahora el reloj corre adentro del proceso, así que no hay puerta que
+      # cerrar con llave: ver src/server/services/reminders.service.ts.
 
     # Por defecto, sólo loopback: en el VPS ya hay un reverse proxy para los
     # otros dos sitios, así que este contenedor no debe quedar expuesto directo a

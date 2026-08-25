@@ -126,46 +126,49 @@ el correo resuelto, no para dejarlo así.
 Las clientas sin cuenta pueden no tener mail (`guest_email` es opcional). Para
 esas, WhatsApp es el único canal, y el panel lo dice cuando pasa.
 
-## Recordatorios: programar la tarea
+## Recordatorios: no hay nada que programar
 
-El recordatorio es el único aviso que no lo dispara una persona, así que
-necesita algo que lo llame. El endpoint es:
+El recordatorio es el único aviso que no lo dispara una persona, así que necesita
+algo que lo llame. **Eso vive adentro de la app** y se pone en marcha solo cuando
+arranca el contenedor:
+[`src/server/services/reminders.service.ts`](../src/server/services/reminders.service.ts).
 
-    POST /api/recordatorios
-    Authorization: Bearer $REMINDERS_SECRET
+    0 10,13 * * *   America/Argentina/Buenos_Aires
 
 Le manda el aviso a quien tenga un turno **confirmado mañana** y todavía no lo
-haya recibido. Correrlo dos veces el mismo día no le escribe a nadie de nuevo:
-la marca queda en `appointments.reminded_at`.
+haya recibido. Que corra dos veces el mismo día no le escribe a nadie de nuevo:
+la marca queda en `appointments.reminded_at`, y la segunda pasada está
+justamente para el día en que el contenedor esté reiniciándose a las 10.
 
-Responde un resumen en JSON: `{ day, found, sent, skipped }`. `skipped` trae el
-motivo de cada uno que no salió — casi siempre, una invitada sin mail cargado.
+La zona horaria va declarada ahí y no depende del reloj del servidor, que corre
+en UTC. Se acabó escribir la hora convertida.
 
-Conviene correrlo **una vez por día a la mañana**. Con pg_cron, desde el SQL
-editor de Supabase (ojo: pg_cron programa en UTC, así que las 10 de Buenos Aires
-son las 13):
+### Cómo saber si corrió
 
-```sql
-select cron.schedule(
-  'recordatorios-shiraf',
-  '0 13 * * *',
-  $$
-  select net.http_post(
-    url     := 'https://shiraf.com.ar/api/recordatorios',
-    headers := jsonb_build_object(
-      'Authorization', 'Bearer EL-VALOR-DE-REMINDERS-SECRET',
-      'Content-Type',  'application/json'
-    )
-  );
-  $$
-);
-```
+Deja una línea por corrida en el log del contenedor:
 
-Requiere las extensiones `pg_cron` y `pg_net` activadas en Database →
-Extensions. Si preferís no meter el secreto en la base, el equivalente en el
-cron del servidor donde corre el docker-compose:
+    docker compose logs -f app | grep recordatorios
 
-    0 10 * * *  curl -fsS -X POST https://shiraf.com.ar/api/recordatorios -H "Authorization: Bearer $REMINDERS_SECRET"
+    [recordatorios] Programados: "0 10,13 * * *" (America/Argentina/Buenos_Aires).
+    [recordatorios] 2026-08-26: 3 turno(s), 3 aviso(s) enviado(s).
+    [recordatorios] Sin enviar · turno 8f2a…: La clienta no tiene mail cargado.
 
-Para probarlo sin esperar al día siguiente: confirmá un turno para mañana y
-llamá al endpoint a mano con curl.
+Es la única señal: antes había un endpoint que contestaba el resumen en JSON y
+ya no existe. Los que no salen se listan de a uno con el motivo — casi siempre,
+una invitada sin mail cargado, que se arregla en su ficha.
+
+### En desarrollo no se programa
+
+Sólo corre con `NODE_ENV=production`, que lo pone el Dockerfile. Con
+`bun run dev` el reloj no arranca, y es a propósito: la base local tiene los
+mails reales de las clientas, y un `dev` olvidado abierto les mandaría
+recordatorios de verdad. Los avisos que se disparan a mano desde el panel
+—confirmar, cancelar— salen igual.
+
+### Antes esto era un endpoint con un secreto
+
+`POST /api/recordatorios` con `Authorization: Bearer $REMINDERS_SECRET`. No era
+una decisión de diseño: con Supabase no teníamos proceso propio y el disparo
+venía de afuera —`pg_cron` primero, el crontab del VPS después—, así que hubo
+que inventarle una llave. Con la base y el contenedor propios, el endpoint, el
+secreto y el crontab se borraron los tres.

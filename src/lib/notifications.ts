@@ -23,6 +23,8 @@ export type AppointmentEvent =
   | "confirmed"
   /** El centro dio de baja el turno. Va a la clienta. */
   | "cancelled"
+  /** El centro le movió el turno a otro día u hora. Va a la clienta. */
+  | "rescheduled"
   /** Día previo. Va a la clienta. */
   | "reminder"
   /** Entró una reserva por el sitio y espera confirmación. Va al centro. */
@@ -126,6 +128,23 @@ export function buildAppointmentMessage(
           `Tuvimos que cancelar tu turno ${when}${what ? ` (${what})` : ""}.`,
           "",
           "Perdón por el cambio. Escribinos y te buscamos otro horario.",
+        ],
+      };
+
+    // El turno se movió. El mensaje dice el horario NUEVO, que es el que la
+    // clienta tiene que anotar; el viejo no se nombra a propósito, porque
+    // repetirlo invita a confundir cuál de los dos vale.
+    case "rescheduled":
+      return {
+        subject: "Cambiamos el horario de tu turno en Shiraf",
+        lines: [
+          `Hola ${who}, te escribimos de Shiraf.`,
+          "",
+          `Tuvimos que mover tu turno${what ? ` (${what})` : ""}.`,
+          `Queda ${when}.`,
+          "",
+          `Te esperamos en ${place}.`,
+          "Si ese horario no te sirve, avisanos y buscamos otro.",
         ],
       };
 

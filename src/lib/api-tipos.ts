@@ -286,6 +286,10 @@ export type MiTurno = {
   // y `price` no: el turno los tiene congelados desde el día que se reservó.
   services: { name: string; price: number; category: string | null };
   professionals: { full_name: string } | null;
+  /** Para «Reprogramar»: con éste se busca quién hace ese tratamiento. */
+  service_id: string | null;
+  /** La profesional actual, para dejarla preseleccionada. */
+  professional_id: string | null;
 };
 
 export type RtaMisTurnos = { turnos: MiTurno[] };
@@ -315,6 +319,14 @@ export type TurnoDelPanel = {
   services: { name: string; price: number };
   /** `is_active` en false: ya no atiende, y este turno hay que reasignarlo. */
   professionals: { full_name: string; is_active: boolean } | null;
+  /**
+   * El nombre de la profesional congelado en el turno.
+   *
+   * Es lo único que queda cuando la ficha del equipo se borró: ahí
+   * `professionals` llega en null y esto sigue diciendo quién atendió. Null en
+   * los turnos que nunca tuvieron a nadie asignado.
+   */
+  professional_name: string | null;
   person: PersonaDelTurno;
 };
 
@@ -357,6 +369,8 @@ export type TurnoEnDetalle = {
   services: { id: string | null; name: string; price: number | null };
   /** `is_active` en false: ya no atiende, y este turno hay que reasignarlo. */
   professionals: { id: string; full_name: string; is_active: boolean } | null;
+  /** Ver `professional_name` en TurnoDelPanel: quién atendió, congelado. */
+  professional_name: string | null;
   person: PersonaDelTurno;
 };
 
@@ -379,6 +393,8 @@ export type TurnoDelCalendario = {
   services: { name: string };
   /** `is_active` en false: ya no atiende, y este turno hay que reasignarlo. */
   professionals: { full_name: string; is_active: boolean } | null;
+  /** Ver `professional_name` en TurnoDelPanel: quién atendió, congelado. */
+  professional_name: string | null;
   /** De quién es el turno: con cuenta o invitada, la misma forma para las dos. */
   person: PersonaDelTurno;
 };

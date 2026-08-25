@@ -137,6 +137,13 @@ export type TurnoValidado = {
    * queda. Ver `appointments.service_name`.
    */
   service_name: string;
+
+  /**
+   * El nombre de la profesional, congelado igual que el del tratamiento.
+   *
+   * Va en null cuando el turno se carga sin asignar, que el centro puede hacer.
+   */
+  professional_name: string | null;
 };
 
 /**
@@ -188,6 +195,7 @@ export async function validarTurno(
     price: servicio.price.toString(),
     duration_minutes: servicio.duration_minutes,
     service_name: servicio.name,
+    professional_name: null,
   };
 
   if (!servicio.is_published && !esCentro) {
@@ -206,9 +214,14 @@ export async function validarTurno(
 
   const profesional = await prisma.professionals.findFirst({
     where: { id: turno.professional_id, is_active: true },
-    select: { id: true },
+    select: { id: true, full_name: true },
   });
   if (!profesional) throw new ErrorDeRegla("Esa profesional no está disponible.");
+
+  // Se congela acá, en el mismo lugar donde ya se congelaban el precio y el
+  // nombre del tratamiento, y por el mismo motivo: que borrar la ficha del
+  // equipo no borre quién atendió.
+  validado.professional_name = profesional.full_name;
 
   const hace = await prisma.professional_services.findFirst({
     where: { professional_id: turno.professional_id, service_id: turno.service_id },
