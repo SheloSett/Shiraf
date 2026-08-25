@@ -22,7 +22,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { TeamTag } from "@/components/admin/team-tag";
+import { api, apiPost } from "@/lib/api";
+import type {
+  RtaClientasParaElegir,
+  RtaDisponibilidad,
+  RtaProfesionalesConHorarios,
+  RtaServiciosParaTurno,
+} from "@/lib/api-tipos";
+import { useTeamMemberIds } from "@/hooks/useTeamMemberIds";
 import { buildSlots, formatMoney, toDateKey, WEEKDAYS } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
@@ -76,6 +84,22 @@ export function NewAppointmentDialog({
   const [time, setTime] = useState<string>("");
   const [notes, setNotes] = useState("");
 
+  /**
+   * Escribir la hora a mano en vez de elegirla de la lista.
+   *
+   * Arranca apagado. Antes el campo libre era lo único que había y el reloj del
+   * navegador ofrecía las 22, las 4 de la mañana y cualquier cosa: nada de eso
+   * es un horario en el que el centro atienda, y estaba a un dedazo de
+   * distancia.
+   *
+   * Queda igual detrás de este botón porque es el motivo por el que el campo
+   * libre existía: el trigger validate_appointment exime a propósito a quien
+   * gestiona turnos del control de agenda, para que una profesional que se
+   * queda más tarde por una clienta se pueda registrar. Sacarlo del todo
+   * dejaría ese turno sin ninguna forma de cargarse.
+   */
+  const [manualTime, setManualTime] = useState(false);
+
   function reset() {
     setWho("registrada");
     setClientId(undefined);
@@ -86,6 +110,7 @@ export function NewAppointmentDialog({
     setProfessionalId(undefined);
     setDateKey(toDateKey(new Date()));
     setTime("");
+    setManualTime(false);
     setNotes("");
   }
 
@@ -96,44 +121,42 @@ export function NewAppointmentDialog({
   const clients = useQuery({
     queryKey: ["appointment-form", "clients"],
     enabled: open,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, phone")
-        .order("full_name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaClientasParaElegir>("/api/turnos/clientas")).clientas,
   });
 
   const services = useQuery({
     queryKey: ["appointment-form", "services"],
     enabled: open,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, category, duration_minutes, price, is_published")
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    // Vienen los despublicados también, con la marca: el centro puede cargar un
+    // turno de un tratamiento que todavía no está en el sitio.
+    queryFn: async () => (await api<RtaServiciosParaTurno>("/api/turnos/servicios")).servicios,
   });
 
   const professionals = useQuery({
     queryKey: ["appointment-form", "professionals", serviceId],
     enabled: open && !!serviceId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professional_services")
-        .select("professionals!inner(id, full_name, specialty, is_active)")
-        .eq("service_id", serviceId!);
-      if (error) throw error;
-      return (data ?? [])
-        .map((row) => row.professionals)
-        .filter((p): p is NonNullable<typeof p> => !!p && p.is_active);
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionalesConHorarios>(`/api/publico/servicios/${serviceId}/profesionales`))
+        .profesionales,
   });
+
+  /**
+   * Quiénes de esa lista son del equipo y no clientas.
+   *
+   * `profiles` tiene una fila por cada cuenta, así que la consulta de arriba
+   * trae también a las empleadas y a la dueña. No se las esconde a propósito:
+   * una empleada también se atiende en el centro y hay que poder cargarle el
+   * turno. Se las marca y se las manda al final.
+   */
+  const teamIds = useTeamMemberIds(open);
+
+  // Las clientas primero, el equipo después. `sort` es estable, así que adentro
+  // de cada grupo se mantiene el orden alfabético que ya trajo la consulta.
+  const pickerClients = useMemo(() => {
+    const rows = clients.data ?? [];
+    if (teamIds.size === 0) return rows;
+    return [...rows].sort((a, b) => Number(teamIds.has(a.id)) - Number(teamIds.has(b.id)));
+  }, [clients.data, teamIds]);
 
   const service = services.data?.find((s) => s.id === serviceId);
   const client = clients.data?.find((c) => c.id === clientId);
@@ -142,33 +165,14 @@ export function NewAppointmentDialog({
   const availability = useQuery({
     queryKey: ["appointment-form", "availability", professionalId, dateKey],
     enabled: open && !!professionalId && !!date,
+    // El mismo endpoint que usa la clienta al reservar: los horarios de la
+    // profesional y los ratos ocupados, sin decir de quién es cada turno.
     queryFn: async () => {
       const day = new Date(date!);
       day.setHours(0, 0, 0, 0);
-      const next = new Date(day);
-      next.setDate(next.getDate() + 1);
-
-      const [schedules, busy] = await Promise.all([
-        supabase
-          .from("professional_schedules")
-          .select("weekday, start_time, end_time")
-          .eq("professional_id", professionalId!),
-        supabase.rpc("professional_busy_slots", {
-          _professional_id: professionalId!,
-          _from: day.toISOString(),
-          _to: next.toISOString(),
-        }),
-      ]);
-      if (schedules.error) throw schedules.error;
-      if (busy.error) throw busy.error;
-
-      return {
-        schedules: schedules.data ?? [],
-        busy: (busy.data ?? []).map((row) => ({
-          starts_at: row.slot_start,
-          duration_minutes: row.slot_minutes,
-        })),
-      };
+      return api<RtaDisponibilidad>(
+        `/api/reservar/disponibilidad?profesional=${professionalId}&fecha=${day.toISOString()}`,
+      );
     },
   });
 
@@ -211,28 +215,23 @@ export function NewAppointmentDialog({
 
   const create = useMutation({
     mutationFn: async () => {
-      // duration_minutes y price los pisa el trigger validate_appointment con
-      // los del catálogo; se manda la duración igual para no romper el tipo
-      // generado, que la tiene como obligatoria.
-      const { error } = await supabase.from("appointments").insert({
-        // Una cosa o la otra, nunca las dos: el trigger descarta los datos de
-        // invitada si viene client_id, pero mandar sólo lo que corresponde deja
-        // la intención clara desde acá.
+      // Sin duration_minutes ni price: los fija validarTurno() leyéndolos del
+      // catálogo, igual que antes los pisaba el trigger. Y sin status: nace
+      // confirmado porque lo carga el centro.
+      await apiPost("/api/turnos", {
+        // Una cosa o la otra, nunca las dos.
         ...(who === "registrada"
-          ? { client_id: clientId! }
+          ? { client_id: clientId }
           : {
               guest_name: guestName.trim(),
               guest_phone: guestPhone.trim() || null,
               guest_email: guestEmail.trim() || null,
             }),
-        service_id: serviceId!,
-        professional_id: professionalId!,
+        service_id: serviceId,
+        professional_id: professionalId,
         starts_at: startsAt!.toISOString(),
-        duration_minutes: service!.duration_minutes,
-        status: "confirmed",
         client_notes: notes.trim() || null,
       });
-      if (error) throw error;
     },
     onSuccess: async () => {
       await Promise.all([
@@ -306,11 +305,17 @@ export function NewAppointmentDialog({
                     className="w-full justify-between font-normal"
                   >
                     {client ? (
-                      <span className="truncate">
-                        {client.full_name ?? "Sin nombre"}
-                        {client.phone && (
-                          <span className="text-muted-foreground"> · {client.phone}</span>
-                        )}
+                      <span className="flex min-w-0 items-center">
+                        <span className="truncate">
+                          {client.full_name ?? "Sin nombre"}
+                          {client.phone && (
+                            <span className="text-muted-foreground"> · {client.phone}</span>
+                          )}
+                        </span>
+                        {/* También acá, y no sólo en la lista: si no, se elige a
+                            una empleada, se cierra el desplegable y el turno se
+                            carga sin que nada haya vuelto a avisar. */}
+                        {teamIds.has(client.id) && <TeamTag />}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">Buscar clienta…</span>
@@ -318,7 +323,7 @@ export function NewAppointmentDialog({
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
                   <Command>
                     <CommandInput placeholder="Nombre o teléfono…" />
                     <CommandList>
@@ -329,7 +334,7 @@ export function NewAppointmentDialog({
                         </span>
                       </CommandEmpty>
                       <CommandGroup>
-                        {clients.data?.map((c) => (
+                        {pickerClients.map((c) => (
                           <CommandItem
                             key={c.id}
                             // `value` es lo que filtra cmdk: sin el teléfono acá,
@@ -352,6 +357,7 @@ export function NewAppointmentDialog({
                                 <span className="text-muted-foreground"> · {c.phone}</span>
                               )}
                             </span>
+                            {teamIds.has(c.id) && <TeamTag />}
                           </CommandItem>
                         ))}
                       </CommandGroup>
@@ -462,45 +468,59 @@ export function NewAppointmentDialog({
           {/* ── Día y hora ─────────────────────────────────────────────── */}
           {professionalId && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="na-date">Día</Label>
-                  <Input
-                    id="na-date"
-                    type="date"
-                    value={dateKey}
-                    onChange={(e) => {
-                      setDateKey(e.target.value);
-                      setTime("");
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="na-time">Hora</Label>
-                  <Input
-                    id="na-time"
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="na-date">Día</Label>
+                <Input
+                  id="na-date"
+                  type="date"
+                  value={dateKey}
+                  onChange={(e) => {
+                    setDateKey(e.target.value);
+                    setTime("");
+                  }}
+                />
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  {daySchedules.length > 0 ? (
-                    <>
-                      {WEEKDAYS[date?.getDay() ?? 0]}:{" "}
-                      {daySchedules
-                        .map((s) => `${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`)
-                        .join(", ")}
-                    </>
-                  ) : (
-                    <>Esta profesional no atiende ese día.</>
-                  )}
-                </p>
+                <Label>Hora</Label>
+                {/* Los tres estados se dicen distinto a propósito. Antes esto
+                    era `daySchedules.length > 0 ? horarios : "no atiende ese
+                    día"`, y como daySchedules queda vacío también cuando la
+                    consulta falla, un error de la base se leía como una
+                    respuesta tranquila sobre la agenda. Fue justo lo que pasó:
+                    faltaba professional_busy_slots en la base, la consulta
+                    reventaba, y la pantalla decía que la profesional no
+                    trabajaba los lunes. */}
+                {availability.isError ? (
+                  <p className="rounded-sm border border-destructive/50 bg-destructive/10 p-2.5 text-xs leading-relaxed text-foreground">
+                    No se pudieron consultar los horarios. No es que la profesional no atienda: la
+                    base devolvió un error.
+                    <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
+                      {(availability.error as Error).message}
+                    </span>
+                  </p>
+                ) : availability.isPending ? (
+                  <p className="text-xs text-muted-foreground">Buscando horarios…</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {daySchedules.length > 0 ? (
+                      <>
+                        {WEEKDAYS[date?.getDay() ?? 0]}:{" "}
+                        {daySchedules
+                          .map((s) => `${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`)
+                          .join(", ")}
+                      </>
+                    ) : (
+                      <>Esta profesional no atiende ese día.</>
+                    )}
+                  </p>
+                )}
 
-                {suggested.length > 0 && (
+                {/* Los horarios que quedan libres, y nada más. Antes esto era un
+                    adorno al lado de un <input type="time"> libre; ahora es la
+                    forma normal de elegir. Cada uno arranca donde termina el
+                    anterior, así que la lista ya viene sin huecos muertos. */}
+                {availability.isError || availability.isPending ? null : suggested.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {suggested.map((iso) => {
                       const label = toTimeInput(iso);
@@ -511,23 +531,71 @@ export function NewAppointmentDialog({
                           size="sm"
                           variant={time === label ? "default" : "outline"}
                           className="h-8"
-                          onClick={() => setTime(label)}
+                          onClick={() => {
+                            setTime(label);
+                            setManualTime(false);
+                          }}
                         >
                           {label}
                         </Button>
                       );
                     })}
                   </div>
+                ) : (
+                  /* Sin horarios no alcanza con no mostrar nada: hay que decir
+                     por qué, porque la salida es distinta en cada caso. Si no
+                     atiende ese día se cambia el día; si está lleno, se carga
+                     fuera de horario o se busca otra profesional. */
+                  <p className="rounded-sm border border-border bg-secondary/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
+                    {daySchedules.length === 0
+                      ? "No hay horarios para ofrecer: esta profesional no atiende ese día. Probá otro día, otra profesional, o cargalo fuera de horario."
+                      : "No queda lugar ese día: los horarios están tomados o ya pasaron."}
+                  </p>
                 )}
 
-                {/* Aviso, no bloqueo: el trigger exime al admin del control de
-                    agenda a propósito. La superposición sí la frena la base. */}
-                {startsAt && outsideSchedule && (
-                  <p className="flex items-start gap-2 rounded-sm border border-gold/50 bg-gold/10 p-2.5 text-xs text-foreground">
-                    <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
-                    Ese horario queda fuera de la agenda habitual de la profesional. Se puede cargar
-                    igual.
-                  </p>
+                {/* La puerta de atrás, explícita y con nombre. El campo libre no
+                    desaparece —es lo que permite registrar el turno de la
+                    clienta a la que la profesional le hace un lugar— pero deja
+                    de estar a un dedazo de distancia. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !manualTime;
+                    setManualTime(next);
+                    // Al cerrarlo se borra la hora escrita a mano, salvo que
+                    // coincida con una de la lista. Si no, quedaba un 22:00
+                    // invisible y el botón de cargar seguía habilitado.
+                    if (!next && !suggested.some((iso) => toTimeInput(iso) === time)) setTime("");
+                  }}
+                  className="text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+                >
+                  {manualTime ? "Volver a los horarios de la lista" : "Cargar fuera de horario"}
+                </button>
+
+                {manualTime && (
+                  <div className="space-y-2 rounded-sm border border-border bg-secondary/30 p-3">
+                    <Label htmlFor="na-time">Hora a mano</Label>
+                    <Input
+                      id="na-time"
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                    />
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Para cuando la profesional le hace un lugar a alguien fuera de su horario. Dos
+                      turnos encimados los sigue rechazando la base.
+                    </p>
+
+                    {/* Aviso, no bloqueo: el trigger exime al admin del control
+                        de agenda a propósito. */}
+                    {startsAt && outsideSchedule && (
+                      <p className="flex items-start gap-2 rounded-sm border border-gold/50 bg-gold/10 p-2.5 text-xs text-foreground">
+                        <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
+                        Ese horario queda fuera de la agenda habitual de la profesional. Se puede
+                        cargar igual.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </>

@@ -37,6 +37,11 @@ public/preview-mails/
 .wrangler/
 .dev.vars
 
+# Caché de la CLI de Supabase. La crea sola cualquier `npx supabase …` y no
+# tiene nada que aporte al repo: guarda la última versión de la CLI y el ref
+# del proyecto linkeado.
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -55,3 +60,42 @@ public/preview-mails/
 package-lock.json
 
 .claude/
+
+
+# Fase 0 de la migracion a Prisma: el volcado de los datos de Supabase.
+#
+# NO van al repo, aunque MIGRACION-A-PRISMA.md diga que si. Ese permiso se
+# escribio sin tener en cuenta que este repositorio es PUBLICO, y el volcado
+# trae datos de personas reales -nombre, telefono, fecha de nacimiento de las
+# clientas, y los datos de contacto de las invitadas- ademas de los costos de
+# compra, que son informacion comercial.
+#
+# La red de seguridad sigue existiendo: los archivos estan en el disco. Lo que
+# no hay es una copia publicada en internet. Para regenerarlos:
+#
+#     node scripts/export-supabase.mjs
+#
+scripts/datos/
+scripts/usuarios.json
+
+# Los backups diarios de la base. El servicio pg-backup del docker-compose los
+# escribe acá dentro, montando ./backups como volumen.
+#
+# Por el mismo motivo que lo de arriba, y peor: un volcado de pg_dump no es una
+# parte de los datos, son TODOS —incluidas las cuentas y sus contraseñas
+# hasheadas—. Sin esta linea quedan sin trackear dentro de un repositorio
+# publico, esperando a que alguien haga `git add -A` sin mirar.
+#
+# En el VPS esta carpeta vive al lado del compose y nunca ve un git. Acá se
+# ignora igual, porque el compose de produccion se puede correr en cualquier
+# maquina para probarlo.
+backups/
+
+# La lista de pruebas a mano. NO va al repo por dos motivos: tiene las
+# contrasenas de las cuentas de prueba —y este repositorio es publico— y
+# ademas es un cuaderno de trabajo, no documentacion del proyecto.
+PRUEBAS.md
+
+# Respaldos de la base de desarrollo (scripts/respaldo.mjs). Son los datos
+# reales del centro y este repositorio es publico.
+respaldos/

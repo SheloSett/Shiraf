@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 const links = [
@@ -29,14 +29,21 @@ const onOliveGhost =
   "hidden text-primary-foreground/80 hover:bg-primary-foreground/10 hover:text-primary-foreground sm:inline-flex";
 
 export function SiteHeader() {
-  const { user, isAdmin } = useAuth();
+  // isTeam en lugar de isAdmin: el panel dejó de ser de una sola persona, y con
+  // isAdmin una empleada navegaba el sitio sin ninguna puerta de entrada al
+  // panel — el motivo por el que este header se cambió.
+  const { user, isTeam } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   async function signOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
-    await supabase.auth.signOut();
+    // El logout es un pedido al servidor porque la cookie es httpOnly: el
+    // navegador no puede borrarla solo. Si falla igual se navega al login —
+    // dejar a alguien atrapado adentro porque se cortó la red sería peor que
+    // una cookie que sigue viva un rato.
+    await apiPost("/api/auth/logout").catch(() => {});
     navigate({ to: "/auth", replace: true });
   }
 
@@ -66,7 +73,27 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          {user ? (
+          {/* Al lado del botón dorado, que es la acción principal, va lo de la
+              sesión. Cuánto hay para poner ahí depende de quién esté:
+
+              El equipo no tiene páginas de clienta — la cuenta del centro no
+              reserva turnos ni tiene historial, y ofrecérselo la mandaba a
+              pantallas que ahora la rebotan. Descontando el panel, que ya es el
+              botón dorado, lo único que le queda es salir. Un desplegable con
+              un solo ítem adentro es un clic de más para nada, así que va el
+              botón directo.
+
+              La clienta sí tiene a dónde ir además de reservar, y ahí el
+              desplegable se gana el lugar. */}
+          {!user ? (
+            <Button asChild variant="ghost" size="sm" className={onOliveGhost}>
+              <Link to="/auth">Ingresar</Link>
+            </Button>
+          ) : isTeam ? (
+            <Button variant="outline" size="sm" className={onOliveOutline} onClick={signOut}>
+              Cerrar sesión
+            </Button>
+          ) : (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className={onOliveOutline}>
@@ -77,32 +104,32 @@ export function SiteHeader() {
                 <DropdownMenuItem asChild>
                   <Link to="/mi-cuenta">Mi perfil y turnos</Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/reservar">Reservar turno</Link>
-                </DropdownMenuItem>
-                {isAdmin && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/admin">Panel de administración</Link>
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={signOut}>Cerrar sesión</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : (
-            <Button asChild variant="ghost" size="sm" className={onOliveGhost}>
-              <Link to="/auth">Ingresar</Link>
-            </Button>
           )}
 
-          {/* El botón por defecto es oliva sobre oliva: acá manda el dorado. */}
-          <Button
-            asChild
-            size="sm"
-            className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
-          >
-            <Link to="/reservar">Reservar turno</Link>
-          </Button>
+          {/* El botón por defecto es oliva sobre oliva: acá manda el dorado.
+              A la gente del centro se le muestra el panel en su lugar: ese
+              formulario no es el suyo y /reservar la desvía igual. */}
+          {isTeam ? (
+            <Button
+              asChild
+              size="sm"
+              className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
+            >
+              <Link to="/admin">Ir al panel</Link>
+            </Button>
+          ) : (
+            <Button
+              asChild
+              size="sm"
+              className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
+            >
+              <Link to="/reservar">Reservar turno</Link>
+            </Button>
+          )}
 
           <Sheet>
             <SheetTrigger asChild>
@@ -125,12 +152,13 @@ export function SiteHeader() {
                 <div className="my-2 h-px bg-border" />
                 {user ? (
                   <>
-                    <Link to="/mi-cuenta" className="text-base">
-                      Mi perfil y turnos
-                    </Link>
-                    {isAdmin && (
+                    {isTeam ? (
                       <Link to="/admin" className="text-base">
-                        Panel de administración
+                        Ir al panel
+                      </Link>
+                    ) : (
+                      <Link to="/mi-cuenta" className="text-base">
+                        Mi perfil y turnos
                       </Link>
                     )}
                     <button onClick={signOut} className="text-left text-base text-muted-foreground">

@@ -3,7 +3,14 @@
 Documento de traspaso. Resume qué se hizo, por qué, qué falta y las trampas que
 ya se pisaron, para retomar el trabajo sin volver a investigar lo mismo.
 
-Última actualización: **13 de agosto de 2026**.
+Última actualización: **21 de agosto de 2026**.
+
+> ⚠️ **Cambió el stack.** Del 5 al 21 de agosto el proyecto corrió sobre
+> Supabase. Ahora corre sobre **Postgres propio en Docker**. Todo lo que este
+> documento decía sobre RLS, PostgREST y `auth.uid()` quedó obsoleto y está
+> reescrito. La historia completa —y el porqué de cada regla— vive en
+> [`docs/historia-supabase/`](docs/historia-supabase/LEEME.md) y en
+> [`MIGRACION-A-PRISMA.md`](MIGRACION-A-PRISMA.md).
 
 ---
 
@@ -15,67 +22,101 @@ panel de administración con calendario, turnos, servicios, profesionales,
 clientes y stock.
 
 **Stack:** TanStack Start (SSR) + React 19 + Vite 8 + Tailwind v4 + shadcn/ui +
-Supabase. TypeScript en modo estricto con `exactOptionalPropertyTypes`.
+**Postgres 17 + Prisma 7**. TypeScript en modo estricto con
+`exactOptionalPropertyTypes`.
 
-**Detalle clave:** la app **no tiene backend propio**. El navegador habla directo
-con PostgREST y la seguridad son las policies de RLS atadas a `auth.uid()`. No
-hay endpoints, no hay servidor de API. Sólo se usa **auth + PostgREST**: cero
-realtime, cero edge functions, cero RPC más allá de las que se agregaron acá.
+**Detalle clave — y es el que cambió.** Antes la app **no tenía backend**: el
+navegador hablaba directo con PostgREST y la seguridad eran 39 policies de RLS
+atadas a `auth.uid()`.
+
+Ahora hay backend, y vive adentro del mismo proceso: son las server functions y
+los routers de `src/server/`. El navegador **ya no toca la base**; sólo puede
+llamar a los ~61 endpoints que existen.
+
+```
+navegador ──fetch──> src/server/routes/*  ──> controllers ──Prisma──> Postgres
+                     (quién puede llamar qué)   (la lógica)
+```
+
+La consecuencia que hay que tener presente todo el tiempo: **Postgres ya no te
+protege.** La conexión de `src/server/db.ts` es dueña de todo. Lo que decide
+quién ve qué es el código, y por eso:
+
+> 🔴 **Ninguna pantalla importa Prisma.** El acceso a datos vive sólo en
+> `src/server/**`, y hay un `no-restricted-imports` en `eslint.config.js` que lo
+> hace cumplir.
+
+La compensación es real: el navegador dejó de tener una conexión directa a la
+base. Antes la clave publishable viajaba en el bundle y cualquiera podía
+intentar leer `appointments`; lo único que lo frenaba era la RLS.
 
 ---
 
 ## 2. Base de datos
 
-⚠️ **El proyecto Supabase original de Lovable ya no se usa.** Se migró a uno
-nuevo porque no había acceso administrativo al primero.
+Postgres 17 en Docker, en el mismo `docker-compose.yml` que la app.
 
-- Proyecto actual: `btqqzbhrlwakglaooddg`
-- Las claves están en `.env` (versionado en git; son las *publishable*, públicas
-  por diseño). **Nunca sumar ahí la service_role key.**
-- Al crear el proyecto se **destildó** "Automatically expose new tables", así que
-  los permisos los otorgan sólo las migraciones. Como efecto, `appointments` y
-  `products` le responden `permission denied` a un anónimo en vez de devolver
-  `[]` — falla cerrado y ruidoso, que es lo deseable.
+|                          |                                                                   |
+| ------------------------ | ----------------------------------------------------------------- |
+| Esquema                  | `prisma/schema.prisma` — 16 modelos, 4 enums                      |
+| Se sincroniza con        | `prisma db push`, **no** con migraciones                          |
+| Lo que `db push` no sabe | `prisma/sql/reglas.sql`, aplicado por `scripts/post-push.mjs`     |
+| Datos iniciales          | `prisma/seed.ts`                                                  |
+| Permisos                 | `src/server/services/authz.service.ts` + `src/server/PERMISOS.md` |
 
-### Migraciones
+### Por qué `db push` y no migraciones
 
-Las cinco primeras (`20260805*`) son las que generó Lovable. Están unidas en
-`supabase/setup-nuevo-proyecto.sql` para levantar un proyecto desde cero.
+Es la forma que usa `Ecommerce_mm`, el otro proyecto de la dueña, y la decisión
+fue explícitamente parecerse a ése. El `schema.prisma` es la fuente de verdad y
+el contenedor `migrate` lo sincroniza en cada arranque.
 
-| Archivo | Qué hace |
-| --- | --- |
-| `20260813000000_product_categories.sql` | Tabla `product_categories`, sembrada con las categorías en uso |
-| `20260813010000_service_categories.sql` | Tabla `service_categories`, ídem |
-| `20260813020000_prevent_double_booking.sql` | RPC `professional_busy_slots()` + trigger anti-solapamiento + índice parcial |
-| `20260813030000_service_images_bucket.sql` | Bucket `servicios` en Storage + policies |
+**El riesgo que eso trae, y cómo se cubre.** `db push` sólo conoce lo que está
+en el schema. Los 3 triggers, el `CHECK` de turnos, `normalize_phone` y los 4
+índices parciales **no**. Por eso `scripts/post-push.mjs` corre siempre después,
+los vuelve a poner, y —lo importante— **verifica que estén y corta el arranque
+si falta alguno**. Sin el CHECK, la base acepta turnos sin dueño y eso no se ve
+hasta que alguien mira la agenda.
 
-`supabase/crear-admin.sql` asigna el rol admin a un usuario. Hay que correrlo
-**después** de registrarse en `/auth`, porque necesita que el usuario exista en
-`auth.users`.
+### Lo que se quedó en SQL, y por qué
 
-### Por qué el primer admin se crea a mano
+Tres reglas no pueden vivir en el código porque dependen de que la comprobación
+y la escritura pasen **en la misma transacción**:
 
-El trigger `handle_new_user` le pone rol `client` a todo el que se registra, y
-`user_roles` sólo tiene policy de SELECT. Nadie puede insertar roles desde la
-app, ni siquiera un admin. Es a propósito — si no, cualquiera se haría admin
-solo. **No es un bug.**
+| Trigger                     | Si estuviera en código                                                         |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| `check_appointment_overlap` | Dos reservas simultáneas leen las dos que está libre, y las dos escriben       |
+| `apply_stock_movement`      | Dos movimientos a la vez pierden uno                                           |
+| `sync_service_cover`        | Es un invariante de datos: vale aunque escriba un seed o una corrección a mano |
 
-### Categorías: decisión de diseño
+### Las URLs de los tratamientos (23/8/2026)
 
-`products.category` y `services.category` siguen siendo **TEXT**, no claves
-foráneas. Las tablas de categorías existen para poder crearlas y renombrarlas,
-pero el vínculo se mantiene por nombre.
+La ficha pública dejó de vivir en `/servicios/<uuid>` y pasó a
+`/servicios/drenaje-linfatico`. Lo que lo sostiene:
 
-Motivo: pasarlas a FK obligaba a migrar datos y regenerar los tipos, y
-`services.category` se lee desde el sitio público, así que habría que tocar
-todas las consultas. Para un catálogo de este tamaño no compensa.
+| Pieza                                     | Qué hace                                                      |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `services.slug`, `String? @unique`        | La columna. Opcional, y el porqué está escrito en el esquema  |
+| `aSlug()` en `src/lib/shiraf.ts`          | El cálculo, uno solo para pantalla, servidor y scripts        |
+| `slugLibre()` en `catalogo.service.ts`    | Le busca uno libre; desempata con sufijo (`masaje-2`)         |
+| `porIdOSlug()` en `publico.controller.ts` | Acepta las dos formas en el endpoint                          |
+| `scripts/rellenar-slugs.ts`               | Relleno único de las filas viejas — `npm run db:slugs`        |
 
-**Consecuencia importante:** renombrar una categoría desde el panel actualiza
-también todos los productos/servicios que la usan. Esa lógica está en
-`admin.categorias-productos.tsx` y `admin.categorias-servicios.tsx`. Si alguna
-vez se toca por fuera del panel, hay que arrastrar el cambio a mano.
+Dos cosas que conviene tener presentes:
 
----
+- **El slug se regenera al renombrar el tratamiento**, así que su URL cambia y
+  la anterior deja de existir. Fue una decisión, no un descuido: un nombre
+  corregido con una URL que dice lo viejo para siempre es peor. El UUID sigue
+  funcionando siempre y es la salida para un enlace que se rompió.
+- **El regex de `porIdOSlug` no es cosmético.** `services.id` es `@db.Uuid`:
+  buscar por id algo que no tiene forma de UUID no da "no encontrado", revienta
+  con `invalid input syntax for type uuid` y sale como un 500. Con el chequeo,
+  `/servicios/cualquier-cosa` es un 404 y no un error del servidor.
+
+### El primer admin
+
+Ya no hace falta el `crear-admin.sql`: las 4 cuentas se cargaron con el seed,
+conservando sus UUID originales. Para una cuenta nueva con rol admin, hoy es un
+`UPDATE` en `user_roles` desde `npm run studio`.
 
 ## 3. El bug de la doble reserva (resuelto)
 
@@ -99,8 +140,8 @@ Se resolvió por dos lados:
 
 Las columnas de salida de la función se llaman `slot_start` / `slot_minutes`, no
 `starts_at` / `duration_minutes`: en `RETURNS TABLE` los nombres de salida
-comparten ámbito con las columnas de la tabla y repetirlos puede dar un *column
-reference is ambiguous*. `reservar.tsx` los mapea al recibirlos.
+comparten ámbito con las columnas de la tabla y repetirlos puede dar un _column
+reference is ambiguous_. `reservar.tsx` los mapea al recibirlos.
 
 **Deuda conocida:** lo canónico sería un constraint `EXCLUDE` con `btree_gist`,
 pero `timestamptz + interval` es `STABLE` en Postgres, no `IMMUTABLE`, así que no
@@ -162,8 +203,19 @@ Si el sello se ve descentrado, son dos números en `logo.tsx`.
 
 ## 5. Fotos
 
-Van en **Supabase Storage**, bucket `servicios`, público en lectura y escritura
-sólo para admin. No hace falta Cloudinary.
+Van en **Cloudinary**, carpeta `shiraf/servicios`, con subida firmada desde el
+servidor (`src/lib/cloudinary.functions.ts`).
+
+Antes iban a Supabase Storage. Se movieron el 15/8, y el motivo no fue la
+migración: las fotos se muestran en tres tamaños muy distintos —48px en la tabla
+del panel, ~400px en la tarjeta, pantalla completa en la ficha— y desde Storage
+bajaban siempre el mismo archivo de 1600px. Supabase sabe redimensionar por URL,
+pero es función de plan Pro.
+
+⚠️ Puede quedar alguna foto vieja apuntando a Supabase Storage. `imageUrl()`
+devuelve intacta toda URL que no sea de Cloudinary, así que se siguen viendo, y
+migran solas a medida que se reemplacen. **Ese es el último hilo que ata el
+proyecto de Supabase**: antes de pausarlo, conviene resubir esas fotos.
 
 `src/lib/storage.ts` **redimensiona y comprime en el navegador antes de subir**:
 máximo 1600px de ancho y conversión a WebP con calidad 0.82. Una foto de celular
@@ -186,10 +238,22 @@ dimensionados desde el principio como marcador de posición para estas fotos.
 
 ## 6. Docker
 
-`Dockerfile`, `docker-compose.yml` y `DOCKER.md` están listos pero **nunca se
-construyó la imagen**: no hay Docker instalado en la máquina donde se trabajó.
+Ya no es opcional: **la base corre en Docker**, así que el proyecto no levanta
+sin él. La imagen se construyó y se probó el 20 y el 21 de agosto.
 
-Dos cosas que hay que saber antes de tocarlo:
+```
+db  ──sano──>  migrate  ──termina bien──>  app
+└── pg-backup
+```
+
+`migrate` corre una vez, hace `db push` + `post-push.mjs`, y se apaga. Si alguna
+regla no quedó puesta, sale con error y la cadena se corta ahí: la app no
+arranca contra una base a la que le falta un candado.
+
+Para desarrollo hay un `docker-compose.dev.yml` aparte, con el código montado en
+vivo. El sitio queda en `http://localhost:8081`.
+
+Tres cosas que hay que saber antes de tocarlo:
 
 1. El build por defecto apunta a **Cloudflare Workers** (es donde publica
    Lovable). El Dockerfile fuerza `NITRO_PRESET=node-server` por variable de
@@ -198,8 +262,13 @@ Dos cosas que hay que saber antes de tocarlo:
    runtime. Por eso van como `args` y no como `environment`. Si las movés, la
    imagen compila pero la app rompe en el navegador.
 
-Si el contenedor no arranca en el primer intento, el sospechoso es
-`read_only: true` en el compose — es la única línea que no se pudo probar.
+3. **Prisma 7 no lleva binarios nativos**, lleva un compilador en WASM. Todo lo
+   que se lee por ahí sobre dockerizar Prisma —`binaryTargets`, la pelea con
+   musl, instalar `openssl`— es de la versión 6 para atrás y acá no aplica.
+   Está explicado en el `Dockerfile`.
+
+`read_only: true` en el servicio `app` **sí funciona** — se probó. La app no
+escribe en disco; lo que persiste vive en el contenedor de la base.
 
 ---
 
@@ -213,8 +282,9 @@ Si el contenedor no arranca en el primer intento, el sospechoso es
 - **Una clienta puede auto-confirmarse el turno** o cambiarle la fecha por API.
   La policy `clients update own appointments` deja modificar cualquier columna
   del turno propio. Se arregla restringiendo qué campos puede tocar.
-- **Datos de contacto:** ya están los reales en `src/lib/contact.ts`, pero
-  `email` e `instagram` siguen siendo los de ejemplo.
+- ~~**Datos de contacto:** `email` e `instagram` de ejemplo.~~ Hechos el
+  18/8/2026: en `src/lib/contact.ts` están el mail, las dos redes
+  (`@shiraf_beauty` en Instagram y TikTok) y el dominio `shiraf.com.ar`.
 - **El favicon sigue siendo el de Lovable.** El logo pesa 254 KB para mostrarse
   a 44px; conviene exportar una versión chica en WebP.
 
@@ -243,10 +313,23 @@ Si el contenedor no arranca en el primer intento, el sospechoso es
 
 ## 8. Cómo levantarlo
 
+Todo corre en Docker. En la máquina no hace falta ni Node ni Postgres.
+
 ```sh
-npm install
-npm run dev        # http://localhost:8080
+docker compose -f docker-compose.dev.yml up     # http://localhost:8081
 ```
+
+La primera vez, además, hay que llenar la base:
+
+```sh
+docker compose -f docker-compose.dev.yml run --rm app sh -c   "bunx prisma generate && bunx prisma db push && node scripts/post-push.mjs && bun prisma/seed.ts"
+```
+
+Las 4 cuentas quedan **sin contraseña usable**: se les pone una desde
+"recuperar contraseña", o con un `UPDATE` desde `npm run studio`.
+
+Si preferís correr las verificaciones en el host (no hace falta Docker para
+eso, pero sí `npx prisma generate` una vez):
 
 Verificaciones antes de dar algo por terminado:
 
@@ -272,7 +355,7 @@ viejo tomando el 8080. Hay que matarlo — si conviven dos, pelean por escribir
 Cosas que costaron encontrar y no conviene volver a descubrir:
 
 - **Rutas anidadas y el 404 fantasma.** Al partir `/servicios` en
-  `servicios.index.tsx` + `servicios.$serviceId.tsx`, TanStack arma un padre
+  `servicios.index.tsx` + `servicios.$slug.tsx`, TanStack arma un padre
   virtual y el SSR responde **404 aunque la página renderice bien**. Se arregla
   agregando un `servicios.tsx` explícito que sólo devuelve `<Outlet />`. El
   mismo patrón usa `admin.tsx`.
@@ -286,13 +369,20 @@ Cosas que costaron encontrar y no conviene volver a descubrir:
 - **Tailwind sólo emite lo que encuentra en el markup.** Dos utilidades
   (`dot-leader`, `index-row`) quedaron definidas pero sin usar y compilaban en
   cero. Si se borra un componente, revisar si dejó CSS huérfano.
-- **`signUp` devuelve `session: null`** cuando el proyecto exige confirmar el
-  mail. El código original anunciaba "Cuenta creada" y navegaba a `/mi-cuenta`,
-  que sin sesión rebota a `/auth`. Hay que chequear `data.session`.
-- **Los tipos de Supabase se editan a mano.** No está instalado el CLI, así que
-  `src/integrations/supabase/types.ts` se actualizó a mano para
-  `product_categories`, `service_categories` y `professional_busy_slots`. Si se
-  agrega algo a la base, hay que sumarlo ahí o TypeScript no lo reconoce.
+- **Los tipos ya no se editan a mano.** Los genera `prisma generate` desde
+  `schema.prisma`. Si tocás el esquema y no corrés `generate`, TypeScript sigue
+  viendo el modelo viejo y los errores no mencionan a Prisma.
+- **`npx prisma generate` no necesita base.** Sólo lee el schema. Es el paso que
+  más se olvida al clonar en una máquina nueva, y sin él **todos** los
+  `import { prisma }` tiran error de tipos y parece que el proyecto está roto.
+- **`db push` es silencioso con lo que no conoce.** No toca triggers ni
+  funciones, pero puede llevarse por delante el `CHECK` y los índices parciales.
+  Por eso `post-push.mjs` corre siempre después y **verifica**. Nunca corras
+  `db push` solo: usá `npm run db:sync`.
+- **El puerto del host y el del contenedor son dos cosas distintas.** Vite se
+  ata al 8080 adentro; el compose lo publica en el 8081 porque el 8080 del host
+  lo tiene Docker Desktop. Confundirlos deja la pestaña en blanco con los logs
+  diciendo que todo está bien.
 - **No commitear `package-lock.json`.** El lockfile del repo es `bun.lock`. Uno
   generado en Windows rompe los builds en Linux por las dependencias opcionales
   de rollup/esbuild. Ya está en `.gitignore`.

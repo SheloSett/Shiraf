@@ -1,19 +1,61 @@
-import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import {
+  createFileRoute,
+  Link,
+  Outlet,
+  redirect,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  CalendarCheck,
   CalendarDays,
+  ChevronDown,
   ClipboardList,
+  LogOut,
   Package,
   ShieldCheck,
   Sparkles,
+  UserCog,
   Users,
   UserSquare,
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { apiPost } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
+import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
+import { puedeEntrarAlPanel } from "@/lib/sesion";
 
 export const Route = createFileRoute("/_authenticated/admin")({
+  /**
+   * A la clienta se la rebota, no se le muestra una pared.
+   *
+   * Antes, escribir /admin en la barra estando conectada como clienta abría una
+   * pantalla que decía «Acceso restringido». Técnicamente correcto y en la
+   * práctica desconcertante: para quien no es del centro, /admin no es "una
+   * sección que no te toca", es una dirección que no significa nada. Se la manda
+   * a su cuenta, que es a donde quería llegar.
+   *
+   * ── POR QUÉ EN `beforeLoad` Y NO EN EL COMPONENTE ─────────────────────────
+   *
+   * Porque acá pasa ANTES de dibujar nada. Con un `useEffect` adentro del
+   * componente, la pantalla alcanza a pintar el cartel y recién después salta —
+   * un parpadeo que se lee como un error.
+   *
+   * La sesión ya viene resuelta por el `beforeLoad` de `_authenticated`, que es
+   * el que además garantiza que acá abajo haya alguien conectada: sin sesión
+   * nunca se llega hasta este punto.
+   *
+   * ⚠️ Esto NO es seguridad. Cada endpoint exige lo suyo del otro lado de la
+   * API, y eso es lo que protege los datos. Esto es que la puerta lleve a algún
+   * lado en vez de a una pared.
+   */
+  beforeLoad: ({ context }) => {
+    if (!puedeEntrarAlPanel(context.user)) throw redirect({ to: "/mi-cuenta" });
+  },
   head: () => ({
     meta: [
       { title: "Panel de administración — Shiraf" },
@@ -32,17 +74,29 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminLayout,
 });
 
-// Cada sección declara qué permiso la habilita, para que una empleada sólo vea
-// en el menú lo que realmente puede abrir. `adminOnly` es para lo que no se
-// delega: repartir accesos.
+// Cada sección declara qué hace falta para abrirla, con el mismo vocabulario
+// que requiredAccessFor: los siete permisos más "admin" (lo que no se delega),
+// "panel" y "own_agenda". Antes esto era `permission` + un booleano `adminOnly`
+// que obligaba a poner un permiso de mentira al lado —"appointments // ignorado:
+// manda adminOnly"—, y no tenía dónde entrar un tercer nivel.
+//
+// "Mi agenda" va primera a propósito: para una profesional es su única sección,
+// así que es también su pantalla de entrada al panel.
 const nav = [
+  {
+    to: "/admin/mi-agenda",
+    label: "Mi agenda",
+    icon: CalendarCheck,
+    exact: false,
+    access: "own_agenda",
+    children: [],
+  },
   {
     to: "/admin",
     label: "Calendario",
     icon: CalendarDays,
     exact: true,
-    permission: "appointments",
-    adminOnly: false,
+    access: "appointments",
     children: [],
   },
   {
@@ -50,8 +104,7 @@ const nav = [
     label: "Turnos",
     icon: ClipboardList,
     exact: false,
-    permission: "appointments",
-    adminOnly: false,
+    access: "appointments",
     children: [],
   },
   {
@@ -59,8 +112,7 @@ const nav = [
     label: "Servicios",
     icon: Sparkles,
     exact: false,
-    permission: "catalog",
-    adminOnly: false,
+    access: "catalog",
     children: [{ to: "/admin/categorias-servicios", label: "Categorías" }],
   },
   {
@@ -68,8 +120,7 @@ const nav = [
     label: "Profesionales",
     icon: UserSquare,
     exact: false,
-    permission: "team",
-    adminOnly: false,
+    access: "team",
     children: [],
   },
   {
@@ -77,8 +128,7 @@ const nav = [
     label: "Clientes",
     icon: Users,
     exact: false,
-    permission: "clients_contact",
-    adminOnly: false,
+    access: "clients_contact",
     children: [],
   },
   {
@@ -86,8 +136,7 @@ const nav = [
     label: "Productos",
     icon: Package,
     exact: false,
-    permission: "stock",
-    adminOnly: false,
+    access: "stock",
     children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
   },
   {
@@ -95,14 +144,29 @@ const nav = [
     label: "Equipo",
     icon: ShieldCheck,
     exact: false,
-    permission: "appointments", // ignorado: manda adminOnly
-    adminOnly: true,
+    access: "admin",
     children: [],
   },
 ] as const;
 
 function AdminLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // Mismo cierre de sesión que el header del sitio: se vacía la caché de
+  // react-query ANTES de desloguear, para que la próxima persona que entre en
+  // esta misma computadora no vea por un instante los datos de la anterior.
+  async function signOut() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    // El logout es un pedido al servidor porque la cookie es httpOnly: el
+    // navegador no puede borrarla solo. Si falla igual se navega al login —
+    // dejar a alguien atrapado adentro porque se cortó la red sería peor que
+    // una cookie que sigue viva un rato.
+    await apiPost("/api/auth/logout").catch(() => {});
+    navigate({ to: "/auth", replace: true });
+  }
 
   // Antes acá vivía una consulta propia `["is-admin"]` que sólo miraba si el
   // usuario tenía el rol admin. Se reemplaza por useAccess, que además trae los
@@ -122,38 +186,94 @@ function AdminLayout() {
   //       return (data ?? []).some((r) => r.role === "admin");
   //     },
   //   });
-  const { isAdmin, canEnterPanel, can, loading } = useAccess();
+  const { canEnterPanel, can, allows, loading } = useAccess();
+
+  // Secciones que la persona abrió o cerró a mano con la flechita. Lo que no
+  // esté acá se decide solo: la sección abierta muestra sus subsecciones.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+
+  // Turnos esperando respuesta. Se pide sólo si la persona puede verlos: sin el
+  // acceso, la RLS devuelve cero igual y la consulta sería al pedo.
+  const pendingCount = usePendingAppointments(can("appointments"));
+  // Turnos que se van a atender y no tienen a quién. Es trabajo pendiente del
+  // centro, no un aviso: si nadie los resuelve, ese día no hay profesional.
+  const unassignedCount = useUnassignedAppointments(can("appointments"));
 
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
-  const visibleNav = nav.filter((item) => (item.adminOnly ? isAdmin : can(item.permission)));
+  const visibleNav = nav.filter((item) => allows(item.access));
 
   // Guard de la sección abierta. Va acá y no en cada ruta hija porque todas
   // renderizan dentro de este <Outlet />: en un solo lugar no hay forma de
   // olvidarse de ponerlo en una pantalla nueva.
   const required = requiredAccessFor(location.pathname);
-  const allowed = required === "admin" ? isAdmin : can(required);
+  const allowed = allows(required);
+
+  // /admin es el calendario, que pide "Gestionar turnos". Quien entra al panel
+  // sin ese acceso —una profesional que sólo tiene su agenda, o una empleada de
+  // stock— aterrizaba en "No tenés acceso a esta sección" apenas se logueaba,
+  // como si algo estuviera roto. Se la manda a su primera sección.
+  //
+  // Sólo desde /admin pelado: si escribió una URL a mano, la respuesta tiene que
+  // ser el cartel que explica qué le falta, no una redirección silenciosa.
+  const landing = visibleNav[0]?.to;
+  useEffect(() => {
+    if (!loading && !allowed && location.pathname === "/admin" && landing) {
+      navigate({ to: landing, replace: true });
+    }
+  }, [loading, allowed, location.pathname, landing, navigate]);
+
+  /**
+   * El respaldo del `beforeLoad` de arriba.
+   *
+   * Ese es el que rebota a la clienta antes de dibujar nada, y en la práctica es
+   * el que actúa siempre. Éste cubre el caso raro que aquél no puede ver: que la
+   * cuenta pierda el acceso MIENTRAS la pantalla está abierta —le dan de baja la
+   * ficha de profesional, la sacan del equipo—. Ahí no hay navegación nueva, así
+   * que `beforeLoad` no vuelve a correr, y sin esto el panel se quedaría
+   * dibujado para alguien que ya no debería verlo.
+   */
+  useEffect(() => {
+    if (!loading && !canEnterPanel) navigate({ to: "/mi-cuenta", replace: true });
+  }, [loading, canEnterPanel, navigate]);
 
   if (loading) {
     return <p className="p-10 text-sm text-muted-foreground">Verificando permisos…</p>;
   }
 
   if (!canEnterPanel) {
-    return (
-      <div className="mx-auto max-w-md px-5 py-24 text-center">
-        <h1 className="font-display text-3xl text-foreground">Acceso restringido</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Esta sección es sólo para el equipo de Shiraf.
-        </p>
-        <Button asChild className="mt-6">
-          <Link to="/mi-cuenta">Ir a mi cuenta</Link>
-        </Button>
-      </div>
-    );
+    // Ya se está yendo: lo dispara el efecto de acá arriba. Se dibuja una línea
+    // de paso y no el cartel de «Acceso restringido», que se alcanzaba a ver un
+    // instante antes de saltar y se leía como un error.
+    //
+    // ⬇️ El cartel viejo. Se comenta y no se borra porque es el rastro de por
+    //    qué esto cambió: para quien no es del centro, /admin no es "una sección
+    //    que no te toca", es una dirección que no significa nada. Decirle que
+    //    tiene el acceso restringido es contestarle una pregunta que no hizo.
+    //
+    //    <div className="mx-auto max-w-md px-5 py-24 text-center">
+    //      <h1 className="font-display text-3xl text-foreground">Acceso restringido</h1>
+    //      <p className="mt-3 text-sm text-muted-foreground">
+    //        Esta sección es sólo para el equipo de Shiraf.
+    //      </p>
+    //      <Button asChild className="mt-6">
+    //        <Link to="/mi-cuenta">Ir a mi cuenta</Link>
+    //      </Button>
+    //    </div>
+    return <p className="p-10 text-sm text-muted-foreground">Te llevamos a tu cuenta…</p>;
   }
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
-      <aside className="surface-olive lg:w-60 lg:shrink-0">
+      {/* La barra se queda quieta: en escritorio se pega arriba y mide una
+          pantalla, con su propio scroll si el menú no entra. Antes era
+          `lg:w-60 lg:shrink-0` a secas y, al ser una columna más del flex,
+          se estiraba hasta la altura del documento: en pantallas largas
+          (como "Mi cuenta") el pie del menú quedaba al fondo de la página y
+          había que scrollear todo para llegar a "Cerrar sesión".
+
+          className vieja:
+          "surface-olive flex flex-col lg:w-60 lg:shrink-0" */}
+      <aside className="surface-olive flex flex-col lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:shrink-0 lg:overflow-y-auto">
         <div className="flex items-center gap-3 p-6">
           <Logo className="h-9 w-9" />
           <span className="font-display text-lg tracking-[0.25em] text-primary-foreground">
@@ -168,51 +288,156 @@ function AdminLayout() {
             // La sección se despliega si estás en el padre o en cualquier hijo.
             const sectionActive =
               active || item.children.some((child) => location.pathname.startsWith(child.to));
+            // …salvo que la hayas abierto o cerrado vos con la flechita: esa
+            // decisión manda sobre la automática.
+            const open = openSections[item.to] ?? sectionActive;
 
             return (
               <div key={item.to} className="contents lg:block">
-                <Link
-                  to={item.to}
-                  className={`flex items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
-                    active
-                      ? "bg-primary-foreground/15 text-primary-foreground"
-                      : "text-primary-foreground/65 hover:text-primary-foreground"
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
+                {/* El link y la flechita van en la misma fila pero separados:
+                    tocar el nombre navega, tocar la flecha sólo despliega. Si
+                    fuera un botón solo, no se podría entrar a "Servicios". */}
+                <div className="relative flex items-center">
+                  <Link
+                    to={item.to}
+                    className={`flex flex-1 items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
+                      item.children.length > 0 ? "pr-9" : ""
+                    } ${
+                      active
+                        ? "bg-primary-foreground/15 text-primary-foreground"
+                        : "text-primary-foreground/65 hover:text-primary-foreground"
+                    }`}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                    {/* Los dos contadores de Turnos. Van en el menú y no sólo
+                        adentro de la sección para que se vean desde cualquier
+                        pantalla del panel.
 
-                {item.children.length > 0 && sectionActive && (
-                  <div className="flex gap-1 lg:mt-1 lg:ml-4 lg:flex-col lg:border-l lg:border-primary-foreground/20 lg:pl-3">
-                    {item.children.map((child) => {
-                      const childActive = location.pathname.startsWith(child.to);
-                      return (
-                        <Link
-                          key={child.to}
-                          to={child.to}
-                          className={`whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors lg:px-2 lg:py-1.5 ${
-                            childActive
-                              ? "bg-primary-foreground/15 text-primary-foreground lg:bg-transparent"
-                              : "text-primary-foreground/55 hover:text-primary-foreground"
-                          }`}
-                        >
-                          {child.label}
-                        </Link>
-                      );
-                    })}
+                        El rojo va PRIMERO, y es el de los turnos sin profesional
+                        asignada. Un turno pendiente es alguien esperando una
+                        respuesta; uno sin profesional es un turno que va a
+                        llegar sin que haya nadie para atenderlo. El segundo no
+                        se resuelve solo ni salta a la vista, así que se le da el
+                        color que no se puede ignorar. */}
+                    {item.to === "/admin/turnos" && (unassignedCount > 0 || pendingCount > 0) && (
+                      <span className="ml-auto flex items-center gap-1">
+                        {unassignedCount > 0 && (
+                          <span
+                            title={`${unassignedCount} sin profesional asignada`}
+                            className="min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                          >
+                            {unassignedCount > 99 ? "99+" : unassignedCount}
+                          </span>
+                        )}
+                        {pendingCount > 0 && (
+                          <span
+                            title={`${pendingCount} esperando respuesta`}
+                            className="min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums"
+                          >
+                            {pendingCount > 99 ? "99+" : pendingCount}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </Link>
+
+                  {item.children.length > 0 && (
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      aria-label={`${open ? "Ocultar" : "Mostrar"} las subsecciones de ${item.label}`}
+                      onClick={() => setOpenSections((prev) => ({ ...prev, [item.to]: !open }))}
+                      className="absolute right-1 rounded-sm p-1.5 text-primary-foreground/55 transition-colors hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform duration-300 ease-out ${
+                          open ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {/* Antes las subsecciones aparecían y desaparecían de golpe con
+                    `{sectionActive && (…)}`. Ahora el bloque siempre está en el
+                    DOM y lo que se anima es su alto: el truco de la grilla de
+                    0fr a 1fr deja que el alto lo calcule el navegador, así la
+                    transición es suave sin tener que hardcodear un max-height.
+                    En mobile además se achica el ancho, para que cerrado no
+                    deje un hueco en la fila horizontal del menú. */}
+                {item.children.length > 0 && (
+                  <div
+                    className={`grid transition-all duration-300 ease-out ${
+                      open
+                        ? "grid-rows-[1fr] opacity-100"
+                        : "pointer-events-none max-w-0 grid-rows-[0fr] opacity-0 lg:max-w-none"
+                    }`}
+                  >
+                    {/* Este div de en medio es el que recorta: con
+                        `overflow-hidden` el navegador acepta achicarlo hasta 0
+                        y por eso la grilla puede animar el alto. Los márgenes y
+                        el borde van adentro, para que cerrado no quede
+                        ocupando lugar. */}
+                    <div className="overflow-hidden">
+                      <div className="flex gap-1 lg:mt-1 lg:ml-4 lg:flex-col lg:border-l lg:border-primary-foreground/20 lg:pl-3">
+                        {item.children.map((child) => {
+                          const childActive = location.pathname.startsWith(child.to);
+                          return (
+                            <Link
+                              key={child.to}
+                              to={child.to}
+                              className={`whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors lg:px-2 lg:py-1.5 ${
+                                childActive
+                                  ? "bg-primary-foreground/15 text-primary-foreground lg:bg-transparent"
+                                  : "text-primary-foreground/55 hover:text-primary-foreground"
+                              }`}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
             );
           })}
         </nav>
-        <div className="hidden px-3 pb-6 lg:block">
+        {/* Pie de la barra. Antes acá sólo había "Volver al sitio" y estaba
+            oculto en mobile (`hidden lg:block`), lo que dejaba al panel sin
+            ninguna salida en el celular.
+
+            "Mi cuenta" y "Cerrar sesión" viven acá y no en el menú de arriba
+            porque no son secciones del negocio: son de la persona. Y tienen que
+            estar, porque las cuentas del centro ya no entran a /mi-cuenta —
+            antes se cerraba sesión desde el header del sitio público. */}
+        <div className="mt-auto flex items-center gap-1 overflow-x-auto border-t border-primary-foreground/10 px-3 py-3 lg:block lg:py-4">
+          <Link
+            to="/admin/cuenta"
+            className={`flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
+              location.pathname.startsWith("/admin/cuenta")
+                ? "bg-primary-foreground/15 text-primary-foreground"
+                : "text-primary-foreground/65 hover:text-primary-foreground"
+            }`}
+          >
+            <UserCog className="h-4 w-4" />
+            Mi cuenta
+          </Link>
+          <button
+            type="button"
+            onClick={signOut}
+            className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-primary-foreground/65 transition-colors hover:text-primary-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Cerrar sesión
+          </button>
           <Link
             to="/"
-            className="block rounded-sm px-3 py-2 text-xs text-primary-foreground/50 hover:text-primary-foreground"
+            className="mt-1 block rounded-sm px-3 py-2 text-xs text-primary-foreground/50 hover:text-primary-foreground"
           >
-            ← Volver al sitio
+            ← Ver el sitio
           </Link>
         </div>
       </aside>

@@ -1,12 +1,14 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
+import { pedirSesion } from "@/lib/sesion";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
-  beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
+  beforeLoad: async ({ context }) => {
+    const sesion = await pedirSesion(context.queryClient);
+    if (!sesion) throw redirect({ to: "/auth" });
+    // Se devuelve la sesión entera y no sólo el id: los `beforeLoad` de más
+    // adentro ya preguntaban por el rol, y así no tienen que volver a pedirla.
+    return { user: sesion };
   },
   component: () => <Outlet />,
 });

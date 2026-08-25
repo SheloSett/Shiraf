@@ -28,3 +28,14 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+> **Nota (21/8/2026).** Eso ya no alcanza: el proyecto dejó de usar Supabase y
+> la base ahora corre en Docker, así que `npm run dev` levanta el sitio pero sin
+> nada que leer. El arranque real es:
+>
+> ```sh
+> docker compose -f docker-compose.dev.yml up     # http://localhost:8081
+> ```
+>
+> La guía completa está en [`DOCKER.md`](DOCKER.md) y el estado del proyecto en
+> [`ESTADO.md`](ESTADO.md).

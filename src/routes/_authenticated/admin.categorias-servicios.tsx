@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CategoryManager } from "@/components/admin/category-manager";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiDelete, apiPost, apiPut } from "@/lib/api";
+import type { RtaCategorias, RtaUsoDeCategorias } from "@/lib/api-tipos";
 
 export const Route = createFileRoute("/_authenticated/admin/categorias-servicios")({
   component: AdminServiceCategories,
@@ -13,26 +14,17 @@ function AdminServiceCategories() {
 
   const categories = useQuery({
     queryKey: ["service-categories"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("service_categories")
-        .select("id, name")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaCategorias>("/api/categorias/servicios")).categorias,
   });
 
   const usage = useQuery({
     queryKey: ["service-category-usage"],
+    // El conteo lo hace la base con un group by. Vuelve como objeto y se
+    // convierte en Map acá: un Map no sobrevive a JSON.stringify, y el
+    // componente que lo consume espera un Map.
     queryFn: async () => {
-      const { data, error } = await supabase.from("services").select("category");
-      if (error) throw error;
-      const counts = new Map<string, number>();
-      for (const row of data ?? []) {
-        counts.set(row.category, (counts.get(row.category) ?? 0) + 1);
-      }
-      return counts;
+      const { uso } = await api<RtaUsoDeCategorias>("/api/categorias/servicios/uso");
+      return new Map(Object.entries(uso));
     },
   });
 
@@ -47,10 +39,7 @@ function AdminServiceCategories() {
   }
 
   const create = useMutation({
-    mutationFn: async (name: string) => {
-      const { error } = await supabase.from("service_categories").insert({ name });
-      if (error) throw error;
-    },
+    mutationFn: (name: string) => apiPost("/api/categorias/servicios", { name }),
     onSuccess: async () => {
       await refresh();
       toast.success("Categoría creada.");
@@ -67,10 +56,8 @@ function AdminServiceCategories() {
     // tratamientos; si lo segundo fallaba, quedaban apuntando a un nombre que ya
     // no existía en la lista. La función mete las dos escrituras en la misma
     // transacción: o pasan las dos o no pasa ninguna.
-    mutationFn: async ({ id, to }: { id: string; from: string; to: string }) => {
-      const { error } = await supabase.rpc("rename_service_category", { _id: id, _to: to });
-      if (error) throw error;
-    },
+    mutationFn: ({ id, to }: { id: string; from: string; to: string }) =>
+      apiPut(`/api/categorias/servicios/${id}`, { name: to }),
     onSuccess: async () => {
       await refresh();
       toast.success("Categoría renombrada.");
@@ -79,13 +66,20 @@ function AdminServiceCategories() {
   });
 
   const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("service_categories").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: async () => {
+    mutationFn: ({ id, destino, crear }: { id: string; destino: string; crear: boolean }) =>
+      // `destino` es a dónde mudar lo que usaba la categoría. El servidor lo
+      // exige si hay algo usándola: sin eso quedaban huérfanos. `crear` avisa
+      // que ese destino todavía no existe y hay que darlo de alta.
+      apiDelete<{ mudados: number }>(`/api/categorias/servicios/${id}`, { destino, crear }),
+    onSuccess: async (rta) => {
       await refresh();
-      toast.success("Categoría eliminada.");
+      // Se dice cuántos se mudaron: el borrado tocó otras filas además de la
+      // categoría, y eso tiene que verse.
+      toast.success(
+        rta.mudados > 0
+          ? `Categoría eliminada. Se mudaron ${rta.mudados} tratamiento${rta.mudados > 1 ? "s" : ""}.`
+          : "Categoría eliminada.",
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -100,7 +94,7 @@ function AdminServiceCategories() {
       usage={usage.data}
       onCreate={(name) => create.mutate(name)}
       onRename={(args) => rename.mutate(args)}
-      onRemove={(id) => remove.mutate(id)}
+      onRemove={(args) => remove.mutate(args)}
       isBusy={create.isPending || rename.isPending || remove.isPending}
     />
   );

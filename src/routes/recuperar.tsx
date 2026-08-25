@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { KeyRound } from "lucide-react";
 import { Logo, LogoWordmark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { apiPost } from "@/lib/api";
 import { MIN_PASSWORD_LENGTH, passwordProblem } from "@/lib/password";
 
 /**
@@ -39,23 +39,21 @@ function RecoverPage() {
   const [confirmation, setConfirmation] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // El token viaja en la URL: el mail apunta a /recuperar?token=...
+  //
+  // Ya no hay carrera que resolver. Con Supabase el enlace abría una sesión y
+  // había que escuchar PASSWORD_RECOVERY *y además* consultar getSession(),
+  // porque si el canje pasaba antes de montar el efecto el evento ya no volvía.
+  // Acá el token está en la URL y sigue estando: se lee y listo.
+  //
+  // Si es válido o no lo dice el servidor recién al guardar, y es a propósito:
+  // un endpoint que conteste "este token sirve" antes de usarlo deja probar
+  // tokens de a uno.
+  const token = new URLSearchParams(useLocation().search).get("token") ?? "";
+
   useEffect(() => {
-    // Dos caminos porque hay una carrera: si el cliente ya canjeó el token
-    // antes de que este efecto corra, el evento PASSWORD_RECOVERY ya pasó y no
-    // vuelve a dispararse. getSession() cubre ese caso.
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY" || session) setStatus("ready");
-    });
-
-    supabase.auth.getSession().then(({ data: current }) => {
-      setStatus((previous) => {
-        if (previous === "ready") return previous;
-        return current.session ? "ready" : "invalid";
-      });
-    });
-
-    return () => data.subscription.unsubscribe();
-  }, []);
+    setStatus(token ? "ready" : "invalid");
+  }, [token]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -66,12 +64,13 @@ function RecoverPage() {
     }
 
     setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password });
-    setSaving(false);
-
-    if (error) {
-      toast.error(error.message);
+    try {
+      await apiPost("/api/auth/reset-password", { token, password });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo cambiar la contraseña.");
       return;
+    } finally {
+      setSaving(false);
     }
 
     setStatus("done");

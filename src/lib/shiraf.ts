@@ -15,6 +15,83 @@ export const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
+/**
+ * Los mismos cuatro estados de arriba, pero como unión de TypeScript.
+ *
+ * STATUS_LABEL está tipado `Record<string, string>`: alcanza para poner un
+ * cartel en pantalla, pero para el compilador la clave puede ser cualquier
+ * texto. Desde que el calendario enlaza a la pestaña correcta de Turnos hace
+ * falta lo otro: el enlace lleva el estado en la URL y el router exige que sea
+ * uno de los cuatro, no un string suelto.
+ */
+export const STATUSES = ["pending", "confirmed", "completed", "cancelled"] as const;
+export type AppointmentStatus = (typeof STATUSES)[number];
+
+/**
+ * El estado, si es uno de los cuatro; null si no.
+ *
+ * Se usa con datos que vienen de afuera y llegan como `string`: el `status` de
+ * la base y el `?estado=` de la URL, que lo escribe cualquiera a mano.
+ */
+export function toStatus(value: unknown): AppointmentStatus | null {
+  return STATUSES.includes(value as AppointmentStatus) ? (value as AppointmentStatus) : null;
+}
+
+/**
+ * Un tramo de atención: un día y un rango de horas.
+ *
+ * Se llama tramo y no "horario" porque un día puede tener más de uno. La base y
+ * el buscador de horarios libres siempre lo permitieron —`professional_schedules`
+ * no tiene ninguna restricción de un tramo por día, y `buildSlots` recorre todas
+ * las ventanas del día—, pero las pantallas los listaban sueltos y un lunes
+ * partido se leía como dos lunes distintos.
+ */
+export type Tramo = { weekday: number; start_time: string; end_time: string };
+
+/**
+ * Los tramos agrupados por día, cada día con los suyos en orden de reloj.
+ *
+ * Es lo que hace que "Lunes 9 a 13" y "Lunes 15 a 17" se muestren como un solo
+ * lunes con un corte en el medio, que es como lo piensa quien arma la agenda.
+ */
+export function agruparPorDia<T extends Tramo>(tramos: T[]): { weekday: number; tramos: T[] }[] {
+  const porDia = new Map<number, T[]>();
+  for (const t of tramos) {
+    porDia.set(t.weekday, [...(porDia.get(t.weekday) ?? []), t]);
+  }
+
+  return [...porDia.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([weekday, delDia]) => ({
+      weekday,
+      tramos: [...delDia].sort((a, b) => a.start_time.localeCompare(b.start_time)),
+    }));
+}
+
+/** "09:00:00" y "09:00" son lo mismo acá: la base devuelve lo primero. */
+export function soloHoraYMinutos(hora: string) {
+  return hora.slice(0, 5);
+}
+
+/**
+ * ¿Hay dos tramos del mismo día pisándose? Devuelve el día, o null.
+ *
+ * Un solapamiento no rompe nada visible —`buildSlots` simplemente ofrece dos
+ * veces los mismos horarios—, pero es siempre un error de carga: nadie atiende
+ * de 9 a 13 y de 12 a 16 al mismo tiempo. Se avisa al guardar, que es cuando
+ * todavía se puede corregir.
+ */
+export function diaConTramosSuperpuestos(tramos: Tramo[]): number | null {
+  for (const { weekday, tramos: delDia } of agruparPorDia(tramos)) {
+    for (let i = 1; i < delDia.length; i++) {
+      // Ya vienen ordenados por hora de inicio: alcanza con mirar si cada uno
+      // arranca antes de que termine el anterior.
+      if (delDia[i]!.start_time < delDia[i - 1]!.end_time) return weekday;
+    }
+  }
+  return null;
+}
+
 export function formatMoney(value: number | string | null | undefined) {
   const n = Number(value ?? 0);
   return n.toLocaleString("es-AR", {
@@ -53,10 +130,121 @@ export function toDateKey(date: Date) {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Un texto convertido en pieza de URL: "Drenaje linfático" → "drenaje-linfatico".
+ *
+ * Vivía adentro de `servicios.index.tsx` como `categorySlug`, sirviendo para las
+ * anclas de categoría. Subió acá cuando la ficha de tratamiento pasó a usar slug
+ * en vez de UUID, y ahora la usan tres lados que TIENEN que coincidir: la
+ * pantalla, el servidor cuando guarda un tratamiento, y el script que rellenó
+ * los slugs viejos. Si cada uno tuviera su copia, el día que una acentúe distinto
+ * el enlace apunta a una URL que no existe.
+ *
+ * Lo que hace, en orden:
+ *
+ *   · `normalize("NFD")` separa la tilde de la letra —"á" pasa a ser "a" más un
+ *     acento suelto— y el reemplazo siguiente descarta el acento. Sin este paso
+ *     "á" no es "a" para nadie y terminaría comida por el filtro de abajo.
+ *   · todo lo que no sea letra o número queda como guion, y los guiones del
+ *     principio y del final se van: "Peeling químico." → "peeling-quimico".
+ *
+ * ⚠️ Puede devolver "" y eso es correcto, no un error: un nombre escrito sólo
+ * con símbolos ("+++") no tiene nada que llevar a la URL. Quien la use para
+ * armar una URL tiene que decidir qué pone en ese caso — el servidor cae a
+ * "tratamiento", ver `slugLibre` en catalogo.service.ts.
+ */
+export function aSlug(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 type Schedule = { weekday: number; start_time: string; end_time: string };
 type Busy = { starts_at: string; duration_minutes: number };
 
-/** Genera los horarios disponibles de un día, cada 30 minutos, según la agenda de la profesional. */
+const MINUTE = 60000;
+
+/**
+ * ── LAS PERILLAS DE LA AGENDA ───────────────────────────────────────────────
+ * Están acá arriba y a la vista porque no son detalles de implementación: son
+ * reglas del negocio. El margen de limpieza ya lo definió el centro; el
+ * desborde sigue pendiente. Ver TODO.md.
+ */
+
+/**
+ * Minutos entre una clienta y la siguiente, para limpiar y preparar la cabina.
+ *
+ * DEFINIDO POR EL CENTRO (18/8/2026): 10 minutos de limpieza entre clienta y
+ * clienta. Antes estaba en 0 y los turnos iban pegados — la que entraba 12:45
+ * se cruzaba en la puerta con la que salía.
+ *
+ * El margen sale del paso entre horarios y también ensancha los bloques ya
+ * ocupados, así que vale igual contra un turno existente que entre dos horarios
+ * sugeridos. Una profesional de 12 a 16 con sesiones de 45 ofrece ahora
+ * 12:00, 12:55, 13:50, 14:45 — cuatro donde antes entraban cinco.
+ *
+ * Ojo con lo que esto le hace a los horarios: dejan de ser redondos y quedan en
+ * :55, :50, :45, que son más incómodos de dictar por teléfono. Si el centro
+ * prefiere 12:00 · 13:00 · 14:00 · 15:00, eso es este número en 15 y no en 10:
+ * cuesta lo mismo en turnos (también entran cuatro) y se lee mucho mejor. Vale
+ * la pena preguntárselo.
+ */
+export const SLOT_BUFFER_MINUTES = 10;
+
+/**
+ * ¿El último turno del día puede terminar después del horario de salida?
+ *
+ * PENDIENTE, y es LA pregunta para el centro. Con una profesional de 12 a 16,
+ * sesiones de 45 minutos y los 10 de limpieza:
+ *
+ *   false → 12:00, 12:55, 13:50, 14:45   (la última sale 15:30)
+ *   true  → ídem + 15:40, que la deja hasta las 16:25
+ *
+ * Queda en false, que NO es la lista que se pidió —esa incluía las 15:45—, y la
+ * razón es en qué dirección duele equivocarse:
+ *
+ *   En false se ofrece un turno de menos. Se arregla solo: el panel lo puede
+ *   cargar igual, porque a propósito no le aplica el control de agenda.
+ *
+ *   En true una clienta reserva sola, por el sitio, un horario que deja a la
+ *   profesional trabajando después de su hora. Eso no se deshace: ya está
+ *   comprometido y hay que llamarla para cancelarlo.
+ *
+ * Además el desborde puede ser grande, porque lo acota la DURACIÓN del
+ * tratamiento y no un ratito fijo. Esa misma profesional de 12 a 16, con una
+ * depilación de 90, encadena 12:00 y 13:40; en true se le suma 15:20, que
+ * termina 16:50 — cincuenta minutos tarde. "Un ratito más" y "casi una hora"
+ * son la misma regla, y la regla no sabe distinguirlas.
+ *
+ * Cuando el centro decida, esto es una sola línea.
+ */
+export const ALLOW_OVERTIME = false;
+
+/**
+ * Los horarios que se le pueden ofrecer a alguien para un tratamiento.
+ *
+ * Los turnos se ENCADENAN: cada uno arranca cuando termina el anterior, y el
+ * paso lo da la duración del tratamiento. Una profesional de 12 a 16 con
+ * sesiones de 45 ofrece 12:00, 12:45, 13:30, 14:15, 15:00.
+ *
+ * Antes esto caminaba una grilla fija de 30 minutos y descartaba lo que pisara
+ * un turno. El problema no era estético: tomadas las 12:00, la sesión terminaba
+ * 12:45, pero la grilla sólo conocía 12:30 (pisado) y 13:00 — las 12:45 no se
+ * ofrecían nunca y esos 15 minutos se perdían. Repetido toda la tarde, entraban
+ * cuatro clientas donde entran cinco.
+ *
+ * Lo que ocupa la agenda es el TURNO, no el servicio: los bloques ocupados
+ * llegan de professional_busy_slots(), que devuelve todos los de esa
+ * profesional sin importar de qué tratamiento sean. Por eso un masaje tomado a
+ * las 12:00 tapa también la depilación de las 12:00, y la de 90 minutos se
+ * reacomoda al primer hueco donde entre entera.
+ *
+ * Es una ayuda para elegir, no el candado: quien decide si el turno se puede
+ * crear es la base (validate_appointment y check_appointment_overlap).
+ */
 export function buildSlots(
   date: Date,
   schedules: Schedule[],
@@ -65,31 +253,89 @@ export function buildSlots(
 ): string[] {
   const weekday = date.getDay();
   const daySchedules = schedules.filter((s) => s.weekday === weekday);
-  if (daySchedules.length === 0) return [];
+  if (daySchedules.length === 0 || durationMinutes <= 0) return [];
+
+  const now = Date.now();
+  const step = (durationMinutes + SLOT_BUFFER_MINUTES) * MINUTE;
+
+  // Cada bloque ocupado se ensancha por el margen de limpieza a los dos lados:
+  // así el margen vale tanto contra un turno ya existente como entre dos
+  // horarios sugeridos, que lo toman del `step`.
+  const blocked = busy
+    .map((b) => {
+      const from = new Date(b.starts_at).getTime();
+      return {
+        from: from - SLOT_BUFFER_MINUTES * MINUTE,
+        to: from + (b.duration_minutes + SLOT_BUFFER_MINUTES) * MINUTE,
+      };
+    })
+    .sort((a, b) => a.from - b.from);
+
+  const windows = daySchedules.map((s) => ({
+    from: atTime(date, s.start_time),
+    to: atTime(date, s.end_time),
+  }));
+
+  // El desborde vale sólo al cierre del día, nunca en un corte del medio. Si la
+  // profesional trabaja 09–13 y 16–20, estirarse a las 13 no es quedarse un
+  // rato más: es comerle el almuerzo.
+  const closing = Math.max(...windows.map((w) => w.to));
 
   const slots: string[] = [];
-  const now = Date.now();
 
-  for (const schedule of daySchedules) {
-    const [sh, sm] = schedule.start_time.split(":").map(Number);
-    const [eh, em] = schedule.end_time.split(":").map(Number);
-    const cursor = new Date(date);
-    cursor.setHours(sh ?? 0, sm ?? 0, 0, 0);
-    const end = new Date(date);
-    end.setHours(eh ?? 0, em ?? 0, 0, 0);
+  for (const window of windows) {
+    for (const gap of freeGaps(window, blocked)) {
+      // Sólo el hueco que llega hasta la hora de salida puede desbordar. Contra
+      // otro turno no hay desborde posible: ese tiempo es de otra clienta.
+      const canOverrun = ALLOW_OVERTIME && gap.to === closing;
 
-    while (cursor.getTime() + durationMinutes * 60000 <= end.getTime()) {
-      const start = cursor.getTime();
-      const finish = start + durationMinutes * 60000;
-      const overlaps = busy.some((b) => {
-        const bStart = new Date(b.starts_at).getTime();
-        const bEnd = bStart + b.duration_minutes * 60000;
-        return start < bEnd && bStart < finish;
-      });
-      if (!overlaps && start > now) slots.push(new Date(start).toISOString());
-      cursor.setMinutes(cursor.getMinutes() + 30);
+      for (let start = gap.from; ; start += step) {
+        const fits = canOverrun ? start < gap.to : start + durationMinutes * MINUTE <= gap.to;
+        if (!fits) break;
+        // Los horarios ya pasados no se ofrecen, ni siquiera los de esta mañana
+        // cuando se mira el día de hoy a la tarde.
+        if (start > now) slots.push(new Date(start).toISOString());
+      }
     }
   }
 
   return slots.sort();
+}
+
+/**
+ * Los tramos libres de una franja de atención, ya descontados los turnos.
+ *
+ * Es el corazón del encadenado: en vez de probar una grilla contra los turnos,
+ * se calculan los huecos reales y cada uno arranca su propia cadena. Por eso el
+ * primer horario libre después de un turno es el instante en que ese turno
+ * termina, y no el próximo número redondo.
+ */
+function freeGaps(
+  window: { from: number; to: number },
+  blocked: readonly { from: number; to: number }[],
+): { from: number; to: number }[] {
+  const gaps: { from: number; to: number }[] = [];
+  let cursor = window.from;
+
+  for (const block of blocked) {
+    if (block.to <= cursor) continue; // ya quedó atrás
+    if (block.from >= window.to) break; // los que siguen son de después
+    if (block.from > cursor) gaps.push({ from: cursor, to: block.from });
+    // Math.max y no block.to a secas: dos bloques encimados dejarían el cursor
+    // yendo para atrás. La base no debería permitirlos, pero esto no depende de
+    // eso para no devolver horarios ocupados.
+    cursor = Math.max(cursor, block.to);
+    if (cursor >= window.to) break;
+  }
+
+  if (cursor < window.to) gaps.push({ from: cursor, to: window.to });
+  return gaps;
+}
+
+/** "13:30:00" sobre un día → el instante exacto, en hora local. */
+function atTime(date: Date, time: string): number {
+  const [h = 0, m = 0] = time.split(":").map(Number);
+  const value = new Date(date);
+  value.setHours(h, m, 0, 0);
+  return value.getTime();
 }

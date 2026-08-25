@@ -1,11 +1,20 @@
 import { Link } from "@tanstack/react-router";
 import { Instagram, MapPin, Phone } from "lucide-react";
 import { LogoLockup } from "@/components/logo";
+import { TiktokIcon } from "@/components/tiktok-icon";
 import { buildWhatsappUrl, CONTACT } from "@/lib/contact";
 
-export function SiteFooter() {
+/**
+ * @param flush Sin el aire de arriba, para las páginas que terminan en una
+ *   sección oliva. El `mt-24` por defecto es la separación entre el contenido y
+ *   el footer, y contra un fondo crema es justamente eso; pero cuando lo de
+ *   arriba también es oliva, ese margen deja de ser aire y pasa a ser una
+ *   franja de crema partiendo dos campos del mismo color al medio. Ahí los dos
+ *   olivas tienen que tocarse.
+ */
+export function SiteFooter({ flush = false }: { flush?: boolean } = {}) {
   return (
-    <footer className="mt-24 surface-olive">
+    <footer className={flush ? "surface-olive" : "mt-24 surface-olive"}>
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:grid-cols-3">
         {/* Lockup completo: el fondo oliva del archivo se funde con la
             superficie, así que no hace falta repetir el nombre ni la bajada. */}
@@ -50,6 +59,14 @@ export function SiteFooter() {
               className="flex items-center gap-2 underline-offset-4 hover:underline"
             >
               <Instagram className="h-4 w-4 shrink-0 text-gold" /> {CONTACT.instagram}
+            </a>
+            <a
+              href={CONTACT.tiktokUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 underline-offset-4 hover:underline"
+            >
+              <TiktokIcon className="h-4 w-4 shrink-0 text-gold" /> TikTok
             </a>
           </div>
         </div>

@@ -7,6 +7,51 @@ type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
+/**
+ * El endpoint que dispara los recordatorios del día siguiente.
+ *
+ * Va acá, interceptado antes de TanStack, y no como una server function, porque
+ * quien lo llama es un cron: no tiene sesión, no manda un JWT y no puede pasar
+ * por requireSupabaseAuth. Se identifica con un secreto en el header.
+ *
+ * POST y no GET a propósito. Un GET lo dispara cualquier cosa que ande mirando
+ * URLs —un prefetch del navegador, un escáner, el preview de un enlace pegado en
+ * un chat— y esto le manda mails a clientas reales. Que haga falta un POST no es
+ * seguridad (el secreto es la seguridad), es evitar que se ejecute por accidente.
+ *
+ * Cómo programarlo está en emails/README.md.
+ */
+const REMINDERS_PATH = "/api/recordatorios";
+
+async function handleReminders(request: Request): Promise<Response> {
+  const { isAuthorizedReminderRequest, runDailyReminders } = await import("./lib/reminders.server");
+
+  if (request.method !== "POST") {
+    return json({ error: "Usá POST." }, 405);
+  }
+
+  if (!isAuthorizedReminderRequest(request)) {
+    // Sin detalle de por qué falló: decir "falta configurar el secreto" le
+    // cuenta a quien está probando la puerta que la puerta existe y no tiene
+    // llave puesta.
+    return json({ error: "No autorizado." }, 401);
+  }
+
+  try {
+    return json(await runDailyReminders(), 200);
+  } catch (error) {
+    console.error("[recordatorios]", error);
+    return json({ error: error instanceof Error ? error.message : "Falló la corrida." }, 500);
+  }
+}
+
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
@@ -47,6 +92,89 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const pathname = new URL(request.url).pathname;
+
+      // Antes de TanStack: esta ruta no es una página ni una server function.
+      if (pathname === REMINDERS_PATH) {
+        return await handleReminders(request);
+      }
+
+      // Las cuentas: /api/auth/*. Van acá y no como server functions por el
+      // mismo motivo que los recordatorios —no son páginas— y por uno propio:
+      // el login TIENE que poder correr sin sesión, y las server functions de
+      // este proyecto pasan todas por el middleware que exige una.
+      //
+      // El import va adentro y no arriba para que el router y sus controllers
+      // —que arrastran Prisma, bcrypt y jsonwebtoken— no entren en el arranque
+      // de una petición que sólo quiere servir una página.
+      if (pathname.startsWith("/api/auth/")) {
+        const { authRouter } = await import("./server/routes/auth.routes");
+        const respuesta = await authRouter.handle(request);
+        // null = ninguna ruta matcheó. Sigue de largo y termina en el 404 de
+        // TanStack, que es lo correcto: /api/auth/inventado no existe.
+        if (respuesta) return respuesta;
+      }
+
+      // El catálogo y el equipo: /api/publico/*. Sin sesión, como las policies
+      // `TO anon` que reemplaza. El filtro por is_published / is_active vive en
+      // el controller, que es donde se puede leer al lado de cada consulta.
+      if (pathname.startsWith("/api/publico/")) {
+        const { publicoRouter } = await import("./server/routes/publico.routes");
+        const respuesta = await publicoRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
+      // Las categorías del catálogo y del stock. Cada mitad pide su permiso,
+      // que se declara en el archivo de rutas.
+      if (pathname.startsWith("/api/categorias/")) {
+        const { categoriasRouter } = await import("./server/routes/categorias.routes");
+        const respuesta = await categoriasRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
+      // El catálogo desde el panel: los tratamientos y su galería.
+      if (pathname.startsWith("/api/catalogo/")) {
+        const { catalogoRouter } = await import("./server/routes/catalogo.routes");
+        const respuesta = await catalogoRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
+      // El stock: productos, costos y movimientos.
+      if (pathname.startsWith("/api/stock/")) {
+        const { stockRouter } = await import("./server/routes/stock.routes");
+        const respuesta = await stockRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
+      // Las fichas del equipo, sus tratamientos y sus horarios.
+      if (pathname.startsWith("/api/equipo/")) {
+        const { equipoRouter } = await import("./server/routes/equipo.routes");
+        const respuesta = await equipoRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
+      // Las clientas: la lista del panel y el espacio propio de cada una. Los
+      // dos prefijos van al mismo router porque comparten controller.
+      if (pathname.startsWith("/api/clientas") || pathname.startsWith("/api/mi-cuenta")) {
+        const { clientasRouter } = await import("./server/routes/clientas.routes");
+        const respuesta = await clientasRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
+      // Los turnos: la lista del panel, el calendario y «mi agenda».
+      if (pathname.startsWith("/api/turnos")) {
+        const { turnosRouter } = await import("./server/routes/turnos.routes");
+        const respuesta = await turnosRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
+      // Reservar: los horarios libres y el alta del turno.
+      if (pathname.startsWith("/api/reservar")) {
+        const { reservarRouter } = await import("./server/routes/reservar.routes");
+        const respuesta = await reservarRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

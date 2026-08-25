@@ -32,7 +32,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiDelete, apiPost, apiPut } from "@/lib/api";
+import type { RtaCategorias, RtaProductos } from "@/lib/api-tipos";
 import { formatMoney } from "@/lib/shiraf";
 import { useAccess } from "@/hooks/useAccess";
 
@@ -78,44 +79,24 @@ function AdminProducts() {
     // El permiso va en la clave para que quien lo tiene y quien no, no
     // compartan la misma entrada de caché.
     queryKey: ["admin-products", canSeeCosts],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("id, name, brand, category, unit, stock, min_stock")
-        .order("category")
-        .order("name");
-      if (error) throw error;
-
-      // El costo se mudó a product_costs (migración 20260814010000) para que
-      // "Ver costos de compra" sea un candado real: la RLS protege filas, no
-      // columnas, y mientras vivió en products.cost bastaba el permiso de stock.
-      const costs = canSeeCosts
-        ? (await supabase.from("product_costs").select("product_id, cost")).data
-        : [];
-      const costByProduct = new Map((costs ?? []).map((c) => [c.product_id, c.cost]));
-
-      return (data ?? []).map((p) => ({ ...p, cost: costByProduct.get(p.id) ?? null }));
-    },
+    // El costo viene adentro del producto, en el mismo viaje, y lo incluye o no
+    // el SERVIDOR según el permiso. Antes eran dos consultas y la segunda
+    // simplemente no se hacía si la pantalla creía que no correspondía — o sea
+    // que el candado lo ponía el navegador. Lo que protege ahora es el
+    // controller; el canSeeCosts de acá abajo sólo decide si mostrar el campo.
+    queryFn: async () => (await api<RtaProductos>("/api/stock/productos")).productos,
   });
 
   const categories = useQuery({
     queryKey: ["product-categories"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("product_categories")
-        .select("id, name")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaCategorias>("/api/categorias/productos")).categorias,
   });
 
   // Alta de categoría sin salir del formulario: se crea, se refresca la lista
   // y queda seleccionada en el producto que estabas cargando.
   const createCategory = useMutation({
     mutationFn: async (name: string) => {
-      const { error } = await supabase.from("product_categories").insert({ name: name.trim() });
-      if (error) throw error;
+      await apiPost("/api/categorias/productos", { name: name.trim() });
       return name.trim();
     },
     onSuccess: async (name) => {
@@ -125,10 +106,9 @@ function AdminProducts() {
       setAddingCategory(false);
       toast.success(`Categoría "${name}" creada.`);
     },
-    onError: (e: Error) =>
-      toast.error(
-        e.message.includes("duplicate") ? "Ya existe una categoría con ese nombre." : e.message,
-      ),
+    // El mensaje del nombre repetido lo arma el servidor, que es quien ve el
+    // choque contra el UNIQUE.
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const save = useMutation({
@@ -139,57 +119,22 @@ function AdminProducts() {
         category: form.category.trim() || "Sin categoría",
         unit: form.unit.trim() || "unidad",
         min_stock: Number(form.min_stock) || 0,
+        stock: Number(form.stock) || 0,
+        // El costo se manda sólo si la persona tiene el permiso; sin él el campo
+        // no se mostró y form.cost está vacío, así que mandarlo borraría el que
+        // ya había. El servidor lo ignora igual si no corresponde — esto es para
+        // no pedirle que ignore algo, no la protección.
+        ...(canSeeCosts ? { cost: form.cost === "" ? null : Number(form.cost) } : {}),
       };
 
-      // El costo se guarda aparte, en product_costs, y sólo si la persona tiene
-      // el permiso. Sin él ni siquiera se intenta: el campo no se le mostró, así
-      // que form.cost está vacío y escribirlo borraría el costo que ya había.
-      const nextCost = form.cost === "" ? null : Number(form.cost);
-
+      // El stock va como valor deseado y el SERVIDOR calcula la diferencia
+      // contra el actual, adentro de una transacción, y la registra como
+      // movimiento. Antes la resta se hacía acá: si entre la lectura y el envío
+      // alguien descontaba un consumo en cabina, ese consumo se perdía.
       if (editingId) {
-        const { error } = await supabase.from("products").update(payload).eq("id", editingId);
-        if (error) throw error;
-
-        // El stock se edita desde la ficha, pero no se escribe la columna a
-        // mano: se calcula la diferencia contra el valor actual y se registra
-        // como movimiento. El trigger aplica el saldo, igual que con + / −, y
-        // así el historial nunca se separa del stock real.
-        const current = products.data?.find((p) => p.id === editingId);
-        const delta = (Number(form.stock) || 0) - Number(current?.stock ?? 0);
-
-        if (delta !== 0) {
-          const { data: auth } = await supabase.auth.getUser();
-          const { error: moveError } = await supabase.from("stock_movements").insert({
-            product_id: editingId,
-            quantity: delta,
-            reason: "Ajuste desde la ficha del producto",
-            created_by: auth.user?.id ?? null,
-          });
-          if (moveError) throw moveError;
-        }
-
-        if (canSeeCosts) {
-          const { error: costError } = await supabase
-            .from("product_costs")
-            .upsert({ product_id: editingId, cost: nextCost });
-          if (costError) throw costError;
-        }
+        await apiPut(`/api/stock/productos/${editingId}`, payload);
       } else {
-        const { data: created, error } = await supabase
-          .from("products")
-          .insert({ ...payload, stock: Number(form.stock) || 0 })
-          .select("id")
-          .single();
-        if (error) throw error;
-
-        // Sólo si hay costo cargado: no tiene sentido crear una fila vacía en
-        // product_costs por cada producto sin costo.
-        if (canSeeCosts && nextCost !== null) {
-          const { error: costError } = await supabase
-            .from("product_costs")
-            .insert({ product_id: created.id, cost: nextCost });
-          if (costError) throw costError;
-        }
+        await apiPost("/api/stock/productos", payload);
       }
     },
     onSuccess: async () => {
@@ -203,10 +148,7 @@ function AdminProducts() {
   });
 
   const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("products").delete().eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: (id: string) => apiDelete(`/api/stock/productos/${id}`),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       setDeleting(null);
@@ -216,16 +158,11 @@ function AdminProducts() {
   });
 
   const move = useMutation({
-    mutationFn: async ({ productId, quantity }: { productId: string; quantity: number }) => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { error } = await supabase.from("stock_movements").insert({
-        product_id: productId,
-        quantity,
-        reason: quantity > 0 ? "Ingreso de mercadería" : "Consumo en cabina",
-        created_by: auth.user?.id ?? null,
-      });
-      if (error) throw error;
-    },
+    // Sin created_by: quién hizo el movimiento lo pone el servidor con la
+    // sesión. Es la traducción de auth.uid() — ese dato no puede venir de quien
+    // pide, o cualquiera firma a nombre de otra.
+    mutationFn: ({ productId, quantity }: { productId: string; quantity: number }) =>
+      apiPost(`/api/stock/productos/${productId}/movimiento`, { quantity }),
     // Se espera a que la tabla se refresque ANTES de avisar. Antes el toast
     // salía al instante y el número tardaba en cambiar, así que parecía que el
     // movimiento no había hecho nada.

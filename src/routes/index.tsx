@@ -1,14 +1,17 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { MapPin, MessageCircle } from "lucide-react";
 import heroImage from "@/assets/hero-spa.jpg";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaProfesionales, RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
+import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
 import { formatMoney } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/")({
@@ -33,17 +36,8 @@ export const Route = createFileRoute("/")({
 function Home() {
   const services = useQuery({
     queryKey: ["services", "published", "featured"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, description, category, duration_minutes, price, image_url")
-        .eq("is_published", true)
-        .order("category")
-        .order("price", { ascending: true })
-        .limit(6);
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (await api<RtaServicios>("/api/publico/servicios?orden=precio&limite=6")).servicios,
   });
 
   // El hover manda, pero antes de que el usuario toque nada mostramos el
@@ -56,15 +50,8 @@ function Home() {
 
   const professionals = useQuery({
     queryKey: ["professionals", "active", "home"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professionals")
-        .select("id, full_name, specialty, bio")
-        .eq("is_active", true)
-        .limit(3);
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionales>("/api/publico/profesionales?limite=3")).profesionales,
   });
 
   return (
@@ -451,8 +438,19 @@ function Home() {
         </div>
       </section>
 
-      <section className="grid lg:grid-cols-12">
-        <Reveal className="px-5 py-28 lg:col-span-7 lg:col-start-2 lg:px-0 lg:py-40">
+      {/*
+        Cierre. El texto ocupaba de la columna 2 a la 8 y el tercio derecho
+        quedaba vacío a lo largo de `py-40`: el mismo hueco que ya se había
+        corregido dos veces más arriba en esta página.
+
+        Lo que va al costado no es relleno decorativo: es lo que pregunta
+        alguien que está por sacar turno —si abren cuando puede ir, dónde
+        queda, cómo escribir— y hasta ahora había que irse a /contacto para
+        saberlo. Sale todo de `src/lib/contact.ts`, así que no puede divergir
+        del footer ni de la página de contacto.
+      */}
+      <section className="grid gap-y-14 lg:grid-cols-12">
+        <Reveal className="px-5 pt-28 lg:col-span-6 lg:col-start-2 lg:px-0 lg:py-40">
           <h2 className="display-section text-foreground">
             Reservá tu próximo
             <br />
@@ -464,6 +462,61 @@ function Home() {
           <Button asChild size="lg" className="mt-10">
             <Link to="/reservar">Sacar turno</Link>
           </Button>
+        </Reveal>
+
+        {/* `self-center`: contra un bloque tan alto, arrancar arriba del todo
+            volvería a dejar un vacío, ahora abajo. */}
+        <Reveal
+          delay={120}
+          className="px-5 pb-28 lg:col-span-3 lg:col-start-9 lg:self-center lg:px-0 lg:pb-0"
+        >
+          <p className="text-eyebrow text-muted-foreground">Antes de venir</p>
+          <div className="gold-rule mt-5 w-16" />
+
+          <dl className="mt-8 space-y-2 text-[15px] leading-relaxed">
+            {OPENING_HOURS.map((day) => (
+              <div key={day.days} className="flex items-baseline justify-between gap-4">
+                <dt className="text-foreground">{day.days}</dt>
+                {/* Los días cerrados van más apagados: son dos de las tres
+                    líneas y con el mismo peso tapan el horario que importa. */}
+                <dd
+                  className={
+                    day.hours === "Cerrado" ? "text-muted-foreground/60" : "text-muted-foreground"
+                  }
+                >
+                  {day.hours}
+                </dd>
+              </div>
+            ))}
+          </dl>
+
+          <p className="mt-8 text-[15px] leading-relaxed text-foreground">
+            {CONTACT.address}
+            <br />
+            {CONTACT.city}
+          </p>
+
+          {/*
+            Antes los dos eran texto subrayado y no se leían como algo para
+            apretar. Ahora son botones `outline`: se ven clickeables sin
+            pelearle al "Sacar turno" de al lado, que es el primario oliva y
+            tiene que seguir siendo la acción principal de la sección.
+
+            La dirección quedó como texto plano arriba: con el botón de Maps
+            debajo, tenerla también linkeada era ofrecer dos veces lo mismo.
+          */}
+          <div className="mt-6 flex flex-col items-start gap-3">
+            <Button asChild variant="outline" className="w-full">
+              <a href={CONTACT.mapsUrl} target="_blank" rel="noopener noreferrer">
+                <MapPin /> Ver en Google Maps
+              </a>
+            </Button>
+            <Button asChild variant="outline" className="w-full">
+              <a href={buildWhatsappUrl({})} target="_blank" rel="noopener noreferrer">
+                <MessageCircle /> Escribir por WhatsApp
+              </a>
+            </Button>
+          </div>
         </Reveal>
       </section>
 

@@ -5,8 +5,9 @@ import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
-import { WEEKDAYS } from "@/lib/shiraf";
+import { api } from "@/lib/api";
+import type { RtaProfesionalesConDetalle } from "@/lib/api-tipos";
+import { agruparPorDia, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/profesionales")({
   head: () => ({
@@ -30,17 +31,8 @@ export const Route = createFileRoute("/profesionales")({
 function ProfessionalsPage() {
   const team = useQuery({
     queryKey: ["professionals", "full"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("professionals")
-        .select(
-          "id, full_name, specialty, bio, is_active, professional_services(services(id, name)), professional_schedules(weekday, start_time, end_time)",
-        )
-        .eq("is_active", true)
-        .order("full_name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () =>
+      (await api<RtaProfesionalesConDetalle>("/api/publico/profesionales?detalle=1")).profesionales,
   });
 
   return (
@@ -78,15 +70,27 @@ function ProfessionalsPage() {
 
               <div className="mt-6">
                 <p className="text-eyebrow text-muted-foreground">Atiende</p>
+                {/* Un renglón por DÍA, con todos sus tramos. Antes era un
+                    renglón por tramo:
+
+                      Lunes · 09:00 a 13:00
+                      Lunes · 15:00 a 17:00
+
+                    que de un vistazo se lee como dos lunes. Quien mira esto está
+                    decidiendo cuándo venir, y lo que necesita saber es que el
+                    lunes hay un corte al mediodía. */}
                 <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
-                  {[...p.professional_schedules]
-                    .sort((a, b) => a.weekday - b.weekday)
-                    .map((s, i) => (
-                      <li key={i}>
-                        {WEEKDAYS[s.weekday]} · {s.start_time.slice(0, 5)} a{" "}
-                        {s.end_time.slice(0, 5)}
-                      </li>
-                    ))}
+                  {agruparPorDia(p.professional_schedules).map(({ weekday, tramos }) => (
+                    <li key={weekday}>
+                      {WEEKDAYS[weekday]} ·{" "}
+                      {tramos
+                        .map(
+                          (t) =>
+                            `${soloHoraYMinutos(t.start_time)} a ${soloHoraYMinutos(t.end_time)}`,
+                        )
+                        .join(" y ")}
+                    </li>
+                  ))}
                 </ul>
               </div>
 

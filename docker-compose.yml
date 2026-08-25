@@ -1,56 +1,142 @@
+# Shiraf — producción.
+#
 # Compose lee automáticamente el .env de esta carpeta para resolver los ${...}.
-# El .env que ya tenés en el repo trae las 6 variables que hacen falta.
+# Las variables que hacen falta están listadas en .env.example.
+#
+# El arranque es una cadena, no cuatro servicios sueltos:
+#
+#     db  ──sano──>  migrate  ──termina bien──>  app
+#     └── pg-backup
+#
+# `migrate` corre una vez, sincroniza el esquema y se apaga. Que la app aplique
+# migraciones al arrancar está mal en cuanto hay más de una réplica —dos
+# procesos migrando la misma base a la vez— y además mezcla responsabilidades.
 
 services:
+  db:
+    image: postgres:17
+    container_name: shiraf-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shiraf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: shiraf
+    volumes:
+      - shiraf-pgdata:/var/lib/postgresql/data
+    # Sólo loopback: la app le pega por la red interna de compose, donde el host
+    # es `db`. Publicarlo acá es para poder abrir Prisma Studio o psql desde la
+    # máquina; a internet no tiene que salir nunca.
+    #
+    # El puerto del host sale por variable porque no siempre está libre: en la
+    # máquina de desarrollo lo tienen otros proyectos. En el VPS, donde ésta es
+    # la única base, el 5432 por defecto está bien.
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shiraf -d shiraf"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  migrate:
+    image: shiraf-app:latest
+    container_name: shiraf-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://shiraf:${POSTGRES_PASSWORD}@db:5432/shiraf
+    # Dos pasos, como en Ecommerce_mm:
+    #   1. `db push` sincroniza las tablas con schema.prisma
+    #   2. post-push vuelve a poner lo que push no sabe manejar (los 3 triggers,
+    #      el CHECK de turnos, los 4 indices parciales) y VERIFICA que quedaron.
+    #      Si falta alguna, sale con error y la cadena se corta acá: la app no
+    #      arranca contra una base a la que le falta el candado de los turnos.
+    #
+    # Se invoca el binario directo y no `npx`: la imagen no tiene npm, y `npx`
+    # se bajaría Prisma de internet en cada arranque del contenedor.
+    command:
+      - sh
+      - -c
+      - node node_modules/prisma/build/index.js db push && node scripts/post-push.mjs
+    restart: "no"
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        # Build args, no environment: se hornean en el bundle del navegador.
-        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?falta VITE_SUPABASE_URL en .env}
-        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?falta VITE_SUPABASE_PUBLISHABLE_KEY en .env}
-        VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID:-}
-        # Cloudinary: el cloud name se hornea en el bundle para poder armar las
-        # URLs de las imágenes. Es público, aparece en cada foto servida.
+        # Build arg, no environment: se hornea en el bundle del navegador.
+        # Es público —aparece en la URL de cada foto— pero sin él no hay fotos.
         VITE_CLOUDINARY_CLOUD_NAME: ${VITE_CLOUDINARY_CLOUD_NAME:?falta VITE_CLOUDINARY_CLOUD_NAME en .env}
     image: shiraf-app:latest
     container_name: shiraf-app
     restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
     environment:
       NODE_ENV: production
       PORT: 3000
       HOST: 0.0.0.0
-      # Las usa el cliente Supabase del lado servidor (SSR) y el middleware de
-      # auth de TanStack Start, que leen process.env en runtime.
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
-      # Secreta: bypasea toda la RLS. La usa el alta de empleadas
-      # (src/lib/team.functions.ts), que necesita la Admin API de Supabase para
-      # crear cuentas — lo único que no se puede hacer desde el navegador.
-      #
-      # Va acá y NUNCA como build arg ni con prefijo VITE_: los build args se
-      # hornean en el bundle que baja el navegador. Acá entra por runtime al
-      # proceso del servidor y no sale de ahí.
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?falta SUPABASE_SERVICE_ROLE_KEY en .env}
 
-      # Cloudinary del lado servidor: firma las subidas y los borrados. El
-      # api secret NUNCA como build arg ni con prefijo VITE_ — eso lo dejaría
+      # `db` y no `localhost`: adentro de la red de compose el host es el nombre
+      # del servicio. Es el error más frecuente del armado y el mensaje
+      # —getaddrinfo ENOTFOUND db— no lo sugiere.
+      DATABASE_URL: postgresql://shiraf:${POSTGRES_PASSWORD}@db:5432/shiraf
+
+      # Firma las sesiones. Si cambia, todas las cuentas quedan deslogueadas.
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET en .env}
+      # Para armar los links de los mails de confirmación y de recuperación.
+      APP_URL: ${APP_URL:?falta APP_URL en .env}
+
+      # Cloudinary del lado servidor: firma las subidas y los borrados. El api
+      # secret NUNCA como build arg ni con prefijo VITE_ — eso lo dejaría
       # horneado en el bundle que baja el navegador, y con él se puede borrar
       # cualquier imagen de la cuenta.
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?falta CLOUDINARY_CLOUD_NAME en .env}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?falta CLOUDINARY_API_KEY en .env}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?falta CLOUDINARY_API_SECRET en .env}
 
-    # Publicado sólo en loopback: en el VPS ya tenés un reverse proxy para los
+      # Mails: avisos de turno y recordatorios.
+      #
+      # Las tres van con `:-` y NO con `:?`, o sea que su ausencia no frena el
+      # arranque. Es a propósito y está para respetar una decisión que ya vive
+      # en el código: notifications.functions.ts trata las dos primeras como
+      # opcionales, con este comentario textual —
+      #
+      #   "Sin RESEND_API_KEY o sin MAIL_FROM no se rompe nada: los cambios de
+      #    estado siguen funcionando y el panel avisa que el mail no salió. Es
+      #    deliberado, para que se pueda trabajar sin tener el correo resuelto."
+      #
+      # Con `:?` el contenedor se negaba a levantar y esa tolerancia dejaba de
+      # existir. Peor: hoy están comentadas en el .env porque la cuenta de
+      # Resend todavía no se creó, así que el primer `docker compose up` moría
+      # acá, sin relación aparente con lo que se estaba probando.
+      #
+      # No es que no haya que configurarlas: hay que hacerlo antes de abrir el
+      # centro. Pero eso lo avisa el panel cuando un turno se confirma y el mail
+      # no sale, que es donde se entiende. No un compose que no arranca.
+      # Decian:
+      #   RESEND_API_KEY: ${RESEND_API_KEY:?falta RESEND_API_KEY en .env}
+      #   MAIL_FROM: ${MAIL_FROM:?falta MAIL_FROM en .env}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+      # El secreto que autoriza a POST /api/recordatorios, que dispara el cron
+      # del VPS. Sin esto el endpoint responde 401 a todo.
+      REMINDERS_SECRET: ${REMINDERS_SECRET:?falta REMINDERS_SECRET en .env}
+
+    # Publicado sólo en loopback: en el VPS ya hay un reverse proxy para los
     # otros dos sitios, así que este contenedor no debe quedar expuesto directo
     # a internet. El proxy le pega a 127.0.0.1:3000.
-    # Para probar en tu máquina, "3000:3000" también sirve.
     ports:
       - "127.0.0.1:3000:3000"
 
-    # La app es sin estado: no escribe en disco, todo vive en Supabase.
+    # La app es sin estado: no escribe en disco. Lo que persiste vive en la base,
+    # que es otro contenedor con su propio volumen.
     read_only: true
     tmpfs:
       - /tmp
@@ -62,3 +148,29 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Backup diario con rotación. Copiado de Ecommerce_mm, que ya lo tiene andando.
+  #
+  # ⚠️ La etiqueta de la imagen tiene que coincidir con la versión de Postgres.
+  #    En el ecommerce es :15 porque su base es 15. Acá es 17.
+  pg-backup:
+    image: prodrigestivill/postgres-backup-local:17
+    container_name: shiraf-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: shiraf
+      POSTGRES_USER: shiraf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "59 23 * * *"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ./backups:/backups
+
+volumes:
+  shiraf-pgdata:

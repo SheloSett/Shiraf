@@ -5,11 +5,13 @@ import { Instagram, Mail, MapPin, Phone } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Reveal } from "@/components/reveal";
+import { TiktokIcon } from "@/components/tiktok-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import type { RtaServicios } from "@/lib/api-tipos";
 import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
 
 export const Route = createFileRoute("/contacto")({
@@ -40,16 +42,7 @@ function ContactPage() {
   // el nombre exacto del servicio en vez de una descripción aproximada.
   const services = useQuery({
     queryKey: ["services", "published", "contacto"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("services")
-        .select("id, name, category")
-        .eq("is_published", true)
-        .order("category")
-        .order("name");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: async () => (await api<RtaServicios>("/api/publico/servicios")).servicios,
   });
 
   function openWhatsapp(event: React.FormEvent) {
@@ -202,6 +195,21 @@ function ContactPage() {
                   </a>
                 </div>
               </li>
+
+              <li className="flex gap-4">
+                <TiktokIcon className="mt-1 h-4 w-4 shrink-0 text-gold" />
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">TikTok</p>
+                  <a
+                    href={CONTACT.tiktokUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
+                  >
+                    {CONTACT.tiktok}
+                  </a>
+                </div>
+              </li>
             </ul>
 
             {/* Mapa. La dirección de arriba sigue abriendo Google Maps en una
@@ -248,7 +256,8 @@ function ContactPage() {
         </div>
       </section>
 
-      <SiteFooter />
+      {/* La sección de acá arriba es oliva, así que el footer va pegado. */}
+      <SiteFooter flush />
     </div>
   );
 }

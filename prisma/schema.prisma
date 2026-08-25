@@ -1,0 +1,458 @@
+// Shiraf — esquema de la base.
+//
+// CÓMO SE ARMÓ ESTE ARCHIVO. El plan (MIGRACION-A-PRISMA.md, Fase 1) dice de
+// generarlo con `prisma db pull` contra Supabase. Eso pide la contraseña de la
+// base, que no está en el .env, así que se armó de dos fuentes que sí estaban y
+// que juntas dicen lo mismo:
+//
+//   · scripts/referencia/openapi-supabase.json — el OpenAPI que publica
+//     PostgREST. Trae las 15 tablas con sus columnas, tipos y nulabilidad
+//     exactos, leídos de la base viva.
+//   · supabase/migrations/*.sql — de ahí salen los defaults, los enums, las
+//     claves foráneas con su ON DELETE, y los índices únicos, que el OpenAPI no
+//     describe.
+//
+// ⚠️ CUANDO TENGAS LA CONTRASEÑA, CORRÉ `prisma db pull` CONTRA UNA COPIA y
+//    compará. Es la única forma de descartar que algo se haya tocado a mano en
+//    el SQL Editor y no esté en ninguna migración.
+//
+// Los nombres de tabla y columna se mantienen en snake_case con @map: el seed
+// de la Fase 4 carga los JSON tal como salieron de Supabase, y las tres
+// funciones SQL que sobreviven (Fase 3) están escritas contra estos nombres.
+
+generator client {
+  provider = "prisma-client-js"
+
+  // ── binaryTargets: YA NO CORRESPONDE, y por eso está comentado ────────────
+  //
+  // Esto decía:
+  //
+  //   binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+  //
+  // La idea era correcta para Prisma 5 y 6, donde el cliente llevaba un motor
+  // de consultas NATIVO —un binario de Rust, distinto por sistema operativo— y
+  // había que pedir explícitamente el de cada plataforma donde fuera a correr.
+  // De ahí salía también todo el cuidado con musl y con openssl en el
+  // Dockerfile.
+  //
+  // Prisma 7 cambió eso de raíz: el motor pasó a ser un compilador en WASM, que
+  // es el mismo archivo en todas las plataformas. Comprobado sobre lo que
+  // genera esta versión —`node_modules/.prisma/client/` tiene
+  // `query_compiler_fast_bg.wasm` y CERO binarios nativos—, así que declarar
+  // binaryTargets no baja nada y sólo confunde a quien lo lea.
+  //
+  // Lo que sí trajo el cambio es que el WASM arma el SQL pero no habla con la
+  // base: eso lo hace ahora un DRIVER ADAPTER, que va en el constructor.
+  //
+  //   import { PrismaPg } from "@prisma/adapter-pg";
+  //   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  //   const prisma  = new PrismaClient({ adapter });
+  //
+  // Sin adapter, `new PrismaClient()` tira "A driver adapter is required to
+  // connect to your database". Por eso el proyecto suma @prisma/adapter-pg y
+  // pg. Va a hacer falta al escribir src/lib/db.ts, en la Fase 5.
+  //
+  // ── Decisión pendiente, para cuando se escriba código de la app ───────────
+  // `prisma-client-js` es el generador viejo: escribe en node_modules y en 7
+  // quedó como legado. El nuevo es `prisma-client`, con un `output` explícito
+  // dentro de src/, y tiene una ventaja concreta acá: si el cliente vive en
+  // src/, lo empaqueta Nitro y la imagen de producción no necesita copiar nada
+  // de node_modules. Se deja el viejo por ahora porque funciona y está
+  // verificado; cambiarlo es una decisión de la Fase 5, no de este arreglo.
+}
+
+datasource db {
+  provider = "postgresql"
+
+  // La URL se mudó a prisma.config.ts, en la raíz del proyecto.
+  //
+  // Prisma 7 ya no acepta `url` acá: la validación falla con P1012, "The
+  // datasource property `url` is no longer supported in schema files". Se deja
+  // comentada para que quede claro que no es un olvido y de dónde salió.
+  //
+  // url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 'staff' se agregó después (20260813060000) y va al final a propósito: así
+// queda en el mismo orden que en la base, donde ADD VALUE lo puso último.
+enum app_role {
+  admin
+  professional
+  client
+  staff
+}
+
+enum app_permission {
+  appointments    // gestionar turnos (ver todos, confirmar, cargar, cancelar)
+  clients_contact // ver la ficha y el teléfono de las clientas
+  clients_notes   // ver las notas clínicas (alergias, embarazos)
+  catalog         // editar tratamientos, precios y categorías
+  stock           // mover stock y editar productos
+  stock_costs     // ver los costos de compra
+  team            // gestionar profesionales, sus horarios y tratamientos
+}
+
+enum appointment_status {
+  pending
+  confirmed
+  completed
+  cancelled
+}
+
+enum media_kind {
+  image
+  video
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cuentas
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Reemplaza a auth.users de Supabase. Guarda SÓLO lo de autenticación: la ficha
+// de la persona sigue viviendo en profiles, y los accesos en user_roles y
+// user_permissions, que no se tocan.
+//
+// La forma es la de Ecommerce_mm (model Customer): mail, contraseña bcrypt, y
+// los pares token/vencimiento.
+model users {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email    String @unique
+  password String // bcrypt
+
+  // Recuperar contraseña. Copiado tal cual del ecommerce: 32 bytes hex, una
+  // hora de vida, un solo uso, se limpian los dos campos al usarlo.
+  reset_token        String?   @unique
+  reset_token_expiry DateTime? @db.Timestamptz(6)
+
+  // Confirmación de mail. Esto el ecommerce no lo tiene y Shiraf lo necesita:
+  // al confirmar se le pasan a la clienta los turnos que sacó como invitada,
+  // buscándolos POR MAIL. Sin verificar, cualquiera se registra con el mail de
+  // otra y le ve los turnos. Ver MIGRACION-A-PRISMA.md, sección 2.
+  verify_token        String?   @unique
+  verify_token_expiry DateTime? @db.Timestamptz(6)
+  email_verified_at   DateTime? @db.Timestamptz(6)
+
+  /**
+   * La cuenta puede entrar.
+   *
+   * Es la baja SIN borrar: la empleada que se va de licencia, la que dejó de
+   * trabajar pero cuyo historial se quiere conservar, la cuenta que hay que
+   * cerrar de urgencia un domingo. Borrarla era lo único que había, y borrar es
+   * definitivo.
+   *
+   * Se mira en `authMiddleware`, en cada pedido con sesión, no sólo al entrar:
+   * el token dura 7 días, así que si sólo se mirara en el login una cuenta
+   * suspendida seguiría trabajando una semana. Es el mismo razonamiento por el
+   * que los permisos tampoco viajan adentro del token.
+   */
+  is_active Boolean @default(true)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  profile          profiles?
+  roles            user_roles[]
+  permissions      user_permissions[]
+  appointments     appointments[]
+  professional     professionals?
+  client_note      client_notes?
+  stock_movements  stock_movements[]
+}
+
+// La ficha de la clienta. NO tiene el mail y es deliberado: vive en users, y
+// esta tabla la lee cualquiera con 'clients_contact' o con 'appointments'.
+// Ver MIGRACION-A-PRISMA.md, trampa #3.
+model profiles {
+  id         String    @id @db.Uuid
+  full_name  String?
+  phone      String?
+  birth_date DateTime? @db.Date
+  notes      String?
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user users @relation(fields: [id], references: [id], onDelete: Cascade)
+}
+
+model user_roles {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  role       app_role
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, role])
+}
+
+model user_permissions {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String         @db.Uuid
+  permission app_permission
+  created_at DateTime       @default(now()) @db.Timestamptz(6)
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, permission])
+}
+
+// Las notas clínicas: alergias, embarazos. Tabla aparte de profiles a propósito
+// (20260814010000), para poder pedir un permiso distinto —'clients_notes'— sin
+// dar acceso al resto de la ficha.
+model client_notes {
+  client_id  String   @id @db.Uuid
+  body       String?
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user users @relation(fields: [client_id], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catálogo
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ⚠️ services.category es TEXTO, no una FK a service_categories. Está así en la
+// base y se deja igual: cambiarlo es una migración de datos, no parte de este
+// traslado. El renombrado atómico de una categoría lo resuelve
+// rename_service_category (20260816000000), que actualiza las dos tablas juntas.
+model services {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  // La parte legible de la URL: /servicios/drenaje-linfatico en vez de
+  // /servicios/11111111-1111-4111-8111-111111111104.
+  //
+  // La escribe el servidor a partir del nombre y SE REGENERA cuando el nombre
+  // cambia: renombrar el tratamiento cambia su URL. La vieja no queda
+  // redirigida —eso pediría una tabla de URLs viejas, que para seis
+  // tratamientos no se justifica— pero tampoco deja a nadie tirado: la ficha
+  // sigue aceptando el UUID, que no cambia nunca.
+  //
+  // ── POR QUÉ ES OPCIONAL Y NO `String @unique` A SECAS ─────────────────────
+  //
+  // Por dos motivos, y los dos importan:
+  //
+  // 1. `prisma db push` no puede agregar una columna NOT NULL y unica a una
+  //    tabla que ya tiene filas: no hay valor que ponerles. Nula entra sin
+  //    drama y `scripts/rellenar-slugs.ts` la completa después.
+  // 2. Deja que una fila entre por fuera de la app —el seed, un INSERT a mano,
+  //    un import— sin quedar rota. El código cae al UUID cuando el slug no
+  //    está, así que una ficha sin slug se ve fea en la barra pero anda.
+  slug             String?  @unique
+  description      String?
+  category         String   @default("General")
+  duration_minutes Int      @default(60)
+  price            Decimal  @default(0) @db.Decimal(12, 2)
+  // La mantiene el trigger sync_service_cover, igualada a la primera foto de la
+  // galería. No la escribas a mano ni la seedees. Ver Fase 3.
+  image_url        String?
+  is_published     Boolean  @default(false)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  media                 service_media[]
+  professional_services professional_services[]
+  appointments          appointments[]
+}
+
+model service_categories {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+// Sin @@unique([service_id, position]) a propósito: reordenar de a una fila pasa
+// por estados con posiciones repetidas. El orden desempata por created_at.
+// El comentario original está en 20260818010000.
+model service_media {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  service_id String     @db.Uuid
+  url        String
+  kind       media_kind
+  position   Int        @default(0)
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+
+  service services @relation(fields: [service_id], references: [id], onDelete: Cascade)
+
+  // Es exactamente el ORDER BY de sync_service_cover, el trigger que mantiene
+  // la portada del tratamiento. Estaba en 20260818010000 y se había perdido en
+  // el traslado: el trigger se migró y su índice no.
+  @@index([service_id, position, created_at])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Equipo
+// ─────────────────────────────────────────────────────────────────────────────
+
+model professionals {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // Atar una ficha a una cuenta lo hace SÓLO la dueña: sin ese candado,
+  // cualquiera con el permiso 'team' se apunta una ficha ajena y pasa a leer los
+  // teléfonos y las notas de esas clientas. Lo hace cumplir
+  // guard_professional_account_link; en la base nueva es código (Fase 5).
+  user_id    String?  @unique @db.Uuid
+  full_name  String
+  specialty  String?
+  bio        String?
+  avatar_url String?
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user         users?                   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  services     professional_services[]
+  schedules    professional_schedules[]
+  appointments appointments[]
+}
+
+model professional_services {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  professional_id String @db.Uuid
+  service_id      String @db.Uuid
+
+  professional professionals @relation(fields: [professional_id], references: [id], onDelete: Cascade)
+  service      services      @relation(fields: [service_id], references: [id], onDelete: Cascade)
+
+  @@unique([professional_id, service_id])
+}
+
+model professional_schedules {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  professional_id String   @db.Uuid
+  weekday         Int
+  // TIME sin zona: es hora de pared del centro. La comparación con starts_at,
+  // que sí es TIMESTAMPTZ, pasa por America/Argentina/Buenos_Aires. Está
+  // explicado en validate_appointment (20260813040000).
+  start_time      DateTime @db.Time(6)
+  end_time        DateTime @db.Time(6)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  professional professionals @relation(fields: [professional_id], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Turnos
+// ─────────────────────────────────────────────────────────────────────────────
+
+model appointments {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  // NULL a propósito: son los turnos de invitada, que carga el centro por
+  // teléfono para alguien sin cuenta. No es un dato faltante.
+  client_id       String?            @db.Uuid
+  // NULL cuando el tratamiento se borró del catálogo. El turno viejo sigue
+  // existiendo con su nombre y su precio congelados; ver `service_name`.
+  service_id      String?            @db.Uuid
+  professional_id String?            @db.Uuid
+  starts_at       DateTime           @db.Timestamptz(6)
+  // Lo pisa la base con el del tratamiento: no lo manda el cliente.
+  duration_minutes Int               @default(60)
+  status          appointment_status @default(pending)
+  client_notes    String?
+  admin_notes     String?
+  // Congelado a propósito: es el precio del día que se reservó, no el actual
+  // del catálogo. No lo reemplaces por un join a services.price.
+  price           Decimal            @db.Decimal(12, 2)
+  // El nombre del tratamiento, congelado igual que el precio y por el mismo
+  // motivo — y además por uno propio: es lo que deja BORRAR un tratamiento del
+  // catálogo sin que el historial quede diciendo "turno de nada". Lo escribe
+  // `validarTurno`, nunca quien llama.
+  //
+  // Opcional sólo por los turnos que existían antes de esta columna; el CHECK
+  // `appointments_names_its_service` de reglas.sql exige que haya nombre o
+  // service_id, así que un turno sin ninguno de los dos no se puede escribir.
+  service_name    String?
+  guest_name      String?
+  guest_phone     String?
+  guest_email     String?
+  reminded_at     DateTime?          @db.Timestamptz(6)
+  created_at      DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+
+  client       users?         @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  // SetNull y no RESTRICT ni CASCADE.
+  //
+  // CASCADE nunca: borrar un tratamiento no puede llevarse puesto el historial
+  // de turnos que lo usaron. Eso sigue valiendo.
+  //
+  // Era RESTRICT, y eso hacía que un tratamiento tomado UNA vez en 2024 no se
+  // pudiera borrar nunca más. Ahora el vínculo se corta y el turno viejo queda
+  // con `service_name` y `price`, que es todo lo que hace falta para leerlo.
+  //
+  // Que no se pueda borrar un tratamiento CON TURNOS POR VENIR se sigue
+  // frenando — pero en el controlador, mirando el estado, que es donde se puede
+  // explicar por qué. La base no distingue un turno de mañana de uno del año
+  // pasado.
+  service      services?      @relation(fields: [service_id], references: [id], onDelete: SetNull)
+  professional professionals? @relation(fields: [professional_id], references: [id], onDelete: SetNull)
+
+  // Los dos índices que appointments tenía desde la primera migración de
+  // Supabase. Hay que declararlos: Prisma NO crea índices sobre las claves
+  // foráneas en Postgres —a diferencia de lo que hace en MySQL—, así que sin
+  // esto no existirían.
+  //
+  //   starts_at · el calendario y la agenda, que siempre filtran por fecha
+  //   client_id · "mis turnos" de la clienta
+  //
+  // Los otros cuatro de esta tabla son parciales, y eso Prisma no lo sabe
+  // escribir: viven en 20260820000002_indices_parciales.
+  @@index([starts_at])
+  @@index([client_id])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stock
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ⚠️ products.category apunta a product_categories por texto, igual que
+// services.category. Y ojo con el permiso: product_categories pide 'stock', NO
+// 'catalog' — agrupan insumos internos que no salen en el sitio
+// (20260814000000). Ver trampa #5.
+model products {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  brand      String?
+  category   String   @default("Cremas")
+  unit       String   @default("unidad")
+  // Lo mantiene el trigger apply_stock_movement, sumando cada movimiento dentro
+  // de la misma transacción. No lo escribas directo. Ver Fase 3.
+  stock      Decimal  @default(0) @db.Decimal(12, 2)
+  min_stock  Decimal  @default(0) @db.Decimal(12, 2)
+  cost       Decimal? @db.Decimal(12, 2)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  costs     product_costs?
+  movements stock_movements[]
+}
+
+model product_categories {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+// Los costos de compra, en tabla aparte para poder pedirles el permiso
+// 'stock_costs' sin tapar el resto del stock (20260814010000).
+model product_costs {
+  product_id String   @id @db.Uuid
+  cost       Decimal? @db.Decimal(12, 2)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  product products @relation(fields: [product_id], references: [id], onDelete: Cascade)
+}
+
+model stock_movements {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id String   @db.Uuid
+  quantity   Decimal  @db.Decimal(12, 2)
+  reason     String?
+  created_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  product products @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  author  users?   @relation(fields: [created_by], references: [id], onDelete: SetNull)
+}

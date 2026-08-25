@@ -125,8 +125,23 @@ export function isUiOnly(permission: { enforcement: string }): boolean {
   return permission.enforcement === "ui";
 }
 
-/** Lo que hace falta para abrir una sección: un permiso, o ser la dueña. */
-export type AccessRequirement = Permission | "admin";
+/**
+ * Lo que hace falta para abrir una sección.
+ *
+ * Además de los siete permisos hay tres niveles que no son permisos:
+ *
+ *   "admin"  la dueña y nadie más. Es lo que no se delega.
+ *   "panel"  cualquiera que trabaje en el centro, sin pedirle ninguna casilla.
+ *            Sólo para lo que es de la persona y no del negocio: su propia
+ *            contraseña. Una empleada a la que todavía no le tildaron nada
+ *            igual tiene que poder cambiar la que le dictaron.
+ *   "own_agenda"  quien tenga una ficha de profesional vinculada a su cuenta.
+ *            No es una casilla que se tilde: se gana atando la ficha con la
+ *            cuenta desde Equipo, y se pierde desactivando la ficha. Es el
+ *            único nivel que la dueña NO pasa automáticamente — no por
+ *            candado, sino porque sin ficha propia no hay agenda que mostrar.
+ */
+export type AccessRequirement = Permission | "admin" | "panel" | "own_agenda";
 
 /**
  * Qué exige cada sección del panel.
@@ -150,6 +165,11 @@ const ADMIN_ROUTES = [
   // no aparecen en el sitio. Ver migración 20260814000000.
   { path: "/admin/categorias-productos", access: "stock" },
   { path: "/admin/equipo", access: "admin" },
+  // Su contraseña, no el negocio: no depende de ninguna casilla.
+  { path: "/admin/cuenta", access: "panel" },
+  // Sus propios turnos. Tampoco depende de una casilla: depende de que la ficha
+  // de la profesional esté atada a esta cuenta. Ver 20260818020000.
+  { path: "/admin/mi-agenda", access: "own_agenda" },
 ] as const satisfies readonly { path: string; access: AccessRequirement }[];
 
 export function requiredAccessFor(pathname: string): AccessRequirement {

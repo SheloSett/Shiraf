@@ -20,16 +20,19 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated/mi-cuenta'
 import { Route as AuthenticatedReservarRouteImport } from './routes/_authenticated/reservar'
 import { Route as ServiciosIndexRouteImport } from './routes/servicios.index'
-import { Route as ServiciosServiceIdRouteImport } from './routes/servicios.$serviceId'
+import { Route as ServiciosSlugRouteImport } from './routes/servicios.$slug'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as AuthenticatedAdminCategoriasProductosRouteImport } from './routes/_authenticated/admin.categorias-productos'
 import { Route as AuthenticatedAdminCategoriasServiciosRouteImport } from './routes/_authenticated/admin.categorias-servicios'
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
+import { Route as AuthenticatedAdminCuentaRouteImport } from './routes/_authenticated/admin.cuenta'
 import { Route as AuthenticatedAdminEquipoRouteImport } from './routes/_authenticated/admin.equipo'
+import { Route as AuthenticatedAdminMiAgendaRouteImport } from './routes/_authenticated/admin.mi-agenda'
 import { Route as AuthenticatedAdminProductosRouteImport } from './routes/_authenticated/admin.productos'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
 import { Route as AuthenticatedAdminServiciosRouteImport } from './routes/_authenticated/admin.servicios'
 import { Route as AuthenticatedAdminTurnosRouteImport } from './routes/_authenticated/admin.turnos'
+import { Route as AuthenticatedAdminTurnosIdRouteImport } from './routes/_authenticated/admin.turnos_.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -85,9 +88,9 @@ const ServiciosIndexRoute = ServiciosIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ServiciosRoute,
 } as any)
-const ServiciosServiceIdRoute = ServiciosServiceIdRouteImport.update({
-  id: '/$serviceId',
-  path: '/$serviceId',
+const ServiciosSlugRoute = ServiciosSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
   getParentRoute: () => ServiciosRoute,
 } as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
@@ -113,10 +116,22 @@ const AuthenticatedAdminClientesRoute =
     path: '/clientes',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminCuentaRoute =
+  AuthenticatedAdminCuentaRouteImport.update({
+    id: '/cuenta',
+    path: '/cuenta',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminEquipoRoute =
   AuthenticatedAdminEquipoRouteImport.update({
     id: '/equipo',
     path: '/equipo',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminMiAgendaRoute =
+  AuthenticatedAdminMiAgendaRouteImport.update({
+    id: '/mi-agenda',
+    path: '/mi-agenda',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminProductosRoute =
@@ -143,6 +158,12 @@ const AuthenticatedAdminTurnosRoute =
     path: '/turnos',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminTurnosIdRoute =
+  AuthenticatedAdminTurnosIdRouteImport.update({
+    id: '/turnos_/$id',
+    path: '/turnos/$id',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -154,17 +175,20 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/reservar': typeof AuthenticatedReservarRoute
-  '/servicios/$serviceId': typeof ServiciosServiceIdRoute
+  '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios/': typeof ServiciosIndexRoute
   '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/equipo': typeof AuthenticatedAdminEquipoRoute
+  '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/admin/turnos/$id': typeof AuthenticatedAdminTurnosIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -174,17 +198,20 @@ export interface FileRoutesByTo {
   '/recuperar': typeof RecuperarRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/reservar': typeof AuthenticatedReservarRoute
-  '/servicios/$serviceId': typeof ServiciosServiceIdRoute
+  '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios': typeof ServiciosIndexRoute
   '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/equipo': typeof AuthenticatedAdminEquipoRoute
+  '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
+  '/admin/turnos/$id': typeof AuthenticatedAdminTurnosIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -198,17 +225,20 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
   '/_authenticated/reservar': typeof AuthenticatedReservarRoute
-  '/servicios/$serviceId': typeof ServiciosServiceIdRoute
+  '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios/': typeof ServiciosIndexRoute
   '/_authenticated/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/_authenticated/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/_authenticated/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/_authenticated/admin/equipo': typeof AuthenticatedAdminEquipoRoute
+  '/_authenticated/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/_authenticated/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
   '/_authenticated/admin/servicios': typeof AuthenticatedAdminServiciosRoute
   '/_authenticated/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/admin/turnos_/$id': typeof AuthenticatedAdminTurnosIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -222,17 +252,20 @@ export interface FileRouteTypes {
     | '/admin'
     | '/mi-cuenta'
     | '/reservar'
-    | '/servicios/$serviceId'
+    | '/servicios/$slug'
     | '/servicios/'
     | '/admin/categorias-productos'
     | '/admin/categorias-servicios'
     | '/admin/clientes'
+    | '/admin/cuenta'
     | '/admin/equipo'
+    | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
     | '/admin/servicios'
     | '/admin/turnos'
     | '/admin/'
+    | '/admin/turnos/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -242,17 +275,20 @@ export interface FileRouteTypes {
     | '/recuperar'
     | '/mi-cuenta'
     | '/reservar'
-    | '/servicios/$serviceId'
+    | '/servicios/$slug'
     | '/servicios'
     | '/admin/categorias-productos'
     | '/admin/categorias-servicios'
     | '/admin/clientes'
+    | '/admin/cuenta'
     | '/admin/equipo'
+    | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
     | '/admin/servicios'
     | '/admin/turnos'
     | '/admin'
+    | '/admin/turnos/$id'
   id:
     | '__root__'
     | '/'
@@ -265,17 +301,20 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/mi-cuenta'
     | '/_authenticated/reservar'
-    | '/servicios/$serviceId'
+    | '/servicios/$slug'
     | '/servicios/'
     | '/_authenticated/admin/categorias-productos'
     | '/_authenticated/admin/categorias-servicios'
     | '/_authenticated/admin/clientes'
+    | '/_authenticated/admin/cuenta'
     | '/_authenticated/admin/equipo'
+    | '/_authenticated/admin/mi-agenda'
     | '/_authenticated/admin/productos'
     | '/_authenticated/admin/profesionales'
     | '/_authenticated/admin/servicios'
     | '/_authenticated/admin/turnos'
     | '/_authenticated/admin/'
+    | '/_authenticated/admin/turnos_/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -367,11 +406,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ServiciosIndexRouteImport
       parentRoute: typeof ServiciosRoute
     }
-    '/servicios/$serviceId': {
-      id: '/servicios/$serviceId'
-      path: '/$serviceId'
-      fullPath: '/servicios/$serviceId'
-      preLoaderRoute: typeof ServiciosServiceIdRouteImport
+    '/servicios/$slug': {
+      id: '/servicios/$slug'
+      path: '/$slug'
+      fullPath: '/servicios/$slug'
+      preLoaderRoute: typeof ServiciosSlugRouteImport
       parentRoute: typeof ServiciosRoute
     }
     '/_authenticated/admin/': {
@@ -402,11 +441,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminClientesRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/cuenta': {
+      id: '/_authenticated/admin/cuenta'
+      path: '/cuenta'
+      fullPath: '/admin/cuenta'
+      preLoaderRoute: typeof AuthenticatedAdminCuentaRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/equipo': {
       id: '/_authenticated/admin/equipo'
       path: '/equipo'
       fullPath: '/admin/equipo'
       preLoaderRoute: typeof AuthenticatedAdminEquipoRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/mi-agenda': {
+      id: '/_authenticated/admin/mi-agenda'
+      path: '/mi-agenda'
+      fullPath: '/admin/mi-agenda'
+      preLoaderRoute: typeof AuthenticatedAdminMiAgendaRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/productos': {
@@ -437,6 +490,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTurnosRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/turnos_/$id': {
+      id: '/_authenticated/admin/turnos_/$id'
+      path: '/turnos/$id'
+      fullPath: '/admin/turnos/$id'
+      preLoaderRoute: typeof AuthenticatedAdminTurnosIdRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
   }
 }
 
@@ -444,12 +504,15 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminCategoriasProductosRoute: typeof AuthenticatedAdminCategoriasProductosRoute
   AuthenticatedAdminCategoriasServiciosRoute: typeof AuthenticatedAdminCategoriasServiciosRoute
   AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
+  AuthenticatedAdminCuentaRoute: typeof AuthenticatedAdminCuentaRoute
   AuthenticatedAdminEquipoRoute: typeof AuthenticatedAdminEquipoRoute
+  AuthenticatedAdminMiAgendaRoute: typeof AuthenticatedAdminMiAgendaRoute
   AuthenticatedAdminProductosRoute: typeof AuthenticatedAdminProductosRoute
   AuthenticatedAdminProfesionalesRoute: typeof AuthenticatedAdminProfesionalesRoute
   AuthenticatedAdminServiciosRoute: typeof AuthenticatedAdminServiciosRoute
   AuthenticatedAdminTurnosRoute: typeof AuthenticatedAdminTurnosRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+  AuthenticatedAdminTurnosIdRoute: typeof AuthenticatedAdminTurnosIdRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
@@ -458,12 +521,15 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminCategoriasServiciosRoute:
     AuthenticatedAdminCategoriasServiciosRoute,
   AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
+  AuthenticatedAdminCuentaRoute: AuthenticatedAdminCuentaRoute,
   AuthenticatedAdminEquipoRoute: AuthenticatedAdminEquipoRoute,
+  AuthenticatedAdminMiAgendaRoute: AuthenticatedAdminMiAgendaRoute,
   AuthenticatedAdminProductosRoute: AuthenticatedAdminProductosRoute,
   AuthenticatedAdminProfesionalesRoute: AuthenticatedAdminProfesionalesRoute,
   AuthenticatedAdminServiciosRoute: AuthenticatedAdminServiciosRoute,
   AuthenticatedAdminTurnosRoute: AuthenticatedAdminTurnosRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+  AuthenticatedAdminTurnosIdRoute: AuthenticatedAdminTurnosIdRoute,
 }
 
 const AuthenticatedAdminRouteWithChildren =
@@ -485,12 +551,12 @@ const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
 interface ServiciosRouteChildren {
-  ServiciosServiceIdRoute: typeof ServiciosServiceIdRoute
+  ServiciosSlugRoute: typeof ServiciosSlugRoute
   ServiciosIndexRoute: typeof ServiciosIndexRoute
 }
 
 const ServiciosRouteChildren: ServiciosRouteChildren = {
-  ServiciosServiceIdRoute: ServiciosServiceIdRoute,
+  ServiciosSlugRoute: ServiciosSlugRoute,
   ServiciosIndexRoute: ServiciosIndexRoute,
 }
 

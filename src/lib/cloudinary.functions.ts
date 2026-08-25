@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/serverfn-auth";
 import { CLOUDINARY_FOLDER } from "@/lib/cloudinary";
 
 /**
@@ -63,39 +63,34 @@ function readConfig() {
 /**
  * ¿Este usuario puede tocar el catálogo?
  *
- * Repite la lógica de has_permission() de la base en vez de llamarla: esa
- * función tiene EXECUTE sólo para `authenticated`, y acá se consulta con la
- * service role. La regla es la misma — el admin puede siempre, sin mirar la
- * tabla de permisos.
+ * Antes esto repetía a mano la lógica de `has_permission()` consultando
+ * `user_roles` y `user_permissions` con la service role, porque esa función de
+ * la base tenía EXECUTE sólo para `authenticated`.
+ *
+ * Ahora es la misma `puede()` que usa todo el resto del servidor, así que la
+ * regla dejó de estar escrita dos veces — que era lo que la hacía capaz de
+ * divergir. El criterio no cambió: la dueña puede siempre, sin mirar la tabla
+ * de permisos.
  */
 async function canManageCatalog(userId: string): Promise<boolean> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-  const { data: roles, error: rolesError } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  if (rolesError) throw new Error("No se pudo verificar el permiso.");
-  if ((roles ?? []).some((r) => r.role === "admin")) return true;
-
-  const { data: permissions, error: permissionsError } = await supabaseAdmin
-    .from("user_permissions")
-    .select("permission")
-    .eq("user_id", userId)
-    .eq("permission", "catalog");
-  if (permissionsError) throw new Error("No se pudo verificar el permiso.");
-
-  return (permissions ?? []).length > 0;
+  // Dinámico por el guard de imports; ver serverfn-auth.ts.
+  const { accesoDe, puede } = await import("@/server/services/authz.service");
+  return puede(await accesoDe(userId), "catalog");
 }
 
 /**
- * Devuelve una firma de un solo uso para subir una foto.
+ * Devuelve una firma de un solo uso para subir una foto o un video.
  *
  * `folder` lo fija el servidor y no lo manda el cliente: si viajara desde el
  * navegador, alguien podría escribir en cualquier carpeta de la cuenta.
+ *
+ * Sirve para los dos tipos sin cambiar nada: lo que se firma es `folder` y
+ * `timestamp`, y ninguno de los dos depende de si lo que sube es imagen o
+ * video. Lo que cambia es el endpoint al que se postea, y eso lo elige quien
+ * sube (ver uploadServiceMedia en storage.ts).
  */
 export const signImageUpload = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     if (!(await canManageCatalog(context.userId))) {
       throw new Error("No tenés permiso para cargar fotos de tratamientos.");
@@ -113,13 +108,27 @@ export const signImageUpload = createServerFn({ method: "POST" })
   });
 
 /**
- * Borra una foto de Cloudinary.
+ * Borra una foto o un video de Cloudinary.
  *
  * Va por el servidor porque destroy exige firma, y la firma exige el secreto.
+ *
+ * `resourceType` NO es opcional por un motivo concreto: el endpoint de destroy
+ * es distinto para imagen y para video, y el de imagen contra un video devuelve
+ * 200 con `{"result":"not found"}`. O sea que borrar un video con el endpoint
+ * equivocado parece funcionar y deja el archivo ocupando la cuenta para
+ * siempre. Quien llama sabe el tipo —está guardado en service_media.kind—, así
+ * que lo manda y no se adivina acá.
  */
 export const deleteImage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((data: unknown) => z.object({ publicId: z.string().min(1) }).parse(data))
+  .middleware([requireAuth])
+  .validator((data: unknown) =>
+    z
+      .object({
+        publicId: z.string().min(1),
+        resourceType: z.enum(["image", "video"]),
+      })
+      .parse(data),
+  )
   .handler(async ({ data, context }) => {
     if (!(await canManageCatalog(context.userId))) {
       throw new Error("No tenés permiso para borrar fotos de tratamientos.");
@@ -142,10 +151,10 @@ export const deleteImage = createServerFn({ method: "POST" })
       signature,
     });
 
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`, {
-      method: "POST",
-      body,
-    });
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/${data.resourceType}/destroy`,
+      { method: "POST", body },
+    );
 
     if (!response.ok) {
       throw new Error(`Cloudinary rechazó el borrado (${response.status}).`);

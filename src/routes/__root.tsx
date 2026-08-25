@@ -12,7 +12,6 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
-import { supabase } from "@/integrations/supabase/client";
 
 function NotFoundComponent() {
   return (
@@ -105,7 +104,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="es">
+    // suppressHydrationWarning por el script de abajo: agrega `js` al <html>
+    // antes de que React hidrate, así que el atributo class del cliente nunca
+    // va a coincidir con el del servidor. Es a propósito — la clase NO puede
+    // venir del SSR, porque entonces quien no tenga JS se queda con el
+    // contenido en opacity:0 para siempre. Sin esto, React tira un warning de
+    // mismatch en cada carga y tapa los que sí son bugs.
+    <html lang="es" suppressHydrationWarning>
       <head>
         {/* Marca que hay JS antes del primer pintado. Las animaciones de
             revelado cuelgan de `.js`, así que sin JS el contenido se muestra
@@ -129,14 +134,11 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
 
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
-      router.invalidate();
-      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
-    });
-    return () => data.subscription.unsubscribe();
-  }, [router, queryClient]);
+  // Acá había un suscriptor a onAuthStateChange que invalidaba el router y las
+  // consultas cuando la sesión cambiaba. Con una cookie no hay a quién
+  // suscribirse, y tampoco hace falta: entrar y salir son acciones nuestras, y
+  // las dos llaman a olvidarSesion() y navegan. Lo que antes llegaba por un
+  // evento ahora pasa en la línea de al lado.
 
   return (
     <QueryClientProvider client={queryClient}>
