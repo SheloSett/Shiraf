@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,7 +30,7 @@ import {
 import { api, apiPut } from "@/lib/api";
 import type { RtaEmpleadas, RtaProfesionalesAdmin } from "@/lib/api-tipos";
 import { linkProfessionalAccount } from "@/lib/team";
-import { createEmployee, deleteEmployee } from "@/lib/team.functions";
+import { createEmployee, deleteEmployee, updateEmployeeAccess } from "@/lib/team.functions";
 import {
   impliedBy,
   isUiOnly,
@@ -244,6 +244,11 @@ function AdminTeam() {
    * La baja vale en el acto aunque la empleada tenga la sesión abierta: el
    * servidor mira `is_active` en cada pedido, no sólo al entrar.
    */
+  /** La empleada a la que se le están cambiando el mail o la contraseña. */
+  const [editando, setEditando] = useState<{ id: string; name: string; email: string } | null>(
+    null,
+  );
+
   const toggleActive = useMutation({
     mutationFn: ({ userId, value }: { userId: string; value: boolean }) =>
       apiPut("/api/equipo/empleadas/" + userId + "/activa", { is_active: value }),
@@ -337,7 +342,9 @@ function AdminTeam() {
                   <p className="mt-1 text-sm text-muted-foreground">{member.email}</p>
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {member.phone ?? "Sin teléfono"} ·{" "}
-                    {member.permissions.length === 0 ? "sin accesos todavía" : ` de  accesos`}
+                    {member.permissions.length === 0
+                      ? "sin accesos todavía"
+                      : `${member.permissions.length} de ${PERMISSIONS.length} accesos`}
                   </p>
                 </div>
 
@@ -351,15 +358,31 @@ function AdminTeam() {
                       checked={member.is_active}
                       disabled={toggleActive.isPending}
                       onCheckedChange={(value) => toggleActive.mutate({ userId: member.id, value })}
-                      aria-label={`Habilitar el ingreso de `}
+                      aria-label={`Habilitar el ingreso de ${member.full_name}`}
                     />
                     Puede entrar
                   </label>
                   <Button
                     size="icon"
                     variant="ghost"
+                    className="h-9 w-9"
+                    aria-label={`Cambiar el mail o la contraseña de ${member.full_name}`}
+                    title="Cambiar mail o contraseña"
+                    onClick={() =>
+                      setEditando({
+                        id: member.id,
+                        name: member.full_name,
+                        email: member.email,
+                      })
+                    }
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
                     className="h-9 w-9 text-destructive hover:text-destructive"
-                    aria-label={`Eliminar la cuenta de `}
+                    aria-label={`Eliminar la cuenta de ${member.full_name}`}
                     onClick={() => setDeleting({ id: member.id, name: member.full_name })}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -601,6 +624,8 @@ function AdminTeam() {
         </DialogContent>
       </Dialog>
 
+      <CambiarAcceso empleada={editando} onClose={() => setEditando(null)} />
+
       <AlertDialog open={!!deleting} onOpenChange={(next) => !next && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -630,5 +655,152 @@ function AdminTeam() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/**
+ * Cambiarle el mail o la contraseña a una empleada.
+ *
+ * ── LOS DOS CAMPOS SON OPCIONALES, Y CADA UNO POR SU LADO ─────────────────
+ *
+ * Se manda sólo lo que se tocó. Dejar la contraseña vacía significa "no la
+ * cambies", no "ponele una vacía" — que es la confusión clásica de un formulario
+ * que muestra los dos campos juntos. El mail viene cargado con el actual; si no
+ * se toca, tampoco viaja.
+ *
+ * ── LO QUE ESTO NO HACE ───────────────────────────────────────────────────
+ *
+ * No le corta la sesión. El token está firmado y no guarda la contraseña, así
+ * que la empleada que tenga el panel abierto lo sigue teniendo abierto: lo único
+ * que cambia es con qué entra la próxima vez. Para cortarle el acceso YA está el
+ * interruptor «Puede entrar», que se mira en cada pedido.
+ *
+ * Se lo dice en el diálogo, porque es exactamente lo que alguien espera que pase
+ * y no pasa.
+ */
+function CambiarAcceso({
+  empleada,
+  onClose,
+}: {
+  empleada: { id: string; name: string; email: string } | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  // El mail arranca con el que tiene. Se sincroniza contra el id y no contra el
+  // objeto: sin la comparación, cada renderizado del padre pisaría lo que la
+  // dueña está escribiendo.
+  const [paraId, setParaId] = useState<string | null>(null);
+  if (empleada && paraId !== empleada.id) {
+    setParaId(empleada.id);
+    setEmail(empleada.email);
+    setPassword("");
+  }
+
+  const guardar = useMutation({
+    mutationFn: async () => {
+      const cambios: { userId: string; email?: string; password?: string } = {
+        userId: empleada!.id,
+      };
+      // Sólo lo que cambió de verdad. El mail se compara en minúscula porque el
+      // servidor lo guarda así: sin eso, escribirlo con una mayúscula distinta
+      // contaría como cambio y dispararía el chequeo de "ya existe" contra la
+      // propia cuenta.
+      const mail = email.trim().toLowerCase();
+      if (mail !== empleada!.email.toLowerCase()) cambios.email = mail;
+      if (password !== "") cambios.password = password;
+      return await updateEmployeeAccess({ data: cambios });
+    },
+    onSuccess: async (r) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
+      const que =
+        r.emailCambiado && r.claveCambiada
+          ? "Mail y contraseña actualizados."
+          : r.emailCambiado
+            ? "Mail actualizado."
+            : "Contraseña actualizada.";
+      toast.success(que);
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const mailNuevo =
+    empleada !== null && email.trim().toLowerCase() !== empleada.email.toLowerCase();
+  const hayAlgo = mailNuevo || password !== "";
+  const claveCorta = password !== "" && password.length < 8;
+
+  return (
+    <Dialog open={empleada !== null} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl">Acceso de {empleada?.name}</DialogTitle>
+          <DialogDescription>
+            Cambiá lo que haga falta y dejá el resto como está. La contraseña vacía significa que no
+            se toca.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (hayAlgo && !claveCorta) guardar.mutate();
+          }}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="empleada-email">Mail</Label>
+            <Input
+              id="empleada-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="empleada@ejemplo.com"
+            />
+            <p className="text-xs text-muted-foreground">Es con lo que entra al panel.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="empleada-password">Contraseña nueva</Label>
+            <Input
+              id="empleada-password"
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Dejala vacía para no cambiarla"
+              // `type="text"` a propósito, igual que en el alta: la dueña se la
+              // tiene que poder leer para dictársela. Esconderla detrás de
+              // puntitos obliga a escribirla a ciegas y después no hay forma de
+              // saber qué quedó.
+              autoComplete="new-password"
+            />
+            {claveCorta && (
+              <p className="text-xs font-medium text-destructive">
+                Necesita al menos 8 caracteres.
+              </p>
+            )}
+          </div>
+
+          {password !== "" && (
+            <p className="rounded-sm border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">
+              Si ahora mismo tiene el panel abierto, <strong>no se le va a cerrar</strong>: la
+              contraseña nueva rige para la próxima vez que entre. Si lo que querés es sacarla ya,
+              usá el interruptor «Puede entrar».
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={!hayAlgo || claveCorta || guardar.isPending}>
+              Guardar
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

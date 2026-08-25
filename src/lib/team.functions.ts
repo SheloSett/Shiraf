@@ -121,3 +121,91 @@ export const deleteEmployee = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
+
+const UpdateEmployeeAccessInput = z
+  .object({
+    userId: z.string().uuid(),
+    email: z.string().trim().email("El mail no parece válido.").optional(),
+    password: z.string().min(8, "La contraseña necesita al menos 8 caracteres.").optional(),
+  })
+  // Al menos una de las dos: sin esto, "guardar" sin haber tocado nada pasaría
+  // por todos los chequeos y contestaría que salió bien sin haber hecho nada.
+  .refine((v) => v.email !== undefined || v.password !== undefined, {
+    message: "No hay nada para cambiar.",
+  });
+
+/**
+ * Cambiarle el mail o la contraseña a una empleada. **Sólo la dueña.**
+ *
+ * ── POR QUÉ ESTÁ ACÁ Y NO EN UN ENDPOINT MÁS ──────────────────────────────
+ *
+ * Por lo mismo que `createEmployee`: **la contraseña llega en texto plano.** Una
+ * server function es el único lugar donde eso entra sin pasar por ninguna
+ * pantalla intermedia. El mail podría ir por la API común, pero separarlos
+ * dejaría el formulario mandando dos pedidos y pudiendo salir uno bien y el otro
+ * mal, con la dueña sin saber cuál quedó.
+ *
+ * ── LO QUE PASA CUANDO SE LE CAMBIA LA CONTRASEÑA ─────────────────────────
+ *
+ * Nada más que eso: la nueva anda y la vieja no. La sesión que la empleada tenga
+ * abierta SIGUE viva, porque el token está firmado y no guarda la contraseña.
+ * Para cortarle el acceso ya mismo está el interruptor «Puede entrar», que sí se
+ * mira en cada pedido. Son dos herramientas para dos cosas distintas: cambiar la
+ * contraseña es "no entres más con esa"; dar de baja es "no entres más".
+ *
+ * ── LOS MISMOS TRES CANDADOS QUE LA BAJA ──────────────────────────────────
+ *
+ * Sólo la dueña; no sobre la cuenta propia —para eso está `/admin/cuenta`, que
+ * pide la contraseña actual—; y nunca sobre otra administradora.
+ */
+export const updateEmployeeAccess = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .validator((data: unknown) => UpdateEmployeeAccessInput.parse(data))
+  .handler(async ({ data, context }) => {
+    const bcrypt = (await import("bcryptjs")).default;
+    const { prisma } = await import("@/server/db");
+    const { accesoDe, exigirAdmin } = await import("@/server/services/authz.service");
+
+    exigirAdmin(await accesoDe(context.userId));
+
+    if (data.userId === context.userId) {
+      throw new Error("Para cambiar tus propios datos entrá a «Mi cuenta».");
+    }
+
+    const roles = await prisma.user_roles.findMany({
+      where: { user_id: data.userId },
+      select: { role: true },
+    });
+
+    if (roles.length === 0) throw new Error("Esa cuenta no existe.");
+    if (roles.some((r) => r.role === "admin")) {
+      throw new Error("No se pueden cambiar los datos de una administradora desde el panel.");
+    }
+    if (!roles.some((r) => r.role === "staff")) {
+      throw new Error("Esa cuenta no es de una empleada.");
+    }
+
+    const cambios: { email?: string; password?: string } = {};
+
+    if (data.email !== undefined) {
+      const email = data.email.toLowerCase();
+      // El choque se avisa acá y no se deja fallar contra el índice único: el
+      // error de Prisma sale como "error interno" y la dueña no se entera de que
+      // el mail ya está usado, que es un caso normal y no una falla.
+      const ocupado = await prisma.users.findUnique({ where: { email }, select: { id: true } });
+      if (ocupado && ocupado.id !== data.userId) {
+        throw new Error("Ya existe una cuenta con ese mail.");
+      }
+      cambios.email = email;
+    }
+
+    if (data.password !== undefined) {
+      cambios.password = await bcrypt.hash(data.password, RONDAS);
+    }
+
+    await prisma.users.update({ where: { id: data.userId }, data: cambios });
+
+    // Se devuelve qué se tocó y NUNCA la contraseña: la pantalla la necesita
+    // para el aviso, y el valor no tiene por qué volver a viajar.
+    return { emailCambiado: data.email !== undefined, claveCambiada: data.password !== undefined };
+  });
