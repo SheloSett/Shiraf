@@ -70,10 +70,47 @@ function armarCookie(valor: string, maxAge: number): string {
     "SameSite=Lax",
     "Max-Age=" + maxAge,
   ];
-  // Secure sólo en producción: en desarrollo el sitio es http://localhost y una
-  // cookie Secure ahí no se guarda, así que no se podría entrar nunca.
-  if (process.env["NODE_ENV"] === "production") partes.push("Secure");
+  if (cookieSegura()) partes.push("Secure");
   return partes.join("; ");
+}
+
+/**
+ * ¿La cookie de sesión lleva el flag `Secure`?
+ *
+ * ── LA PREGUNTA QUE HAY QUE HACERSE ───────────────────────────────────────
+ *
+ * `Secure` quiere decir "esta cookie sólo viaja por HTTPS", así que la pregunta
+ * es **cómo se sirve el sitio**, no si el build es de producción. Son dos cosas
+ * distintas y se separan más seguido de lo que parece.
+ *
+ * Antes esto decía `NODE_ENV === "production"`, y el 25/8/2026 eso dejó a la
+ * dueña afuera de su propio panel. El VPS corre con NODE_ENV=production —como
+ * corresponde— pero todavía se entra por `http://IP:3000`, sin certificado. La
+ * cookie salía con `Secure`, el navegador la descartaba **en silencio**, y el
+ * síntoma era el peor posible: el login contestaba 200, no había ningún mensaje
+ * de error, y la pantalla simplemente no te dejaba entrar. Con curl andaba, que
+ * es lo que más despista: curl no respeta `Secure`.
+ *
+ * ── DE DÓNDE SALE LA RESPUESTA ────────────────────────────────────────────
+ *
+ * De `APP_URL`, que es la variable que ya dice con qué dirección se llega al
+ * sitio — la misma con la que se arman los links de los mails. Si empieza con
+ * `https://`, la cookie va segura; si es `http://`, no.
+ *
+ * Sin `APP_URL` se cae a la regla vieja. No debería pasar: el compose la exige
+ * con `:?` y el contenedor no arranca sin ella. Está para que un script suelto
+ * que importe este archivo sin entorno completo no termine mandando cookies sin
+ * `Secure` en un sitio que sí tiene HTTPS.
+ *
+ * ⚠️ Cuando el sitio pase a HTTPS hay que actualizar `APP_URL` en el .env del
+ *    servidor. Es lo mismo que ya hace falta para que los links de los mails no
+ *    apunten a la IP, así que no es un paso nuevo — pero acá, si se olvida, la
+ *    cookie queda sin `Secure` y viaja también por HTTP.
+ */
+function cookieSegura(): boolean {
+  const url = process.env["APP_URL"];
+  if (url) return url.startsWith("https://");
+  return process.env["NODE_ENV"] === "production";
 }
 
 /** El payload de la sesión, o null. No tira: sirve para rutas que aceptan las dos cosas. */
