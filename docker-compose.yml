@@ -129,11 +129,26 @@ services:
       # del VPS. Sin esto el endpoint responde 401 a todo.
       REMINDERS_SECRET: ${REMINDERS_SECRET:?falta REMINDERS_SECRET en .env}
 
-    # Publicado sólo en loopback: en el VPS ya hay un reverse proxy para los
-    # otros dos sitios, así que este contenedor no debe quedar expuesto directo
-    # a internet. El proxy le pega a 127.0.0.1:3000.
+    # Por defecto, sólo loopback: en el VPS ya hay un reverse proxy para los
+    # otros dos sitios, así que este contenedor no debe quedar expuesto directo a
+    # internet. El proxy le pega a 127.0.0.1:3000.
+    #
+    # ── POR QUÉ LOS DOS SON VARIABLES ─────────────────────────────────────────
+    #
+    # El PUERTO, porque 3000 no siempre está libre. En la máquina de desarrollo lo
+    # tiene el frontend del ecommerce, y si ese proyecto también vive en el VPS,
+    # ahí choca igual. Un puerto fijo convierte eso en un "port is already
+    # allocated" en medio del primer deploy.
+    #
+    # La INTERFAZ, para poder probar por IP antes de que haya proxy y dominio:
+    # con APP_BIND=0.0.0.0 el sitio se abre desde afuera y se puede mirar sin
+    # tener nada más resuelto.
+    #
+    # ⚠️ APP_BIND=0.0.0.0 deja el sitio en internet SIN HTTPS: las contraseñas
+    #    viajan en claro. Sirve para probar; para que entren clientas hay que
+    #    volver a 127.0.0.1 y poner el proxy con certificado adelante.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
 
     # La app es sin estado: no escribe en disco. Lo que persiste vive en la base,
     # que es otro contenedor con su propio volumen.
