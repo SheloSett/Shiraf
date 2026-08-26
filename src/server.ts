@@ -20,12 +20,22 @@ type ServerEntry = {
  * `Ecommerce_mm`. El detalle —y los dos casos en los que no arranca— está en
  * `server/services/reminders.service.ts`.
  *
- * Va en el cuerpo del módulo y no adentro de `fetch`: se programa una vez, al
- * arrancar el servidor, y no una vez por pedido. El import es dinámico por lo
- * mismo que los routers de más abajo —para no arrastrar Prisma al arranque de
- * una petición que sólo quiere servir una página— y el `.catch` está para que
- * un problema al programarlo quede en el log en vez de tumbar el arranque: el
- * sitio tiene que levantar aunque los recordatorios no.
+ * Va en el cuerpo del módulo y no adentro de `fetch`: se programa UNA vez y no
+ * una por pedido.
+ *
+ * ⚠️ Ojo con "una vez": es la primera vez que se carga este módulo, y Nitro lo
+ * carga con el PRIMER PEDIDO, no al levantar el proceso. Verificado: recién
+ * arrancado el log no dice nada, y la línea "[recordatorios] Programados…"
+ * aparece al primer GET. En el contenedor da igual —el HEALTHCHECK del
+ * Dockerfile le pega a "/" cada 30 segundos, así que el reloj queda puesto al
+ * minuto de arrancar—, pero si algún día alguien va a buscar por qué no se
+ * programó, esto es lo primero que tiene que saber.
+ *
+ * El import es dinámico por lo mismo que los routers de más abajo —para no
+ * arrastrar Prisma al arranque de una petición que sólo quiere servir una
+ * página— y el `.catch` está para que un problema al programarlo quede en el log
+ * en vez de tumbar el arranque: el sitio tiene que levantar aunque los
+ * recordatorios no.
  */
 void import("./server/services/reminders.service")
   .then((m) => m.iniciarRecordatorios())

@@ -1,17 +1,21 @@
 # Qué cambió y qué falta probar
 
-Rama: **`trabajo/panel-turnos-y-reprogramar`** · commit `b502b9a`
+Rama: **`trabajo/panel-turnos-y-reprogramar`** · actualizado el **26/8/2026**
 
-Escrito el 25/8/2026. Todo lo de acá está commiteado y subido; **nada se mergeó
-a `main`**.
+Nada se mergeó a `main`.
+
+Este archivo se reescribe cada vez que se cierra una tanda de trabajo. Lo de la
+tanda anterior (25/8: colores del calendario, estado a la vista, reprogramar)
+sigue abajo, en **«Lo que venía de antes»**, porque hay cosas de ahí que todavía
+no se probaron.
 
 ---
 
-## Antes de empezar en casa
+## Antes de empezar en otra máquina
 
-Esta máquina no tiene Docker, así que la base local es un PostgreSQL propio que
-vive en `C:\Users\2\.shiraf-pg` y escucha en el **5433**. Si tu otra máquina sí
-tiene Docker, usá el compose de siempre y salteate esto.
+Esta máquina no tiene Docker: la base local es un PostgreSQL propio en
+`C:\Users\2\.shiraf-pg`, escuchando en el **5433**. Si la otra sí tiene Docker,
+usá el compose de siempre y salteate esto.
 
 ```bash
 npm install
@@ -19,158 +23,298 @@ npm run db:local        # arranca el Postgres (NO es un servicio: no arranca sol
 npm run dev             # http://localhost:8080
 ```
 
-Para parar la base: `npm run db:local:stop`. Para ver si está: `db:local:status`.
+> ### ⚠️ La base se cae si la consola recibe una señal
+>
+> Pasó de nuevo el 26/8: matar el dev server con `Stop-Process -Force` se llevó
+> puesto el Postgres, porque en Windows queda en el mismo grupo de procesos. El
+> síntoma engaña: **el sitio sigue respondiendo 200 y lo único que falla es el
+> login, con un 500.** Si ves eso, lo primero es `npm run db:local:status`.
+>
+> Está explicado arriba de `scripts/pg-local.mjs`, con la salida definitiva
+> (registrarlo como servicio de Windows, que pide permisos de administrador).
 
-**El `.env` no viaja por git.** El de esta máquina tiene `DATABASE_URL` apuntando
-al 5433, `JWT_SECRET`, `APP_URL=http://localhost:8080` y las claves de Cloudinary.
-En la otra máquina hay que armarlo desde `.env.example`.
+**El `.env` no viaja por git.** Además de `DATABASE_URL`, `JWT_SECRET`, `APP_URL`
+y Cloudinary, ahora hacen falta **las dos del correo** (ver abajo). Se arma desde
+`.env.example`.
 
-> **Ojo con la zona horaria si armás otro Postgres a mano.** El cluster de acá
-> heredó la de Windows (Argentina) y eso hacía que los horarios se guardaran 3
-> horas corridos. Se arregla con `ALTER SYSTEM SET timezone TO 'UTC';` +
-> `SELECT pg_reload_conf();`. El de Docker ya viene en UTC.
-
-Entrar al panel: **`shelosetton@gmail.com` / `shiraf-local`**. Esa contraseña la
-puse yo sólo en la base local; el seed deja las cuentas sin contraseña usable.
+Entrar al panel: **`shelosetton@gmail.com` / `shiraf-local`**. Esa contraseña
+está sólo en la base local; el seed deja las cuentas sin contraseña usable.
 
 ---
 
-## ✅ Probado y andando
+## Lo que se hizo el 26/8
 
-| Qué | Cómo se probó |
+### 1. Los mails salen de verdad — se fue Resend
+
+Era el bloqueo más viejo del proyecto y no era técnico: Resend exige un dominio
+propio verificado (SPF y DKIM), y sigue sin saberse dónde está registrado
+`shiraf.com.ar`.
+
+**Ahora se manda con `nodemailer` por el SMTP de Gmail**, igual que
+`Ecommerce_mm` (`backend/src/services/email.service.js`). Sin cuenta de ningún
+servicio ni dominio que verificar: alcanza con la casilla que el centro ya usa.
+
+```
+SMTP_USER="shirafbeautyandspa@gmail.com"
+SMTP_PASS="contraseña de aplicación de Google, 16 letras, sin espacios"
+MAIL_REPLY_TO="shirafbeautyandspa@gmail.com"
+```
+
+La contraseña de aplicación se saca en
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) y
+pide verificación en dos pasos activada.
+
+> **`MAIL_FROM` quedó SIN definir a propósito.** Gmail sólo deja mandar como la
+> casilla autenticada o como un alias confirmado en «Enviar como»; poner
+> `turnos@shiraf.com.ar` sin tener ese dominio andando hace que los mails dejen
+> de salir sin que el código se entere. Sin la variable, el remitente sale de
+> `SMTP_USER`. El día que el dominio tenga correo propio, se cambian las tres
+> `SMTP_*` y se define `MAIL_FROM`: **el código no se toca**.
+
+También se unificó el transporte. Antes había DOS clientes de Resend escritos por
+separado —uno en `email.service.ts` para los mails de cuenta y otro adentro de
+`notifications.server.ts` para los avisos de turno—. Ahora hay una sola función
+`enviarMail()` y los dos la usan.
+
+### 2. El cron de recordatorios vive adentro de la app
+
+`POST /api/recordatorios` y `REMINDERS_SECRET` **ya no existen**. Ese endpoint
+con secreto existía porque con Supabase el disparo venía de afuera (`pg_cron`
+primero, el crontab del VPS después) y quien llama de afuera no tiene sesión.
+
+Con contenedor propio eso sobra: el reloj corre adentro del proceso con
+`node-cron`, como en el ecommerce. Vive en
+`src/server/services/reminders.service.ts`.
+
+| Reloj | Cuándo | Qué hace |
+|---|---|---|
+| `recordatorios` | `0 10,13 * * *` AR | El aviso del día previo a la clienta |
+| `vencidos` | `0 10 * * *` AR | Resumen al centro de los turnos sin cerrar |
+
+Dos pasadas para el recordatorio y una sola para el resumen, y no es un descuido:
+el recordatorio es idempotente (`reminded_at` deja afuera a quien ya lo recibió),
+así que la de las 13 cubre el día en que el contenedor estaba reiniciándose a las
+10 sin mandarle nada a nadie dos veces. El resumen no es idempotente: dos pasadas
+serían dos mails iguales.
+
+**No arranca en dos casos, y los dos son a propósito:** fuera de
+`NODE_ENV=production` (para que un `npm run dev` olvidado no le mande
+recordatorios de verdad a las clientas reales de la base local) y en Cloudflare
+Workers (no hay proceso vivo entre pedidos).
+
+> ⚠️ **El reloj se programa con el PRIMER PEDIDO, no al arrancar el proceso.**
+> Nitro carga el módulo del SSR de forma perezosa. En el contenedor da igual —el
+> `HEALTHCHECK` le pega a `/` cada 30 segundos— pero si algún día los
+> recordatorios no salen, esto es lo primero que hay que mirar. La línea que lo
+> confirma en el log es `[recordatorios] Programados: …`.
+
+### 3. Avisos por mail en cada estado del turno
+
+| Cuándo | A quién | Evento |
+|---|---|---|
+| La clienta reserva | A ella | `requested` (nuevo) |
+| La clienta reserva | Al centro | `new-request` |
+| El centro confirma | A la clienta | `confirmed` |
+| El centro cancela | A la clienta, **con el motivo** | `cancelled` |
+| La clienta cancela | Al centro | `client-cancelled` (nuevo) |
+| Día previo | A la clienta | `reminder` |
+| Turnos sin cerrar | Al centro, 1 por día | resumen de vencidos (nuevo) |
+
+**«Realizado» no manda mail**, decidido con la dueña el 26/8: es una anotación
+interna posterior a la visita; avisarle es contarle algo que ya vivió.
+
+**«Vencido» no es un estado de la base** —es pendiente o confirmado con la hora
+pasada— así que no puede disparar un mail por sí solo. Se resolvió con el resumen
+diario al centro, que empuja a **reprogramar** (que es lo único que recupera ese
+turno) o a cerrarlo. Mira los últimos **7 días**: más atrás sería una lista que
+nadie termina de vaciar y el mail se archivaría sin leer.
+
+⚠️ Los permisos de `notifyAppointment` van **por evento**, y hay que mirarlos dos
+veces antes de tocarlos: los tres que dispara la clienta sobre su propio turno
+(`new-request`, `requested`, `client-cancelled`) sólo exigen que el turno sea
+suyo; todo el resto exige el permiso `appointments`. Mover un evento de una lista
+a la otra deja que cualquiera con cuenta le mande a otra un «tu turno fue
+cancelado» firmado por Shiraf.
+
+### 4. El motivo de la cancelación
+
+Columna nueva: `appointments.cancel_reason` (aplicada en la base local el 26/8
+con `npm run db:sync`; `post-push` verificó 3/3 triggers, 2/2 CHECK, 4/4 índices
+parciales).
+
+La casilla aparece al cancelar desde las tres pantallas: la lista de turnos, la
+ficha y «Mi cuenta». Es **opcional** en las dos puntas — obligar a escribir algo
+para poder cancelar es la forma segura de que todo el mundo escriba "x".
+
+> 🔴 **No es una nota interna.** Cuando cancela el centro, ese texto **se le
+> manda a la clienta en el mail**, y por eso el cartel lo dice con todas las
+> letras («se lo contamos a la clienta»). Sin ese aviso, alguien escribe «clienta
+> pesada, no atender más» creyendo que queda puertas adentro. Para eso está
+> `admin_notes`.
+
+El componente es uno solo: `src/components/cancelar-turno-dialog.tsx`, con los
+textos dados vuelta según quién cancela.
+
+### 5. Tolerancia de espera: 10 minutos
+
+`TOLERANCIA_MINUTOS` en `src/lib/shiraf.ts`, con las otras perillas del negocio.
+Se dice en la pantalla de reserva **antes** de confirmar y en los mails del
+pedido y de la confirmación.
+
+⚠️ **Comparte el número con `SLOT_BUFFER_MINUTES` y no tiene nada que ver con
+él**: aquél es el rato de limpieza entre clientas. Son dos constantes a propósito
+— el día que el centro decida esperar 15 minutos, cambiar un solo número no puede
+ensanchar también los huecos de la agenda.
+
+### 6. Eliminar turnos y clientas
+
+- **`DELETE /api/turnos/:id`** (permiso `appointments`). Un turno que todavía se
+  va a atender **no se borra: se cancela primero**, porque cancelar es lo único
+  que le avisa a la clienta. Ya cancelado, vencido o realizado, se borra.
+- **`DELETE /api/clientas/:id`** (**sólo la dueña**, `exigirAdmin`). Se lleva la
+  cuenta, la ficha, las notas clínicas y **los turnos** (todo por CASCADE). Se
+  frena si tiene turnos por venir sin cancelar. La pantalla cuenta cuántos turnos
+  se van antes de confirmar.
+
+El candado de borrar una clienta va **adentro del controller y no en la ruta**: el
+middleware de las otras rutas de `/clientas` deja pasar a quien tiene
+`clients_contact`, que es leer, no borrar historiales.
+
+---
+
+## ✅ Verificado el 26/8
+
+| Qué | Cómo |
 |---|---|
-| Colores del calendario (realizado ≠ confirmado, aro dorado en hoy) | Captura del navegador con el código real + contraste WCAG medido |
-| Turnos abre en «Todos» | Navegador: pestaña activa = «Todos», 4 filas |
-| Columna «Estado» | Navegador: Vencido / Cancelado / Realizado en sus filas |
-| «Vencido» se calcula bien | Contra los datos reales y los 5 casos, incluido `now = null` |
-| Ficha de la clienta abre por la derecha | Medido: `x=988` en viewport de 1500 |
-| Nombre de la profesional congelado | Asigné por la API → borré la profesional → el nombre sobrevivió |
-| El cartel rojo ignora lo que ya pasó | `sinProfesional` pasó de 2 a 0 |
-| Botones de la tabla según el estado de la fila | Navegador, los 4 estados |
-| Botones de estado siempre en la ficha | Navegador, los 4 estados |
-| Reprogramar desde el panel | Moví un turno a septiembre, verifiqué, lo devolví a su horario |
-| Rechazos de reprogramar (panel) | Cerrado → 422, fecha inválida → 400, sin horario → 400, inexistente → 404 |
-| Regla de 6 horas (la función) | 9 casos, con el corte exacto en las 6 h |
-| Candados de reprogramar (clienta) | Turno ajeno → 404, sin sesión → 401 |
-
----
+| Typecheck, ESLint y los DOS builds (`node-server` y Cloudflare) | Limpios |
+| Las rutas nuevas existen | `DELETE` sin sesión → 401 (antes daba 405) |
+| El SMTP de Gmail autentica | `transporter.verify()` — conecta y hace login sin mandar nada |
+| **El mail de recuperar contraseña LLEGA** | Probado por la dueña de punta a punta |
+| Los dos relojes se programan | Log del server construido, con `NODE_ENV=production` |
+| La zona horaria del cron | Las próximas corridas caen 10:00 y 13:00 AR = 13:00 y 16:00 UTC |
+| El `db push` no borra nada | `prisma migrate diff` antes de correrlo: una sola línea, `ADD COLUMN` |
 
 ## ⚠️ SIN PROBAR — esto es lo que hay que mirar
 
-### 1. Reprogramar desde «Mi cuenta» (lo más importante)
+**Nada de lo de abajo se ejercitó contra la base ni mandó un mail de verdad.** La
+base no se toca sin permiso, así que todo lo que pedía escribir o mandar quedó
+para probar con la app abierta.
 
-Es la funcionalidad más grande y **no se probó ni una vez de punta a punta**. No
-había con qué: tu cuenta tiene rol `client` pero cero turnos, y EL RAYO tiene un
-turno pero sin contraseña usable. Crear cualquiera de las dos cosas es tocar
-datos, así que lo dejé.
+### 1. Los mails nuevos, uno por uno
 
-**Cómo probarlo:**
+Ninguno se envió. Con el SMTP ya andando, alcanza con hacer cada acción y mirar
+la casilla:
 
-1. Entrá a `/reservar` con tu cuenta y sacate un turno **para dentro de varios
-   días**, con Sofia Reyes o Valentina Ríos (las dos tienen tratamientos y
-   horarios cargados).
-2. Andá a **Mi cuenta** → el turno tiene **Cambiar** y **Cancelar**.
-3. Apretá **Cambiar**. Comprobá:
-   - [ ] Arranca con la profesional que ya tenía seleccionada.
-   - [ ] El desplegable muestra sólo profesionales que hacen ESE tratamiento.
-   - [ ] Al elegir un día, aparecen horarios reales y no cualquiera.
-   - [ ] Un día que la profesional no atiende dice «Ese día no le quedan
-         horarios» y nombra los días que sí atiende.
-   - [ ] Cambiar de profesional recalcula los horarios.
-   - [ ] Al confirmar, el turno se mueve y el panel lo muestra en la fecha nueva.
-4. **El caso que más me preocupa:** elegí un horario que ya esté ocupado con esa
-   profesional (sacá dos turnos pisados a propósito desde el panel). Tiene que
-   salir *«Ese horario ya fue tomado con esa profesional»* y **no** un error 500.
+- [ ] Reservar desde `/reservar` → le llega **a la clienta** («recibimos tu
+      pedido») y **al centro** («nuevo turno pendiente»). Son dos mails.
+- [ ] Confirmar desde el panel → le llega a la clienta.
+- [ ] Cancelar desde el panel **con motivo escrito** → el mail tiene que traer el
+      renglón `Motivo: …`.
+- [ ] Cancelar desde «Mi cuenta» → le llega **al centro**, no a la clienta.
+- [ ] Que la tolerancia de 10 minutos aparezca en los dos mails y en la pantalla
+      de reserva.
 
-### 2. La regla de 6 horas contra el servidor
+### 2. El resumen de vencidos
 
-Verifiqué la función que decide, no el endpoint.
+La consulta nunca corrió. Hay turnos vencidos en la base local, así que sirve
+para probarlo. Como el reloj es a las 10, para verlo antes conviene llamar a
+`avisarDeLosVencidos()` a mano o mover el cron un minuto.
 
-1. Con el turno del paso anterior, andá al panel → **Ver turno** → **Reprogramar**
-   y movelo a **dentro de 2 horas** (desde el panel no hay límite, por eso sirve
-   para armar la prueba).
-2. Volvé a **Mi cuenta**: no tiene que haber ni «Cambiar» ni «Cancelar», sino
-   *«Para cambiarlo o cancelarlo, escribinos»*.
-3. Que el candado real sea el servidor y no la pantalla, desde la consola del
-   navegador estando logueada:
+- [ ] Que liste sólo los de los últimos 7 días.
+- [ ] Que los enlaces a `/admin/turnos/<id>` abran la ficha correcta.
+- [ ] Con cero vencidos **no manda nada** (a propósito: un mail diario que dice
+      "no hay nada" se archiva sin leer, y con él el día que sí había algo).
+
+### 3. Borrar un turno y borrar una clienta
+
+**Ojo: esto borra de la base de verdad.** Ninguno se ejecutó.
+
+- [ ] Borrar un turno cancelado o vencido → desaparece de la lista, del
+      calendario y del historial de la clienta.
+- [ ] Intentar borrar un turno pendiente futuro → **409** con el texto que dice
+      que se cancele primero.
+- [ ] Borrar una clienta con turnos por venir → **409** diciendo cuántos son.
+- [ ] Borrar una clienta sin turnos por venir → se va con todo su historial.
+- [ ] Que el botón de la papelera NO le aparezca a una empleada (sólo la dueña).
+
+### 4. La casilla del motivo, en pantalla
+
+- [ ] Que el cartel avise «se lo contamos a la clienta» del lado del panel.
+- [ ] Que cancelar dos turnos seguidos no le pegue al segundo el motivo del
+      primero (el campo se vacía al abrir; está escrito, no probado).
+- [ ] Que el motivo se vea después en la ficha del turno.
+
+---
+
+## Lo que venía de antes (25/8) y sigue sin probarse
+
+### Reprogramar desde «Mi cuenta» — lo más importante
+
+**Nunca se probó de punta a punta.** Sacate un turno desde `/reservar` para
+dentro de varios días, con Sofia Reyes o Valentina Ríos, y desde «Mi cuenta»:
+
+- [ ] Arranca con la profesional que ya tenía.
+- [ ] El desplegable muestra sólo profesionales que hacen ESE tratamiento.
+- [ ] Un día que no atiende dice «Ese día no le quedan horarios» y nombra los que sí.
+- [ ] Cambiar de profesional recalcula los horarios.
+- [ ] **El caso que más preocupa:** elegir un horario ya ocupado con esa
+      profesional tiene que dar *«Ese horario ya fue tomado con esa
+      profesional»* y **no** un 500.
+
+### La regla de 6 horas contra el servidor
+
+Se verificó la función, no el endpoint. Desde la consola del navegador, logueada:
 
 ```js
 fetch("/api/mi-cuenta/turnos/PONE_EL_ID/cancelar", { method: "PUT" })
   .then(r => r.json()).then(console.log)
 ```
 
-Tiene que dar **422** con *«Este turno ya está a menos de 6 horas…»*.
+Con un turno a menos de 6 horas tiene que dar **422**.
 
-### 3. El botón «Confirmar» de la ficha
+### El aviso de turno reprogramado
 
-No hay ningún turno pendiente en la base, así que ese camino no se ejercitó.
-Sale solo cuando sacás un turno desde `/reservar`, que entra como pendiente.
-
-### 4. Los avisos por mail
-
-**No sale ningún mail**: no hay cuenta de Resend y `RESEND_API_KEY` no está en el
-`.env`. El código lo detecta y lo dice por consola, así que se puede trabajar,
-pero el aviso nuevo de turno reprogramado (`rescheduled`) **nunca se envió de
-verdad**. Cuando haya cuenta, revisar cómo se ve ese mail.
-
-### 5. Todo lo de la otra sesión
-
-Está en el mismo commit porque estaba en el árbol de trabajo, pero **yo no lo
-escribí ni lo probé**:
-
-- Recordatorios con `node-cron`: `src/lib/reminders.server.ts` se mudó a
-  `src/server/services/reminders.service.ts`, más cambios en `src/server.ts`,
-  `docker-compose.yml`, `.env.example` y documentación.
-- **Eliminar un turno**: `src/hooks/useBorrarTurno.ts` y su bloque en la ficha.
-  Ojo que esto SÍ borra de la base.
+El evento `rescheduled` existe y **nunca se mandó**. Ojo: no está en el `z.enum`
+de `notifications.functions.ts`, así que hoy no se puede disparar desde el
+navegador. Si reprogramar tiene que avisar, hay que agregarlo ahí y decidir de
+qué lado del permiso cae.
 
 ---
 
-## Para cuando esto vaya al VPS
+## Decisiones tomadas que se pueden discutir
 
-**Correr `npm run db:sync` antes de la próxima baja del equipo.** Ese comando
-aplica `reglas.sql`, que le congela el nombre de la profesional a todos los
-turnos que hoy la tienen asignada. Después de eso, borrar a alguien del equipo ya
-no se lleva puesto el historial.
-
-Sólo escribe una columna nueva y vacía (`professional_name`) donde está en NULL:
-no borra ni cambia ningún dato existente. Aun así, avisá antes.
-
-**Lo que ya no se puede recuperar:** las profesionales que se borraron ANTES de
-este cambio dejaron el campo en NULL y su nombre no está en ningún lado. Esos
-turnos van a decir «Sin registrar».
-
-**`prisma db push` no anda solo en local.** `prisma.config.ts` lee
-`process.env.DATABASE_URL` y el CLI de Prisma 7 no carga el `.env`. En el VPS
-funciona porque la variable la pone compose; en tu máquina hay que exportarla
-antes.
-
----
-
-## Decisiones que tomé y podés querer cambiar
-
-- **«Cancelar» no sale en los turnos vencidos** (sólo pendiente y confirmado).
-  Lo interpreté de tu mensaje, donde nombraste «Vencido» como estado aparte. Si
-  querés que un vencido también se cancele de un clic desde la tabla, es una
-  palabra.
-- **El aviso rojo «Ya no atiende» sobre un turno realizado queda en 3.57:1**, por
-  debajo del mínimo AA. Es a propósito: bajar el fondo hasta que pase pediría
-  volver al color de antes, y en un turno ya realizado ese aviso no pide hacer
-  nada.
-- **Reprogramar no cambia el estado.** Un pendiente sigue pendiente y un
-  confirmado sigue confirmado, también cuando lo mueve la clienta. Se puede
-  discutir que si ella lo mueve, el centro debería volver a confirmarlo.
-- **Reprogramar desde «Mi cuenta» no le avisa al centro.** Seguí lo que ya hacía
-  cancelar, que tampoco avisa.
-- **El horario NUEVO no lleva el corte de 6 horas**, sólo el viejo. Si el sitio
-  deja reservar para dentro de una hora, mover un turno a dentro de una hora no
-  puede estar peor visto.
+- **Borrar una clienta se lleva sus turnos.** Es lo que ya decía el esquema
+  (`appointments.client` es `onDelete: Cascade`) y no se cambió. La alternativa
+  sería convertirlos en turnos de invitada para conservar el historial de
+  facturación. Se eligió lo predecible sobre lo astuto, y la pantalla cuenta
+  cuántos se van antes de confirmar.
+- **El resumen de vencidos mira 7 días.** Más atrás nagea con una lista que no se
+  vacía; menos, se pierden turnos.
+- **«Realizado» no manda mail.** Confirmado por la dueña.
+- **Reprogramar no cambia el estado**, tampoco cuando lo mueve la clienta.
+- **Reprogramar desde «Mi cuenta» no le avisa al centro** — pero cancelar **sí**,
+  desde el 26/8. Quedaron distintos: vale la pena emparejarlos.
+- **«Cancelar» no sale en los turnos vencidos** desde la tabla (sólo pendiente y
+  confirmado). Desde la ficha se puede.
 
 ---
 
 ## Estado de la base local
 
-La dejé con 2 profesionales (Sofia Reyes, Valentina Ríos) y 4 usuarios. **Las dos
-cuentas de staff —`camila@gmail.com` y `micashiraf@gmail.com`— las restauré yo al
-correr el seed sin preguntar; vos las habías borrado.** Me dijiste que las
-dejara. Los 4 turnos están en sus horarios originales.
+2 profesionales (Sofia Reyes, Valentina Ríos) y 4 usuarios. Los turnos están en
+sus horarios originales. La columna `cancel_reason` está aplicada y vacía.
+
+**El único cambio de esquema pendiente de llevar al VPS es esa columna.** Se
+aplica con `npm run db:sync`, que además vuelve a poner triggers, CHECK e
+índices parciales.
+
+⚠️ **`prisma db push` no anda solo en local**: `prisma.config.ts` lee
+`process.env.DATABASE_URL` y el CLI de Prisma 7 no carga el `.env`. Hay que
+exportarla antes:
+
+```bash
+export DATABASE_URL="$(grep '^DATABASE_URL=' .env | sed -E 's/^DATABASE_URL=//; s/^"//; s/"$//')"
+npm run db:sync
+```
+
+En el VPS no hace falta: la variable la pone compose.

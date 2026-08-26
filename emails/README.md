@@ -104,24 +104,57 @@ El botón no aparece cuando el turno no tiene teléfono cargado. Los números se
 normalizan a `549 + área + número` en `toWhatsappNumber()`; el 9 es el que más se
 olvida y sin él el enlace abre un chat con un número que no existe.
 
-## Mail: configurar Resend
+## Mail: configurar el SMTP
 
-1. Crear la cuenta en [resend.com](https://resend.com) y agregar el dominio
-   `shiraf.com.ar`.
-2. Cargar los registros DNS que Resend indica (SPF y DKIM) donde esté comprado
-   el dominio. Es lo que hace que Gmail confíe.
-3. Crear una API key y ponerla en `RESEND_API_KEY`.
-4. Completar `MAIL_FROM` con una dirección de ese dominio, por ejemplo
-   `Shiraf <turnos@shiraf.com.ar>`.
+Se manda con **nodemailer por el SMTP de Gmail**, igual que `Ecommerce_mm`. No
+hay cuenta de ningún servicio que crear ni dominio que verificar: alcanza con la
+casilla que el centro ya usa. Son dos variables:
 
-**El Gmail del centro no sirve como remitente.** Google no deja que otro
-proveedor firme por sus dominios, así que Resend rechaza el envío. Va de
-`MAIL_REPLY_TO`, para que la respuesta de la clienta caiga en la casilla que
-alguien mira de verdad.
+1. Activar la **verificación en dos pasos** en la cuenta de Google del centro
+   (`shirafbeautyandspa@gmail.com`). Sin eso, el paso siguiente no existe.
+2. Generar una **contraseña de aplicación** en
+   [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+   Son 16 letras. Se pegan en `SMTP_PASS` **sin espacios**.
+3. `SMTP_USER` es la dirección de esa misma casilla.
 
-Sin `RESEND_API_KEY` o sin `MAIL_FROM` no se rompe nada: el turno cambia de
-estado igual y el panel avisa "Por mail no salió: …". Es para poder trabajar sin
-el correo resuelto, no para dejarlo así.
+```
+SMTP_USER="shirafbeautyandspa@gmail.com"
+SMTP_PASS="las16letras"
+```
+
+`SMTP_HOST` y `SMTP_PORT` tienen default (`smtp.gmail.com` y `587`) y no hace
+falta ponerlas.
+
+### El remitente, con Gmail, no es libre
+
+Su SMTP sólo deja mandar como la casilla autenticada o como un alias que esa
+casilla tenga confirmado en «Enviar como»; cualquier otra dirección la reescribe
+o la rechaza. Por eso **`MAIL_FROM` se deja sin definir** mientras se mande por
+Gmail: el remitente sale de `SMTP_USER`, que es lo único que Google va a
+respetar. Ponerle `turnos@shiraf.com.ar` sin tener ese dominio andando es la
+forma de que los mails dejen de salir sin que el código se entere.
+
+El día que `shiraf.com.ar` tenga su propio servidor de correo, esto se resuelve
+cambiando las tres variables de `SMTP_*` y definiendo `MAIL_FROM`. El código no
+se toca.
+
+### Límites y qué esperar
+
+Gmail permite unos 500 destinatarios por día en una cuenta común. Para un centro
+de estética —los avisos de turno de una agenda— sobra de lejos.
+
+Sin `SMTP_USER` o sin `SMTP_PASS` no se rompe nada: el turno cambia de estado
+igual y el panel avisa "Por mail no salió: …". Es para poder trabajar sin el
+correo resuelto, no para dejarlo así.
+
+### Antes esto era Resend
+
+Pedía un dominio propio verificado, con SPF y DKIM cargados en el registrador, y
+ese trámite tuvo los mails frenados semanas: falta saber dónde está registrado
+`shiraf.com.ar`. Con backend propio no hacía falta pagar ese peaje — el
+ecommerce nunca lo pagó. El transporte quedó en un solo lugar,
+[`src/server/services/email.service.ts`](../src/server/services/email.service.ts),
+y los avisos de turno y los de cuenta salen los dos por ahí.
 
 Las clientas sin cuenta pueden no tener mail (`guest_email` es opcional). Para
 esas, WhatsApp es el único canal, y el panel lo dice cuando pasa.

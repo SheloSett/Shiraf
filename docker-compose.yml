@@ -100,29 +100,29 @@ services:
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?falta CLOUDINARY_API_KEY en .env}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?falta CLOUDINARY_API_SECRET en .env}
 
-      # Mails: avisos de turno y recordatorios.
+      # Mails: avisos de turno, recordatorios y los de cuenta (confirmar el
+      # mail, recuperar la contraseña). Salen por SMTP con nodemailer, igual que
+      # en Ecommerce_mm: la casilla de Gmail del centro con una contraseña de
+      # aplicación. No hay servicio de terceros ni dominio que verificar.
       #
-      # Las tres van con `:-` y NO con `:?`, o sea que su ausencia no frena el
-      # arranque. Es a propósito y está para respetar una decisión que ya vive
-      # en el código: notifications.functions.ts trata las dos primeras como
-      # opcionales, con este comentario textual —
+      # Todas van con `:-` y NO con `:?`, o sea que su ausencia no frena el
+      # arranque. Es a propósito y respeta una decisión que ya vive en el código:
+      # email.service.ts devuelve "todavía no está configurado" en vez de tirar —
       #
-      #   "Sin RESEND_API_KEY o sin MAIL_FROM no se rompe nada: los cambios de
-      #    estado siguen funcionando y el panel avisa que el mail no salió. Es
-      #    deliberado, para que se pueda trabajar sin tener el correo resuelto."
+      #   "Se tiene que poder trabajar sin el correo resuelto. Lo que NO se hace
+      #    es tragarse el fracaso en silencio."
       #
-      # Con `:?` el contenedor se negaba a levantar y esa tolerancia dejaba de
-      # existir. Peor: hoy están comentadas en el .env porque la cuenta de
-      # Resend todavía no se creó, así que el primer `docker compose up` moría
-      # acá, sin relación aparente con lo que se estaba probando.
+      # Con `:?` el contenedor se negaba a levantar, y eso ya pasó: el primer
+      # `docker compose up` moría acá porque el correo todavía no estaba
+      # resuelto, sin relación aparente con lo que se estaba probando.
       #
       # No es que no haya que configurarlas: hay que hacerlo antes de abrir el
       # centro. Pero eso lo avisa el panel cuando un turno se confirma y el mail
       # no sale, que es donde se entiende. No un compose que no arranca.
-      # Decian:
-      #   RESEND_API_KEY: ${RESEND_API_KEY:?falta RESEND_API_KEY en .env}
-      #   MAIL_FROM: ${MAIL_FROM:?falta MAIL_FROM en .env}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
 

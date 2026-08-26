@@ -324,6 +324,25 @@ const MINUTE = 60000;
 export const SLOT_BUFFER_MINUTES = 10;
 
 /**
+ * Cuántos minutos espera el centro a una clienta que llega tarde.
+ *
+ * DEFINIDO POR EL CENTRO (26/8/2026): 10 minutos.
+ *
+ * ⚠️ **Comparte el número con `SLOT_BUFFER_MINUTES` y no tiene nada que ver con
+ * él.** Aquél es el rato de limpieza entre una clienta y la siguiente; éste es
+ * cuánto se le espera a la que llega tarde. Que hoy los dos valgan 10 es
+ * casualidad, y por eso son dos constantes y no una: el día que el centro
+ * decida esperar 15, cambiar un solo número no puede ensanchar también los
+ * huecos de la agenda.
+ *
+ * Se dice en dos lados y los dos importan: en la pantalla de reserva, ANTES de
+ * confirmar, y en el mail que le llega después. Que esté escrito de antemano es
+ * lo que permite sostenerlo sin discutir el día que alguien llega 20 minutos
+ * tarde.
+ */
+export const TOLERANCIA_MINUTOS = 10;
+
+/**
  * ¿El último turno del día puede terminar después del horario de salida?
  *
  * PENDIENTE, y es LA pregunta para el centro. Con una profesional de 12 a 16,

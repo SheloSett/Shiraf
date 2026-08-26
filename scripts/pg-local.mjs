@@ -30,8 +30,33 @@
  *     npm run db:sync && npm run db:seed
  *
  * La contraseña tiene que ser la misma que la del DATABASE_URL del .env.
+ *
+ * ── ⚠️ EN WINDOWS, LA BASE SE CAE SI LA CONSOLA RECIBE UNA SEÑAL ──────────
+ *
+ * Esto arranca el servidor con `detached`, que alcanza para que sobreviva a que
+ * ESTE script termine, pero NO para sacarlo de la consola: en Windows el
+ * proceso sigue en el mismo grupo, así que un Ctrl+C —o cerrar la terminal, o
+ * cualquier herramienta que mande una señal al grupo— se lo lleva puesto. En el
+ * registro aparece como `0xC000013A`, o directamente como un corte sin mensaje.
+ *
+ * Pasó tres veces durante el desarrollo y el síntoma NO apunta para nada acá:
+ * la app sigue respondiendo 200 en todas las páginas y lo único que falla es el
+ * login, con un 500. Si ves eso, lo primero que hay que mirar es
+ * `npm run db:local:status`.
+ *
+ * Se intentó desprenderlo de verdad con `Start-Process` de PowerShell —que a
+ * mano funciona— pero lanzado desde Node no hace nada y no informa ningún
+ * error, así que no sirve como solución.
+ *
+ * La salida definitiva es registrarlo como servicio de Windows, que necesita
+ * permisos de administrador:
+ *
+ *     pg_ctl register -N shiraf-pg -D <carpeta> -o "-p 5433"
+ *     net start shiraf-pg
+ *
+ * Con eso arranca solo al prender la máquina y ninguna consola lo puede matar.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -78,20 +103,66 @@ if (!existsSync(DATA)) {
 }
 
 const accion = process.argv[2] ?? "start";
-const args =
-  accion === "start"
-    ? ["-D", DATA, "-o", `-p ${PUERTO}`, "-l", LOG, "-w", "start"]
-    : accion === "stop"
-      ? ["-D", DATA, "-m", "fast", "stop"]
-      : ["-D", DATA, "status"];
 
-// `stdio: inherit` y no capturar la salida: en Windows, si el proceso hijo
-// hereda una tubería, el servidor recién arrancado la deja abierta y pg_ctl no
-// vuelve nunca. Con las consolas heredadas tal cual, vuelve al terminar.
-const r = spawnSync(pgCtl, args, { stdio: "inherit" });
-
-if (accion === "start" && r.status === 0) {
-  console.log(`[pg-local] Postgres escuchando en localhost:${PUERTO} — datos en ${DATA}`);
-  console.log(`[pg-local] El registro del servidor va a ${LOG}`);
+/**
+ * Arrancar es distinto de parar y de preguntar, y por una sola razón: en Windows
+ * `pg_ctl start` NO devuelve el control.
+ *
+ * El servidor que deja andando hereda los descriptores de la consola y no los
+ * suelta, así que `pg_ctl` se queda esperando un final que no llega —con `-w` y
+ * sin `-w` igual—. La primera versión de este script usaba `spawnSync` para las
+ * tres acciones y colgaba el terminal para siempre: el servidor quedaba
+ * perfectamente arriba y la orden no terminaba nunca.
+ *
+ * Así que arrancar va DESPRENDIDO —`detached` y `stdio: "ignore"`, que cortan esa
+ * herencia— y después se pregunta con `pg_isready` hasta que conteste. Eso además
+ * da una respuesta más honesta: no dice «arrancó» porque el comando salió bien,
+ * sino porque la base contestó.
+ */
+if (accion === "start") {
+  /**
+   * En Windows NO alcanza con `detached`.
+   *
+   * Se probó y falla: el servidor queda en la misma CONSOLA que lo lanzó, así
+   * que cualquier Ctrl+C —o el cierre de la terminal, o que el proceso padre
+   * reciba una señal— se lo lleva puesto. En el registro aparece como
+   * `0xC000013A`, o directamente como un corte sin mensaje. Pasó tres veces
+   * durante el desarrollo: la base se caía sola y el síntoma era un 500 en el
+   * login, que no apunta para nada a esto.
+   *
+   * `Start-Process` de PowerShell sí lo desprende de verdad: arranca el proceso
+   * fuera de esta consola, así que las señales de acá no lo alcanzan.
+   *
+   * En Linux y macOS `detached: true` hace exactamente eso mismo y no hace falta
+   * PowerShell.
+   */
+  const hijo = spawn(pgCtl, ["-D", DATA, "-o", "-p " + PUERTO, "-l", LOG, "start"], {
+    detached: true,
+    stdio: "ignore",
+  });
+  hijo.unref();
+  const isReady = pgCtl.replace("pg_ctl", "pg_isready");
+  // 60 y no 30: si la base venía de un corte sucio, primero recupera —se midió
+  // en 25 segundos— y recién ahí acepta conexiones.
+  const hasta = Date.now() + 60_000;
+  for (;;) {
+    const r = spawnSync(isReady, ["-h", "localhost", "-p", PUERTO], { stdio: "ignore" });
+    if (r.status === 0) {
+      console.log(`[pg-local] Postgres escuchando en localhost:${PUERTO} — datos en ${DATA}`);
+      console.log(`[pg-local] El registro del servidor va a ${LOG}`);
+      process.exit(0);
+    }
+    if (Date.now() > hasta) {
+      console.error(`[pg-local] No contestó en 60 segundos. Mirá ${LOG}.`);
+      process.exit(1);
+    }
+    // Espera corta entre intentos. Son un par de vueltas: no vale traer una
+    // dependencia para dormir medio segundo.
+    spawnSync(process.execPath, ["-e", "setTimeout(()=>{},400)"], { stdio: "ignore" });
+  }
 }
+
+// Parar y preguntar sí terminan solos: no dejan ningún proceso atrás.
+const args = accion === "stop" ? ["-D", DATA, "-m", "fast", "stop"] : ["-D", DATA, "status"];
+const r = spawnSync(pgCtl, args, { stdio: "inherit" });
 process.exit(r.status ?? 1);

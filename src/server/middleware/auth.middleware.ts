@@ -162,16 +162,27 @@ export const authMiddleware: Handler = async (ctx: Ctx) => {
   return undefined;
 };
 
-/** Exige que sea la dueña. Es el `adminMiddleware` del ecommerce. */
-export const adminMiddleware: Handler = (ctx: Ctx) => {
-  if (ctx.user?.role !== "admin") {
-    return json({ error: "Acceso denegado: es una sección de la dueña." }, 403);
-  }
-  return undefined;
-};
+/*
+ * ── ACÁ VIVÍA `adminMiddleware`, Y SE BORRÓ A PROPÓSITO ────────────────────
+ *
+ * Era el equivalente del de Ecommerce_mm y decía:
+ *
+ *     if (ctx.user?.role !== "admin") return json({ error: ... }, 403);
+ *
+ * No lo usaba ninguna ruta —cero, en todo el proyecto—, pero el problema no era
+ * que sobrara: era que **autorizaba leyendo el rol del TOKEN**, y el token dura
+ * siete días. A quien le sacaran `admin` un lunes, ese middleware lo seguiría
+ * dejando pasar hasta el lunes siguiente. Es exactamente el motivo por el que
+ * `accesoDe` lee los permisos de la base en cada pedido y no del JWT.
+ *
+ * O sea que era código que PARECÍA un control de seguridad sin serlo, esperando
+ * a que alguien lo usara creyendo que sí. Lo que hay que usar es
+ * `exigeMiddleware`, acá abajo, o `exigirAdmin(await accesoDe(...))` de
+ * authz.service, que miran la base.
+ */
 
 /**
- * Exige un permiso concreto. Es el hermano fino de `adminMiddleware`.
+ * Exige un permiso concreto.
  *
  * Se usa como una función, no como un valor, porque el permiso cambia por ruta:
  *

@@ -246,7 +246,23 @@ export async function cancelarMiTurno(ctx: Ctx) {
     );
   }
 
-  await prisma.appointments.update({ where: { id }, data: { status: "cancelled" } });
+  /**
+   * Por qué cancela.
+   *
+   * Va para el otro lado que el del panel: esto NO se le manda a la clienta
+   * —lo acaba de escribir ella— sino que viaja en el aviso que recibe el centro
+   * y queda en la ficha del turno. Es la diferencia entre "canceló" y "canceló
+   * porque le salió el doble de lo que esperaba".
+   *
+   * Opcional, como del otro lado: pedirle una explicación obligatoria a alguien
+   * que quiere cancelar es la forma de que escriba cualquier cosa.
+   */
+  const motivo = typeof ctx.body["motivo"] === "string" ? ctx.body["motivo"].trim() : "";
+
+  await prisma.appointments.update({
+    where: { id },
+    data: { status: "cancelled", cancel_reason: motivo || null },
+  });
   return json({ ok: true });
 }
 

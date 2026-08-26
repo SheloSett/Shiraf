@@ -11,7 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiPost } from "@/lib/api";
 import type { RtaDisponibilidad, RtaProfesionalesConHorarios, RtaServicios } from "@/lib/api-tipos";
-import { buildSlots, formatMoney, formatTime, toDateKey } from "@/lib/shiraf";
+import { buildSlots, formatMoney, formatTime, toDateKey, TOLERANCIA_MINUTOS } from "@/lib/shiraf";
 import { isTeamAccount } from "@/lib/roles";
 import { notifyAppointment } from "@/lib/notifications.functions";
 
@@ -130,18 +130,32 @@ function BookingPage() {
         client_notes: notes || null,
       });
 
-      // Avisarle al centro que hay un turno esperando. El turno nace pendiente y
-      // no sirve de nada hasta que alguien lo confirma, así que si nadie mira el
-      // panel se queda ahí — es el aviso que evita que una clienta espere una
-      // respuesta que nunca sale.
+      // Dos avisos, uno para cada lado del mostrador:
       //
-      // El fallo se traga a propósito: el turno YA está reservado y es lo que le
-      // importa a la clienta. Hacer fallar la mutación por un mail la mandaría a
-      // reintentar una reserva que ya existe, y el segundo intento lo rebotaría
-      // el control de superposición contra su propio turno.
-      await notifyAppointment({
-        data: { appointmentId: created.id, event: "new-request" },
-      }).catch(() => undefined);
+      //   new-request · al CENTRO. El turno nace pendiente y no sirve de nada
+      //                 hasta que alguien lo confirma, así que si nadie mira el
+      //                 panel se queda ahí. Es el aviso que evita que una
+      //                 clienta espere una respuesta que nunca sale.
+      //
+      //   requested   · a la CLIENTA. Le queda por escrito qué pidió, cuándo, y
+      //                 que todavía falta la confirmación. Antes de esto,
+      //                 reservar terminaba en un toast que se iba en cinco
+      //                 segundos: no quedaba ningún rastro de la reserva salvo
+      //                 entrar de nuevo al sitio.
+      //
+      // Los dos en paralelo y los dos con el fallo tragado a propósito: el turno
+      // YA está reservado y es lo que le importa a la clienta. Hacer fallar la
+      // mutación por un mail la mandaría a reintentar una reserva que ya existe,
+      // y el segundo intento lo rebotaría el control de superposición contra su
+      // propio turno.
+      await Promise.all([
+        notifyAppointment({
+          data: { appointmentId: created.id, event: "new-request" },
+        }).catch(() => undefined),
+        notifyAppointment({
+          data: { appointmentId: created.id, event: "requested" },
+        }).catch(() => undefined),
+      ]);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });
@@ -336,6 +350,18 @@ function BookingPage() {
                 <p className="text-xs text-muted-foreground">
                   El pago se realiza en el centro. Tu turno queda pendiente hasta que lo
                   confirmemos.
+                </p>
+
+                {/* La tolerancia, dicha ANTES de reservar y no sólo en el mail.
+                    Es una regla que el centro va a tener que sostener con
+                    alguien que llega tarde, y sostenerla es mucho más fácil
+                    cuando estaba escrita en la pantalla donde la persona
+                    apretó el botón. El mismo texto le llega después por mail:
+                    el número sale de una sola constante para que no puedan
+                    decir cosas distintas. */}
+                <p className="rounded-sm border border-border bg-secondary/30 p-3 text-xs text-foreground">
+                  Te esperamos hasta {TOLERANCIA_MINUTOS} minutos. Pasado ese rato el turno se
+                  libera, porque atrás hay otra clienta esperando.
                 </p>
 
                 <Button

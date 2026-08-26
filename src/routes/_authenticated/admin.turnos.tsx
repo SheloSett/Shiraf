@@ -34,7 +34,7 @@ import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
 // import { api, apiPut } from "@/lib/api";  ← `apiPut` se fue con la mutación.
 import { api } from "@/lib/api";
-import type { RtaTurnos } from "@/lib/api-tipos";
+import type { RtaTurnos, TurnoDelPanel } from "@/lib/api-tipos";
 import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
 import { formatDateTime, formatMoney, STATUS_LABEL, toStatus } from "@/lib/shiraf";
 import {
@@ -52,6 +52,7 @@ import {
   useCambiarEstadoDeTurno,
 } from "@/hooks/useCambiarEstadoDeTurno";
 import { useBorrarTurno } from "@/hooks/useBorrarTurno";
+import { CancelarTurnoDialog } from "@/components/cancelar-turno-dialog";
 
 /**
  * Qué mira la pantalla, escrito en la URL.
@@ -244,6 +245,13 @@ function AdminAppointments() {
   const [borrando, setBorrando] = useState<{ id: string; quien: string; cuando: string } | null>(
     null,
   );
+  /**
+   * El turno que se está por cancelar, o null.
+   *
+   * Cancelar dejó de ser un clic: abre un cartel que pide el motivo, porque ese
+   * texto es el que la clienta va a leer en el mail. Ver el componente compartido.
+   */
+  const [cancelando, setCancelando] = useState<TurnoDelPanel | null>(null);
 
   // El mismo número que muestra el menú lateral: react-query comparte la
   // consulta, así que estar en esta pantalla no la pide dos veces.
@@ -368,6 +376,38 @@ function AdminAppointments() {
 
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
       <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
+
+      {/* Cancelar un turno, con el motivo que va a leer la clienta. El turno
+          se busca en la lista para poder mandarle a la mutación los datos del
+          aviso, que es lo que arma el WhatsApp del toast. */}
+      <CancelarTurnoDialog
+        turno={
+          cancelando
+            ? {
+                id: cancelando.id,
+                quien: cancelando.person.name,
+                cuando: formatDateTime(cancelando.starts_at),
+              }
+            : null
+        }
+        quien="centro"
+        pendiente={setStatus.isPending}
+        onOpenChange={(abierto) => !abierto && setCancelando(null)}
+        onConfirmar={(motivo) =>
+          cancelando &&
+          setStatus.mutate(
+            {
+              id: cancelando.id,
+              status: "cancelled",
+              notify: toNotifiable(cancelando),
+              motivo,
+            },
+            // Se cierra recién cuando el servidor aceptó. Si falla, el cartel
+            // queda abierto con el motivo escrito y el toast dice qué pasó.
+            { onSuccess: () => setCancelando(null) },
+          )
+        }
+      />
 
       {/* Borrar un turno.
 
@@ -689,17 +729,7 @@ function AdminAppointments() {
                       })()}
 
                       {seCancela && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setStatus.mutate({
-                              id: a.id,
-                              status: "cancelled",
-                              notify: toNotifiable(a),
-                            })
-                          }
-                        >
+                        <Button size="sm" variant="ghost" onClick={() => setCancelando(a)}>
                           Cancelar
                         </Button>
                       )}

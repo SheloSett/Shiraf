@@ -1,6 +1,8 @@
 import { CONTACT } from "@/lib/contact";
 import {
   buildAppointmentMessage,
+  buildOverdueDigest,
+  type TurnoVencido,
   type AppointmentEvent,
   type AppointmentMessage,
   type NotifiableAppointment,
@@ -42,9 +44,9 @@ import {
  *
  * Corre en el servidor por dos motivos, y cualquiera de los dos alcanzaría:
  *
- *   1. La API key de Resend manda mail a nombre del dominio del centro. En el
- *      bundle del navegador la tendría cualquiera que abra las herramientas de
- *      desarrollo, y con eso puede escribirle a quien quiera firmando "Shiraf".
+ *   1. La contraseña del SMTP manda mail a nombre del centro. En el bundle del
+ *      navegador la tendría cualquiera que abra las herramientas de desarrollo,
+ *      y con eso puede escribirle a quien quiera firmando "Shiraf".
  *   2. La dirección de la clienta no está en `profiles` — está en `auth.users`,
  *      que sólo se lee con la service role. Ver la migración de columnas
  *      sensibles: el mail quedó del lado de auth a propósito.
@@ -59,8 +61,22 @@ import {
  * import de nivel superior arrastraría la service role al bundle.
  */
 
-/** Los eventos que le hablan a la clienta. "new-request" le habla al centro. */
+/**
+ * Los eventos que le hablan a la clienta. Los que no están acá van al centro.
+ *
+ * ⚠️ Los dos que van al centro se parecen mucho a los otros y hay que mirarlos
+ * dos veces antes de tocar esta lista:
+ *
+ *   new-request      · entró una reserva  → al centro (la clienta recibe
+ *                                            "requested", que es otro texto)
+ *   client-cancelled · la clienta canceló → al centro (la clienta NO recibe
+ *                                            nada: lo acaba de hacer ella)
+ *
+ * Meter cualquiera de los dos acá adentro le manda a la clienta un mail escrito
+ * para el panel, con el enlace a /admin/turnos.
+ */
 const TO_CLIENT: readonly AppointmentEvent[] = [
+  "requested",
   "confirmed",
   "cancelled",
   "reminder",
@@ -155,45 +171,28 @@ export type DeliveryResult =
    */
   | { sent: false; reason: string };
 
-/** Manda un mail por Resend. Sin API key configurada no falla: no manda. */
+/**
+ * Manda el mail. Sin SMTP configurado no falla: no manda y lo dice.
+ *
+ * Acá adentro había un segundo cliente de Resend, escrito aparte del de
+ * `email.service.ts` y leyendo las mismas variables. Eran dos transportes para
+ * el mismo correo: cambiar de proveedor había que hacerlo en dos lados. Ahora el
+ * transporte es uno solo y vive allá; lo de este archivo es redactar los avisos,
+ * que es lo suyo.
+ *
+ * El import va adentro y no arriba porque `email.service` carga nodemailer, que
+ * es de proceso Node. Es el mismo motivo por el que `deliverAppointmentEmail`
+ * importa Prisma así.
+ */
 async function sendEmail(input: {
   to: string;
   subject: string;
   text: string;
   html: string;
 }): Promise<DeliveryResult> {
-  const apiKey = process.env["RESEND_API_KEY"];
-  const from = process.env["MAIL_FROM"];
-
-  if (!apiKey || !from) {
-    return { sent: false, reason: "El envío de mails todavía no está configurado." };
-  }
-
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [input.to],
-      // La casilla que el centro mira de verdad es el Gmail, que no puede ser
-      // remitente (Resend no firma por dominios de Google). Va de reply-to para
-      // que la respuesta de la clienta caiga donde alguien la lee.
-      reply_to: process.env["MAIL_REPLY_TO"] ?? CONTACT.email,
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    return { sent: false, reason: `Resend respondió ${response.status}. ${detail}`.trim() };
-  }
-
-  return { sent: true };
+  const { enviarMail } = await import("@/server/services/email.service");
+  const envio = await enviarMail(input);
+  return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
 }
 
 /**
@@ -225,6 +224,9 @@ export async function deliverAppointmentEmail(
       guest_name: true,
       guest_phone: true,
       guest_email: true,
+      // Lo miran los dos mensajes de cancelación. Sale de la base y no del
+      // pedido: quien dispara el aviso manda el id del turno y nada más.
+      cancel_reason: true,
       service: { select: { name: true } },
       // El nombre congelado: si el tratamiento se borró del catálogo, el mail
       // igual tiene que decir de qué es el turno.
@@ -248,6 +250,7 @@ export async function deliverAppointmentEmail(
     clientPhone: appointment.guest_phone,
     serviceName: appointment.service?.name ?? appointment.service_name ?? null,
     professionalName: appointment.professional?.full_name ?? null,
+    cancelReason: appointment.cancel_reason,
   };
 
   const recipient = TO_CLIENT.includes(event) ? clientEmail : CONTACT.email;
@@ -263,6 +266,33 @@ export async function deliverAppointmentEmail(
 
   return sendEmail({
     to: recipient,
+    subject: message.subject,
+    text: message.lines.join("\n"),
+    html: renderEmailHtml(message),
+  });
+}
+
+/**
+ * Manda el resumen diario de turnos vencidos. Va a la casilla del centro.
+ *
+ * No pasa por `deliverAppointmentEmail` porque no habla de UN turno: recibe la
+ * lista ya armada por quien la consultó —`reminders.service.ts`, que es el que
+ * sabe qué es "vencido"— y acá sólo se redacta y se manda.
+ *
+ * Con la lista vacía no manda nada y lo dice. Un mail diario que dice "no hay
+ * nada pendiente" se archiva sin leer a la semana, y con él se archiva el día
+ * que sí había algo.
+ */
+export async function deliverOverdueDigest(
+  turnos: TurnoVencido[],
+  total: number,
+): Promise<DeliveryResult> {
+  if (turnos.length === 0) return { sent: false, reason: "No hay turnos vencidos." };
+
+  const message = buildOverdueDigest(turnos, total);
+
+  return sendEmail({
+    to: CONTACT.email,
     subject: message.subject,
     text: message.lines.join("\n"),
     html: renderEmailHtml(message),

@@ -1,5 +1,7 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
-import { deliverAppointmentEmail } from "@/lib/notifications.server";
+import { deliverAppointmentEmail, deliverOverdueDigest } from "@/lib/notifications.server";
+import type { TurnoVencido } from "@/lib/notifications";
 
 /**
  * El recordatorio del día antes.
@@ -63,6 +65,31 @@ const TIMEZONE = "America/Argentina/Buenos_Aires";
  * escribir la hora convertida y acordarse de por qué estaba corrida.
  */
 const CUANDO = "0 10,13 * * *";
+
+/**
+ * El resumen de vencidos: UNA vez por día, a las 10.
+ *
+ * Va en su propio reloj y no pegado al de arriba, y el motivo es que no es
+ * idempotente: los recordatorios se marcan con `reminded_at` y por eso la
+ * segunda pasada no manda nada, pero este resumen se armaría igual a las 13 y
+ * el centro recibiría dos mails idénticos por día. Uno alcanza.
+ */
+const CUANDO_VENCIDOS = "0 10 * * *";
+
+/**
+ * Cuántos días para atrás mira el resumen.
+ *
+ * No es "todos los que quedaron abiertos alguna vez": con una semana el mail se
+ * mantiene corto y accionable. Un turno de hace tres meses que nadie cerró no se
+ * va a cerrar porque lo repitamos todos los días — lo único que hace es
+ * convertir el mail en ruido y que se archive sin leer, incluido el día que sí
+ * hay algo para hacer. Los viejos siguen a la vista en el panel, con su cartel
+ * de «Vencido».
+ */
+const DIAS_DE_VENCIDOS = 7;
+
+/** Cuántos se nombran en el mail. El resto se cuenta al final. */
+const MAXIMO_EN_EL_MAIL = 15;
 
 /**
  * El día de mañana en Buenos Aires, como par de instantes.
@@ -153,11 +180,76 @@ export async function runDailyReminders(): Promise<ReminderRun> {
   return { day: from.slice(0, 10), found: appointments.length, sent, skipped };
 }
 
+/**
+ * Los turnos que ya pasaron y siguen abiertos, y el aviso al centro.
+ *
+ * "Abierto" es pendiente o confirmado con la hora ya pasada: es exactamente el
+ * «Vencido» que muestran las pantallas, que no es un estado de la base sino el
+ * cruce de esos dos datos. La regla vive en `estadoVisible()` para las
+ * pantallas y acá para el mail; si alguna vez cambia, hay que tocar las dos.
+ *
+ * Lo que el centro tiene que hacer con cada uno está en el texto del mail:
+ * reprogramarlo —que es lo único que recupera ese turno— o cerrarlo.
+ */
+async function avisarDeLosVencidos(): Promise<void> {
+  const ahora = new Date();
+  const desde = new Date(ahora.getTime() - DIAS_DE_VENCIDOS * 24 * 60 * 60 * 1000);
+
+  // Tipada y no inferida: sin el tipo, TypeScript lee ["pending","confirmed"]
+  // como string[] y Prisma espera el enum de la columna.
+  const where: Prisma.appointmentsWhereInput = {
+    status: { in: ["pending", "confirmed"] },
+    starts_at: { lt: ahora, gte: desde },
+  };
+
+  // La cuenta va aparte de la lista: el mail nombra unos pocos y dice cuántos
+  // más quedaron, así que necesita el total de verdad y no el largo del recorte.
+  const [total, filas] = await Promise.all([
+    prisma.appointments.count({ where }),
+    prisma.appointments.findMany({
+      where,
+      orderBy: { starts_at: "asc" },
+      take: MAXIMO_EN_EL_MAIL,
+      select: {
+        id: true,
+        starts_at: true,
+        guest_name: true,
+        service_name: true,
+        service: { select: { name: true } },
+        client: { select: { profile: { select: { full_name: true } } } },
+      },
+    }),
+  ]);
+
+  if (total === 0) return;
+
+  const turnos: TurnoVencido[] = filas.map((t) => ({
+    id: t.id,
+    startsAt: t.starts_at.toISOString(),
+    // El mismo orden que en el resto del proyecto: manda la cuenta, y los datos
+    // de invitada son el respaldo.
+    clientName: t.client?.profile?.full_name ?? t.guest_name ?? "Clienta",
+    // El nombre congelado como respaldo, por si el tratamiento se borró del
+    // catálogo: el mail tiene que poder decir de qué era el turno igual.
+    serviceName: t.service?.name ?? t.service_name,
+  }));
+
+  const envio = await deliverOverdueDigest(turnos, total);
+
+  console.log(
+    envio.sent
+      ? `[vencidos] ${total} turno(s) sin cerrar. Resumen enviado.`
+      : `[vencidos] ${total} turno(s) sin cerrar, pero el mail no salió: ${envio.reason}`,
+  );
+}
+
 /** Para no programar dos relojes si el módulo se carga más de una vez. */
 let programado = false;
 
 /**
- * Pone el reloj a andar. Se llama una vez, al arrancar el servidor.
+ * Pone los dos relojes a andar: el de los recordatorios y el del resumen de
+ * vencidos. Se llama una vez, desde `src/server.ts` — con el primer pedido que
+ * entra, no al levantar el proceso. Ver el comentario de allá.
  *
  * ── LOS DOS CASOS EN LOS QUE NO ARRANCA, Y POR QUÉ ────────────────────────
  *
@@ -199,7 +291,11 @@ export async function iniciarRecordatorios(): Promise<void> {
   const { schedule } = await import("node-cron");
 
   schedule(CUANDO, correr, { timezone: TIMEZONE, name: "recordatorios" });
-  console.log(`[recordatorios] Programados: "${CUANDO}" (${TIMEZONE}).`);
+  schedule(CUANDO_VENCIDOS, correrVencidos, { timezone: TIMEZONE, name: "vencidos" });
+
+  console.log(
+    `[recordatorios] Programados: "${CUANDO}" · vencidos: "${CUANDO_VENCIDOS}" (${TIMEZONE}).`,
+  );
 }
 
 /**
@@ -225,5 +321,20 @@ async function correr(): Promise<void> {
     }
   } catch (error) {
     console.error("[recordatorios] La corrida falló entera:", error);
+  }
+}
+
+/**
+ * La pasada de los vencidos, con su resultado en el log.
+ *
+ * El try/catch envuelve todo por el mismo motivo que el de `correr`: lo que tire
+ * acá adentro sube como rechazo sin atrapar y se lleva puesto el proceso —o sea
+ * el sitio— por un mail que no salió.
+ */
+async function correrVencidos(): Promise<void> {
+  try {
+    await avisarDeLosVencidos();
+  } catch (error) {
+    console.error("[vencidos] La corrida falló entera:", error);
   }
 }

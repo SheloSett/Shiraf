@@ -64,12 +64,23 @@ export function useCambiarEstadoDeTurno() {
     mutationFn: async ({
       id,
       status,
+      motivo,
     }: {
       id: string;
       status: AppointmentStatus;
       notify: NotifiableAppointment;
+      /**
+       * Por qué se cancela. Sólo lo manda el diálogo de cancelación.
+       *
+       * ⚠️ Va DENTRO del mismo PUT que el estado y no en una llamada aparte, y
+       * eso no es un detalle: el mail se dispara justo después, y lo redacta el
+       * servidor leyendo el turno de la base. Si el motivo se guardara en una
+       * segunda llamada, el mail saldría antes de que estuviera escrito y la
+       * clienta recibiría la cancelación sin la explicación.
+       */
+      motivo?: string;
     }) => {
-      await apiPut(`/api/turnos/${id}/estado`, { status });
+      await apiPut(`/api/turnos/${id}/estado`, { status, ...(motivo ? { motivo } : {}) });
 
       const event = NOTIFIES[status];
       if (!event) return { mail: null };

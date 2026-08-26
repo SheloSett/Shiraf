@@ -6,7 +6,7 @@
  * `Ecommerce_mm` usa Express, y sus archivos de rutas se leen de un vistazo:
  *
  *     router.post("/login", loginLimiter, validateLogin, login);
- *     router.put("/:id", authMiddleware, adminMiddleware, updateCategory);
+ *     router.put("/:id", authMiddleware, exigeMiddleware("catalog"), updateCategory);
  *
  * Veinte líneas, ningún `if`, ningún Prisma. Ese es el patrón que se quiso
  * repetir acá. Pero Shiraf no puede montar Express: no es un proceso aparte —

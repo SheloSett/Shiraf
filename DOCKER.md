@@ -112,7 +112,7 @@ declare con `ARG`. Ese fue un bug real: el compose mandaba el cloud name, el
 Dockerfile no lo declaraba, y la imagen se venía armando con el valor vacío.
 
 El resto —`DATABASE_URL`, `JWT_SECRET`, `APP_URL`, las de Cloudinary del lado
-servidor, `RESEND_API_KEY`— son de runtime y van en `environment`.
+servidor, `SMTP_USER` y `SMTP_PASS`— son de runtime y van en `environment`.
 
 ## La base: backups y restauración
 

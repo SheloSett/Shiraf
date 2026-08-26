@@ -19,8 +19,30 @@ import type { DeliveryResult } from "@/lib/notifications.server";
 
 const NotifyInput = z.object({
   appointmentId: z.string().uuid(),
-  event: z.enum(["confirmed", "cancelled", "reminder", "new-request"]),
+  event: z.enum([
+    "requested",
+    "confirmed",
+    "cancelled",
+    "reminder",
+    "new-request",
+    "client-cancelled",
+  ]),
 });
+
+/**
+ * Los avisos que dispara la CLIENTA sobre su propio turno.
+ *
+ * Los tres salen de dos acciones suyas —reservar y cancelar— y ninguno le puede
+ * llegar a otra persona: dos van a la casilla del centro y el tercero
+ * ("requested") va a su propia dirección, que el servidor saca de la base y no
+ * del pedido.
+ *
+ * Todo lo que NO esté en esta lista lo manda el centro y exige el permiso
+ * 'appointments'. Mover un evento de acá para allá sin pensarlo es dejar que
+ * cualquiera con cuenta le haga llegar a otra un "tu turno fue cancelado"
+ * firmado por Shiraf.
+ */
+const LOS_DISPARA_LA_CLIENTA = ["new-request", "requested", "client-cancelled"] as const;
 
 /**
  * Manda el mail de un turno.
@@ -42,9 +64,10 @@ export const notifyAppointment = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<DeliveryResult> => {
     const { prisma } = await import("@/server/db");
 
-    if (data.event === "new-request") {
-      // Una clienta avisando que reservó: tiene que ser SU turno. El chequeo va
-      // sobre la base y no sobre lo que manda, que es el id del turno.
+    if ((LOS_DISPARA_LA_CLIENTA as readonly string[]).includes(data.event)) {
+      // Una clienta avisando que reservó o que canceló: tiene que ser SU turno.
+      // El chequeo va sobre la base y no sobre lo que manda, que es el id del
+      // turno.
       const appointment = await prisma.appointments.findUnique({
         where: { id: data.appointmentId },
         select: { client_id: true },

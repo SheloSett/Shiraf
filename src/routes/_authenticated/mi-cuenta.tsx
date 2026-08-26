@@ -13,6 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiPut } from "@/lib/api";
 import { ReprogramarTurnoDialog } from "@/components/reprogramar-turno-dialog";
+import { CancelarTurnoDialog } from "@/components/cancelar-turno-dialog";
+import { notifyAppointment } from "@/lib/notifications.functions";
 import type { MiTurno, RtaMiCuenta, RtaMisTurnos } from "@/lib/api-tipos";
 import {
   formatDateTime,
@@ -126,11 +128,27 @@ function AccountPage() {
 
   /** El turno abierto en el diálogo de cambiar, o null. */
   const [reprogramando, setReprogramando] = useState<MiTurno | null>(null);
+  /** El turno que la clienta está por cancelar, o null. */
+  const [cancelando, setCancelando] = useState<MiTurno | null>(null);
 
   const cancel = useMutation({
-    mutationFn: (id: string) => apiPut(`/api/mi-cuenta/turnos/${id}/cancelar`),
+    mutationFn: async ({ id, motivo }: { id: string; motivo: string }) => {
+      await apiPut(`/api/mi-cuenta/turnos/${id}/cancelar`, motivo ? { motivo } : {});
+
+      // Avisarle al CENTRO, que es el que necesita enterarse: le quedó un hueco
+      // en la agenda que todavía se puede vender, y con suerte el motivo
+      // escrito. A la clienta no se le manda nada — acaba de cancelar ella.
+      //
+      // El fallo se traga: el turno ya está cancelado y es lo que le importa a
+      // quien apretó el botón. Un mail que no sale no puede convertirse en
+      // "no se pudo cancelar", que la haría intentar de nuevo.
+      await notifyAppointment({
+        data: { appointmentId: id, event: "client-cancelled" },
+      }).catch(() => undefined);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });
+      setCancelando(null);
       toast.success("Turno cancelado.");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -195,7 +213,7 @@ function AccountPage() {
                       <Button size="sm" variant="outline" onClick={() => setReprogramando(a)}>
                         Cambiar
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => cancel.mutate(a.id)}>
+                      <Button size="sm" variant="ghost" onClick={() => setCancelando(a)}>
                         Cancelar
                       </Button>
                     </>
@@ -342,6 +360,19 @@ function AccountPage() {
       <ReprogramarTurnoDialog
         turno={reprogramando}
         onOpenChange={(abierto) => !abierto && setReprogramando(null)}
+      />
+
+      {/* El mismo cartel que usa el panel, con los textos dados vuelta: acá el
+          motivo no se le manda a nadie por mail a la clienta —lo escribe ella—
+          sino que viaja al centro con el aviso de que se liberó el horario. */}
+      <CancelarTurnoDialog
+        turno={
+          cancelando ? { id: cancelando.id, cuando: formatDateTime(cancelando.starts_at) } : null
+        }
+        quien="clienta"
+        pendiente={cancel.isPending}
+        onOpenChange={(abierto) => !abierto && setCancelando(null)}
+        onConfirmar={(motivo) => cancelando && cancel.mutate({ id: cancelando.id, motivo })}
       />
 
       <SiteFooter />

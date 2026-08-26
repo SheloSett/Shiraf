@@ -30,6 +30,7 @@ import {
   useCambiarEstadoDeTurno,
 } from "@/hooks/useCambiarEstadoDeTurno";
 import { useBorrarTurno } from "@/hooks/useBorrarTurno";
+import { CancelarTurnoDialog, type TurnoACancelar } from "@/components/cancelar-turno-dialog";
 import { useReprogramarTurno } from "@/hooks/useReprogramarTurno";
 
 /**
@@ -86,6 +87,8 @@ function FichaDelTurno() {
   const [editing, setEditing] = useState<GuestToEdit | null>(null);
   /** ¿Está abierto el cartel que pregunta si se borra el turno? */
   const [borrandoTurno, setBorrandoTurno] = useState(false);
+  /** El turno que se está por cancelar, o null. Ver `cambiarA`. */
+  const [cancelando, setCancelando] = useState<TurnoACancelar | null>(null);
 
   const navigate = useNavigate();
 
@@ -143,9 +146,23 @@ function FichaDelTurno() {
   const aviso = estado ? NOTIFIES[estado] : undefined;
   const whatsapp = aviso ? appointmentWhatsappUrl(aviso, toNotifiable(t)) : null;
 
-  /** El pedido de cambio de estado, que siempre lleva los datos del aviso. */
-  const cambiarA = (status: NonNullable<typeof estado>) =>
+  /**
+   * El pedido de cambio de estado, que siempre lleva los datos del aviso.
+   *
+   * Cancelar es el único que no se ejecuta derecho: abre el cartel que pide el
+   * motivo, porque ese texto es el que la clienta va a leer en el mail. Se
+   * decide acá adentro y no en cada botón a propósito — esta pantalla cancela
+   * desde DOS lugares (el botón de arriba y la grilla de corregir un turno ya
+   * cerrado), y si la decisión viviera en el botón, uno de los dos se iba a
+   * quedar sin pedir el motivo.
+   */
+  const cambiarA = (status: NonNullable<typeof estado>) => {
+    if (status === "cancelled") {
+      setCancelando({ id: t.id, quien: t.person.name, cuando: formatDateTime(t.starts_at) });
+      return;
+    }
     setStatus.mutate({ id: t.id, status, notify: toNotifiable(t) });
+  };
 
   return (
     // `mx-auto`: la ficha es una columna angosta y el panel es ancho. Pegada a
@@ -333,6 +350,13 @@ function FichaDelTurno() {
           <Dato etiqueta="Pedido el">{formatDateTime(t.created_at)}</Dato>
 
           {t.admin_notes && <Dato etiqueta="Nota interna">{t.admin_notes}</Dato>}
+
+          {/* El motivo de la cancelación.
+              La etiqueta dice de dónde salió porque cambia cómo se lee: si lo
+              escribió el centro, la clienta ya lo recibió por mail; si lo
+              escribió ella, es lo único que el centro sabe de por qué perdió
+              ese turno. */}
+          {t.cancel_reason && <Dato etiqueta="Motivo de la cancelación">{t.cancel_reason}</Dato>}
         </Tarjeta>
 
         <section className="rounded-sm border border-border bg-card p-6">
@@ -488,6 +512,19 @@ function FichaDelTurno() {
 
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
       <EditGuestDialog guest={editing} onOpenChange={(next) => !next && setEditing(null)} />
+
+      <CancelarTurnoDialog
+        turno={cancelando}
+        quien="centro"
+        pendiente={setStatus.isPending}
+        onOpenChange={(abierto) => !abierto && setCancelando(null)}
+        onConfirmar={(motivo) =>
+          setStatus.mutate(
+            { id: t.id, status: "cancelled", notify: toNotifiable(t), motivo },
+            { onSuccess: () => setCancelando(null) },
+          )
+        }
+      />
 
       <AlertDialog open={borrandoTurno} onOpenChange={setBorrandoTurno}>
         <AlertDialogContent>

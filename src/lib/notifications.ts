@@ -1,4 +1,5 @@
 import { CONTACT } from "@/lib/contact";
+import { TOLERANCIA_MINUTOS } from "@/lib/shiraf";
 
 /**
  * El texto de los avisos de turnos, en un solo lugar.
@@ -19,6 +20,15 @@ import { CONTACT } from "@/lib/contact";
  */
 
 export type AppointmentEvent =
+  /**
+   * La clienta acaba de reservar por el sitio. Va a ELLA.
+   *
+   * No confirma nada —el turno nace pendiente— y por eso el texto es cuidadoso:
+   * dice que el pedido llegó y que falta que el centro lo confirme. Sin este
+   * aviso, reservar terminaba en un toast que desaparecía en cinco segundos y
+   * la clienta se quedaba sin ningún papel de lo que había pedido.
+   */
+  | "requested"
   /** El centro pasó el turno a confirmado. Va a la clienta. */
   | "confirmed"
   /** El centro dio de baja el turno. Va a la clienta. */
@@ -28,7 +38,15 @@ export type AppointmentEvent =
   /** Día previo. Va a la clienta. */
   | "reminder"
   /** Entró una reserva por el sitio y espera confirmación. Va al centro. */
-  | "new-request";
+  | "new-request"
+  /**
+   * La clienta canceló su propio turno desde «Mi cuenta». Va AL CENTRO.
+   *
+   * Es distinto de `cancelled`, que va para el otro lado. Acá no hay nada que
+   * anunciarle a la clienta —lo acaba de hacer ella— pero el centro sí necesita
+   * enterarse: le quedó un hueco en la agenda y, con suerte, el motivo escrito.
+   */
+  | "client-cancelled";
 
 /** Lo mínimo para poder redactar cualquiera de los avisos. */
 export type NotifiableAppointment = {
@@ -39,6 +57,14 @@ export type NotifiableAppointment = {
   clientPhone?: string | null;
   serviceName?: string | null;
   professionalName?: string | null;
+  /**
+   * Por qué se canceló, si alguien lo escribió.
+   *
+   * Sólo lo miran los dos mensajes de cancelación. Cuando viene vacío, el texto
+   * cae al genérico de siempre: es mejor "tuvimos que cancelar tu turno" que
+   * "tuvimos que cancelar tu turno. Motivo:" seguido de nada.
+   */
+  cancelReason?: string | null;
 };
 
 export type AppointmentMessage = {
@@ -58,6 +84,20 @@ export type AppointmentMessage = {
  * error de los que hacen que alguien se pierda el turno.
  */
 const TIMEZONE = "America/Argentina/Buenos_Aires";
+
+/**
+ * La frase de la tolerancia, escrita una vez.
+ *
+ * Va en los dos mails que la clienta lee ANTES de venir —el del pedido y el de
+ * la confirmación— y también en la pantalla de reserva. Que esté dicho de
+ * antemano y por escrito es lo que permite sostenerlo el día que alguien llega
+ * media hora tarde: no es una regla nueva inventada en el momento.
+ *
+ * El número sale de `shiraf.ts`, donde viven las decisiones del negocio, y no
+ * está escrito acá adentro: si el centro pasa a esperar 15 minutos, se cambia
+ * en un solo lugar y la pantalla y el mail dicen lo mismo.
+ */
+const tolerancia = `Te esperamos hasta ${TOLERANCIA_MINUTOS} minutos; pasado ese rato el turno se libera.`;
 
 /** Primer nombre a secas: "Hola María" y no "Hola María Fernanda Gómez". */
 function firstName(fullName: string): string {
@@ -105,6 +145,25 @@ export function buildAppointmentMessage(
   const place = `${CONTACT.address}, ${CONTACT.city}`;
 
   switch (event) {
+    // Lo primero que la clienta recibe, y el único mail que llega sin que nadie
+    // del centro haya hecho nada. Dice tres cosas y ninguna sobra: qué pidió,
+    // que TODAVÍA NO está confirmado, y la tolerancia.
+    case "requested":
+      return {
+        subject: "Recibimos tu pedido de turno en Shiraf",
+        lines: [
+          `Hola ${who}, te escribimos de Shiraf.`,
+          "",
+          `Recibimos tu pedido de turno ${when}.`,
+          ...(what ? [what] : []),
+          "",
+          "Todavía no está confirmado: lo revisamos y te avisamos por este mismo medio.",
+          "",
+          `Te esperamos en ${place}.`,
+          tolerancia,
+        ],
+      };
+
     case "confirmed":
       return {
         subject: "Tu turno en Shiraf quedó confirmado",
@@ -115,6 +174,7 @@ export function buildAppointmentMessage(
           ...(what ? [what] : []),
           "",
           `Te esperamos en ${place}.`,
+          tolerancia,
           "Si no podés venir, avisanos y lo reprogramamos.",
         ],
       };
@@ -126,8 +186,28 @@ export function buildAppointmentMessage(
           `Hola ${who}, te escribimos de Shiraf.`,
           "",
           `Tuvimos que cancelar tu turno ${when}${what ? ` (${what})` : ""}.`,
+          // El motivo, si el centro lo escribió. Un renglón aparte y no pegado
+          // a la frase de arriba: es lo que la clienta va a buscar con la vista.
+          ...(appointment.cancelReason ? ["", `Motivo: ${appointment.cancelReason}`] : []),
           "",
           "Perdón por el cambio. Escribinos y te buscamos otro horario.",
+        ],
+      };
+
+    // Al centro. La clienta ya sabe que canceló; el que necesita enterarse es
+    // quien mira la agenda, porque le quedó un hueco que todavía se puede
+    // vender.
+    case "client-cancelled":
+      return {
+        subject: `Turno cancelado por la clienta — ${appointment.clientName}`,
+        lines: [
+          `${appointment.clientName}${appointment.clientPhone ? ` · ${appointment.clientPhone}` : ""} canceló su turno.`,
+          "",
+          `Era ${when}`,
+          ...(what ? [what] : []),
+          ...(appointment.cancelReason ? ["", `Motivo: ${appointment.cancelReason}`] : []),
+          "",
+          `El horario quedó libre: ${CONTACT.siteUrl}/admin/turnos`,
         ],
       };
 
@@ -176,6 +256,56 @@ export function buildAppointmentMessage(
         ],
       };
   }
+}
+
+/** Un turno que ya pasó y sigue abierto, para el resumen de abajo. */
+export type TurnoVencido = {
+  id: string;
+  startsAt: string;
+  clientName: string;
+  serviceName?: string | null;
+};
+
+/**
+ * El resumen de los turnos que vencieron: va AL CENTRO, una vez por día.
+ *
+ * ── POR QUÉ NO ES UN AVISO POR TURNO ──────────────────────────────────────
+ *
+ * Porque no es una novedad, es una lista de pendientes. Un mail por cada turno
+ * vencido llena la casilla un lunes a la mañana y se archiva en bloque; uno solo
+ * con los tres que quedaron abiertos se lee y se resuelve.
+ *
+ * ── Y POR QUÉ NO LE LLEGA A LA CLIENTA ────────────────────────────────────
+ *
+ * "Tu turno venció" es una acusación de no haber venido, y la mitad de las veces
+ * el turno está abierto porque nadie del centro lo cerró, no porque la clienta
+ * faltara. El que tiene algo que hacer es el centro: cerrarlo o —lo que
+ * conviene— reprogramarlo, que es lo único que recupera ese turno.
+ *
+ * Se repite todos los días mientras el turno siga abierto. Es a propósito: es
+ * una lista de tareas, y deja de aparecer cuando alguien la resuelve.
+ */
+export function buildOverdueDigest(turnos: TurnoVencido[], total: number): AppointmentMessage {
+  const uno = total === 1;
+
+  return {
+    subject: `${total} turno${uno ? "" : "s"} sin cerrar en Shiraf`,
+    lines: [
+      uno
+        ? "Hay un turno que ya pasó y sigue abierto."
+        : `Hay ${total} turnos que ya pasaron y siguen abiertos.`,
+      "",
+      "Lo que conviene con cada uno es REPROGRAMARLO: así el turno no se pierde y la clienta vuelve. Si no, cerralo como realizado o cancelado.",
+      "",
+      ...turnos.flatMap((t) => [
+        `${whenPhrase(t.startsAt).replace(/^el /, "")} · ${t.clientName}${t.serviceName ? ` · ${t.serviceName}` : ""}`,
+        `${CONTACT.siteUrl}/admin/turnos/${t.id}`,
+        "",
+      ]),
+      ...(total > turnos.length ? [`Y ${total - turnos.length} más en el panel.`, ""] : []),
+      "Se listan los de los últimos días. Los más viejos siguen en el panel, con el cartel de «Vencido».",
+    ],
+  };
 }
 
 /**

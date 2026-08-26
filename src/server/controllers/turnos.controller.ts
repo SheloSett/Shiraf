@@ -256,6 +256,7 @@ export async function detalle(ctx: Ctx) {
       price: true,
       client_notes: true,
       admin_notes: true,
+      cancel_reason: true,
       created_at: true,
       ...DATOS_DE_LA_PERSONA,
       // Pisa el `client` de DATOS_DE_LA_PERSONA para sumarle el mail. El resto
@@ -281,6 +282,7 @@ export async function detalle(ctx: Ctx) {
       price: comoNumero(t.price),
       client_notes: t.client_notes,
       admin_notes: t.admin_notes,
+      cancel_reason: t.cancel_reason,
       created_at: t.created_at.toISOString(),
       client_id: t.client_id,
       guest_name: t.guest_name,
@@ -395,7 +397,26 @@ export async function cambiarEstado(ctx: Ctx) {
     );
   }
 
-  await prisma.appointments.update({ where: { id }, data: { status: estado } });
+  /**
+   * El motivo de la cancelación.
+   *
+   * ⚠️ **Se le manda a la clienta en el mail**, así que no es una nota interna —
+   * para eso está `admin_notes`. La pantalla que lo pide lo dice con todas las
+   * letras; acá se guarda tal cual llega.
+   *
+   * Se limpia cuando el turno SALE de cancelado: un turno que se revivió y
+   * quedara con el motivo viejo colgado le mandaría a la clienta, en la próxima
+   * cancelación, una explicación de la vez pasada.
+   */
+  const motivo = typeof ctx.body["motivo"] === "string" ? ctx.body["motivo"].trim() : "";
+
+  await prisma.appointments.update({
+    where: { id },
+    data: {
+      status: estado,
+      ...(estado === "cancelled" ? { cancel_reason: motivo || null } : { cancel_reason: null }),
+    },
+  });
   return json({ ok: true });
 }
 

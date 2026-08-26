@@ -35,7 +35,9 @@ import type { Permission } from "@/lib/permissions";
 export type Acceso = {
   userId: string;
   esAdmin: boolean;
-  esStaff: boolean;
+  // No hay `esStaff`: se calculaba y no lo leía nadie. Ser del equipo no
+  // habilita nada por sí solo —lo que habilita es cada permiso de
+  // `user_permissions`—, así que tenerlo acá sugería un poder que no existe.
   permisos: Permission[];
   /** La ficha de profesional atada, si tiene. Habilita "Mi agenda". */
   fichaProfesionalId: string | null;
@@ -59,7 +61,6 @@ export async function accesoDe(userId: string): Promise<Acceso> {
   return {
     userId,
     esAdmin: nombres.includes("admin"),
-    esStaff: nombres.includes("staff"),
     permisos: permisos.map((p) => p.permission as Permission),
     fichaProfesionalId: ficha?.id ?? null,
   };

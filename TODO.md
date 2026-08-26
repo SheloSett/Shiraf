@@ -1,5 +1,13 @@
 # Pendientes de Shiraf
 
+> ### 👉 Si venís a seguir el trabajo, empezá por [`PARA-PROBAR.md`](PARA-PROBAR.md)
+>
+> Ahí está lo último que se hizo (26/8/2026), qué quedó verificado y **qué falta
+> probar** — que es bastante, porque nada que escriba en la base o mande un mail
+> se ejercitó. Este archivo son los pendientes de fondo del proyecto; aquél es
+> el estado de la tanda en curso, en la rama
+> `trabajo/panel-turnos-y-reprogramar`.
+
 ## 📍 Dónde quedé — 21/8/2026
 
 ### La migración a base propia está hecha
@@ -41,8 +49,10 @@ páginas— pero **nadie hizo clic en nada**. Es lo primero que conviene hacer:
 
 - **Las plantillas de mail en castellano.** Supabase no las dejaba editar sin
   SMTP propio y a la clienta le llegaba un mail en inglés. Ahora las manda la
-  app por Resend desde [`emails/`](emails/). Sigue faltando la cuenta de Resend
-  y verificar `shiraf.com.ar` — ver más abajo.
+  app desde [`emails/`](emails/), por SMTP de Gmail con nodemailer, igual que el
+  ecommerce. Ya no hace falta la cuenta de Resend ni verificar `shiraf.com.ar`:
+  sólo una **contraseña de aplicación** de Google en `SMTP_PASS`. Ver
+  [`emails/README.md`](emails/README.md).
 - **Las migraciones a mano.** Se acabó copiar SQL en el editor web: el esquema
   se sincroniza con `npm run db:sync`.
 - **El cron de los recordatorios.** Ya no hay nada que programar en el VPS ni
@@ -135,48 +145,53 @@ Pendiente de esto, nada. Queda anotado para producción:
 
 ---
 
-## 🟡 Mails: falta la cuenta de Resend
+## ✅ Mails: andando desde el 26/8/2026 — se descartó Resend
 
-**El bloqueo de Supabase ya no existe.** Decía que había que configurar SMTP
-propio para poder editar las plantillas, porque Supabase no las dejaba tocar y
-a la clienta le llegaba un mail en inglés desde `noreply@mail.app.supabase.io`.
+**Los mails salen.** Probado de punta a punta: el de recuperar contraseña llegó.
 
-Al migrar, esos mails los manda la app: las plantillas viven en
-[`emails/`](emails/) —en castellano, escritas hace semanas— y las despacha
-Resend desde `src/server/services/email.service.ts`.
+Se descartó Resend, que era el bloqueo más viejo del proyecto y no era técnico:
+exige un dominio propio verificado con SPF y DKIM, y **todavía no se sabe dónde
+está registrado `shiraf.com.ar`**. Ese trámite tenía los mails frenados semanas.
 
-Lo que sigue faltando es la cuenta y el dominio verificado. Sin eso, todo
-funciona pero **ningún mail sale**: el panel avisa "por mail no salió" al
-confirmar un turno, y quien olvide su contraseña no puede recuperarla.
+Ahora se manda con **nodemailer por el SMTP de Gmail**, igual que
+`Ecommerce_mm`. Sin cuenta de ningún servicio ni dominio que verificar: alcanza
+con la casilla que el centro ya usa, con una **contraseña de aplicación** de
+Google (`SMTP_USER` + `SMTP_PASS` en el `.env`; ver
+[`emails/README.md`](emails/README.md)).
 
-### La pregunta que destraba todo
+Las plantillas siguen igual, en [`emails/`](emails/), y el transporte quedó en un
+solo lugar: `src/server/services/email.service.ts`. Antes había dos clientes de
+Resend escritos por separado.
 
-- [ ] ¿Dónde está registrado `shiraf.com.ar` (NIC.ar, Donweb, otro) y quién
-      entra al panel de DNS? Sin cargar SPF y DKIM no hay remitente propio.
+> ⚠️ **`MAIL_FROM` va sin definir mientras se mande por Gmail.** Su SMTP sólo
+> deja mandar como la casilla autenticada; poner `turnos@shiraf.com.ar` sin tener
+> ese dominio andando hace que los mails dejen de salir sin que el código se
+> entere.
 
-⚠️ **El Gmail del centro no sirve como remitente.** Resend pide un dominio que
-pueda firmar, y Google no deja firmar por `gmail.com`. Va como `reply-to`, así
-las respuestas siguen llegando a la casilla de siempre.
+### Lo que queda pendiente del correo
 
-### Los pasos, una vez que esté el dominio
-
-1. [ ] Crear la cuenta en [resend.com](https://resend.com) — gratis, 3.000
-       mails por mes
-2. [ ] Agregar `shiraf.com.ar` y cargar los registros **SPF y DKIM** en el DNS
-3. [ ] Esperar la verificación (suele tardar minutos)
-4. [ ] Crear una API key y completar en el `.env`: - `RESEND_API_KEY` - `MAIL_FROM` — por ejemplo `Shiraf <turnos@shiraf.com.ar>` - `MAIL_REPLY_TO` — `shirafbeautyandspa@gmail.com`
-5. [ ] Probar en Gmail **y** en Outlook: Outlook usa el motor de Word y es el
-       que más rompe
+- [ ] Probar en **Outlook** además de Gmail: usa el motor de Word y es el que más
+      rompe las plantillas.
+- [ ] Los mails nuevos del 26/8 —pedido de turno, cancelación con motivo,
+      resumen de vencidos— **no se enviaron ni una vez**. Ver
+      [`PARA-PROBAR.md`](PARA-PROBAR.md).
+- [ ] **Dónde está registrado `shiraf.com.ar`.** Ya no bloquea nada, pero el día
+      que se quiera mandar desde `turnos@shiraf.com.ar` en vez del Gmail, hace
+      falta el panel de DNS.
 
 Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
 `http://localhost:8081/preview-mails/recuperar-contrasena.html`
 
 ## Lo próximo, por orden de dolor real
 
-- [ ] **Recordatorio de turno 24h antes.** Es lo que baja el ausentismo, que es
-      la métrica del negocio en este rubro. Hay que decidir: ¿mail o WhatsApp?
-      ¿y quién dispara el cron, `pg_cron` en Supabase o el VPS? Si va por mail,
-      depende del SMTP de arriba.
+- [x] ~~**Recordatorio de turno 24h antes.**~~ Hecho (26/8/2026). Va **por
+      mail**, y el cron **vive adentro de la app** con `node-cron`: ni `pg_cron`
+      ni el crontab del VPS. Corre a las 10 y a las 13 de Buenos Aires; la
+      segunda pasada no manda nada dos veces porque `reminded_at` la hace
+      idempotente. Ver `src/server/services/reminders.service.ts`.
+      **Falta la versión por WhatsApp**, que en este rubro es el canal que la
+      gente mira de verdad — hoy el botón «Avisar» abre el chat con el mensaje
+      escrito, pero lo aprieta una persona.
 - [ ] **Las invitadas no aparecen en Clientes.** Los turnos de gente sin cuenta
       ya se pueden cargar, pero la pantalla de Clientes lista `profiles`, así
       que alguien que vino tres veces sin registrarse no figura en ningún lado.
@@ -231,5 +246,29 @@ LUNES 15:00 a 17:00
 
 La idea es que sea algo onda:
 LUNES 9:00 a 13:00 - 15:00 a 17:00
+
+
+shiraf
+
+HOME
+1- fondo mas beige de lo que ya esta...
+El nombre de shiraf calma belleza y bienestar en dorado y primera letra en mayuscula
+
+2- "Cada piel es distinta.
+El tratamiento también." en el HOME - no va
+
+3- seccion de servicio en el Home SACARLO
+
+
+SERVICIOS
+4- ¿Qué necesita tu piel hoy? no va VA "Como te vas Consentir hoy"
+
+
+
+x- recordatorios en el dia del turno/ y un wasap apenas saquen turno, Astrid-Profesional-cliente
+
+x- todas las profesionales manejan turnos
+
+x- 10 min de tolerancia ACLARAR AL SACAR UNO Y MANDAR POR WASAP
 
 

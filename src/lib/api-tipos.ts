@@ -353,6 +353,15 @@ export type TurnoEnDetalle = {
   price: number;
   client_notes: string | null;
   admin_notes: string | null;
+  /**
+   * Por qué se canceló. Sólo tiene algo si el turno está cancelado y quien lo
+   * canceló escribió el motivo — es opcional en las dos puntas.
+   *
+   * ⚠️ NO es una nota interna: cuando cancela el centro, este texto es el que
+   * la clienta recibió en el mail. La ficha lo dice al mostrarlo, para que
+   * nadie lo lea como algo que quedó puertas adentro.
+   */
+  cancel_reason: string | null;
   created_at: string;
   client_id: string | null;
   guest_name: string | null;

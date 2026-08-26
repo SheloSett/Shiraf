@@ -81,7 +81,17 @@ datasource db {
 // queda en el mismo orden que en la base, donde ADD VALUE lo puso último.
 enum app_role {
   admin
+
+  /**
+   * ⚠️ NO AUTORIZA NADA. Está en el enum desde Supabase y no lo lee ningún
+   * `if` del servidor: quién atiende sale de `professionals.user_id`, que es lo
+   * que `accesoDe` mira para habilitar «Mi agenda». Se deja porque sacar un
+   * valor de un enum en Postgres pide recrear el tipo entero, y no vale el
+   * riesgo por un valor que no molesta. No lo uses para decidir accesos.
+   */
   professional
+
+  /** Tampoco autoriza por sí solo: lo que habilita es cada user_permissions. */
   client
   staff
 }
@@ -353,6 +363,24 @@ model appointments {
   status          appointment_status @default(pending)
   client_notes    String?
   admin_notes     String?
+
+  /**
+   * Por qué se canceló, escrito por quien lo canceló.
+   *
+   * ⚠️ **Este texto SE LE MANDA A LA CLIENTA** cuando el centro cancela, así que
+   * la pantalla lo dice al pedirlo. No es una nota interna: para eso está
+   * `admin_notes`, que no sale de la app.
+   *
+   * Sirve para los dos lados. Si cancela el centro, es la explicación que la
+   * clienta recibe en el mail —"se nos rompió el equipo", "la profesional está
+   * enferma"— en vez de un "tuvimos que cancelar" a secas. Si cancela la
+   * clienta, es lo que el centro lee en la ficha para saber si perdió una venta
+   * por precio, por horario o porque se enfermó.
+   *
+   * Es opcional a propósito: obligar a escribir algo para poder cancelar un
+   * turno es la clase de traba que termina con todo el mundo escribiendo "x".
+   */
+  cancel_reason   String?
   // Congelado a propósito: es el precio del día que se reservó, no el actual
   // del catálogo. No lo reemplaces por un join a services.price.
   price           Decimal            @db.Decimal(12, 2)

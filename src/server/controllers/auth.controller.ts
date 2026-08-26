@@ -274,11 +274,25 @@ export async function forgotPassword(ctx: Ctx) {
     data: { reset_token: resetToken, reset_token_expiry: new Date(Date.now() + VIDA_TOKEN_MS) },
   });
 
-  await enviarMailDeCuenta(
+  const envio = await enviarMailDeCuenta(
     "recuperar-contrasena",
     email,
     urlDelSitio() + "/recuperar?token=" + resetToken,
   );
+
+  // 🔴 El resultado del envío se descartaba, y eso hacía el fracaso MUDO por los
+  // dos lados: la pantalla contesta lo mismo pase lo que pase —no puede decir si
+  // la cuenta existe— y en la terminal no quedaba nada. Con el correo sin
+  // configurar, pedir la contraseña se veía exactamente igual que si el mail
+  // hubiera salido, y no había forma de darse cuenta.
+  //
+  // A quien llamó no se le puede contar (ver el comentario de arriba del
+  // archivo), así que el único lugar donde esto puede constar es el log.
+  // `register`, más arriba, sí lo devuelve: ahí no hay nada que ocultar, la
+  // persona acaba de crear esa cuenta.
+  if (!envio.ok) {
+    console.error(`[cuenta] No salió el mail de recuperación para ${email}: ${envio.motivo}`);
+  }
 
   return respuesta;
 }
