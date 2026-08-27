@@ -28,7 +28,7 @@ import {
 import { EstadoTurno } from "@/components/admin/estado-turno";
 import { estadoVisible, quienAtiende } from "@/lib/shiraf";
 import { useEffect, useRef, useState } from "react";
-import { FileText, MessageCircle, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Check, FileText, MessageCircle, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
@@ -544,13 +544,35 @@ function AdminAppointments() {
               // sólo sobre un turno que sigue en pie. Vencido queda afuera: ahí
               // lo que hay que decidir es si se hizo o no se hizo, y eso no es un
               // clic al pasar sino algo para mirar adentro del turno.
+              // (Desde el 26/8/2026 ya no es el único: ver `seConfirma`.)
               //
+              // ⚠️ El párrafo que sigue quedó VIEJO el 26/8/2026. Se deja
+              // escrito porque explica el riesgo que «Confirmar» vuelve a
+              // traer; qué cambió y por qué está abajo, en `seConfirma`.
               // «Confirmar» y «Marcar realizado» se fueron de acá. Eran cambios
               // de estado apretables al pasar, en una fila junto a otros tres
               // botones, y desde la lista no se deshacen. Viven en «Ver turno»,
               // que además es la única pantalla que puede corregir un turno ya
               // cerrado. Nada quedó sin lugar: todo se hace ahí.
               const seCancela = estado === "pending" || estado === "confirmed";
+
+              // ── «CONFIRMAR» VUELVE A LA TABLA (26/8/2026) ─────────────────
+              //
+              // Lo pidió el centro, y esto lo decide el centro: confirmar es LA
+              // acción de todos los días —entra la solicitud, se mira la agenda,
+              // se confirma—, y tenerla sólo en «Ver turno» convertía el trabajo
+              // de cada mañana en abrir, confirmar y volver, turno por turno.
+              //
+              // «Marcar realizado» NO vuelve, y es la mitad que sigue valiendo
+              // del párrafo de arriba: ésa es una anotación posterior, sin apuro,
+              // que no gana nada por quedar al alcance de un clic distraído.
+              //
+              // El riesgo de apretarlo sin querer se acota, no se ignora: sale
+              // únicamente sobre «Pendiente» —el único estado donde confirmar es
+              // lo obvio— y si igual se erra, «Ver turno» lo devuelve a
+              // pendiente. Es el mismo trato que ya tiene «Cancelar», que
+              // tampoco se deshace desde acá.
+              const seConfirma = estado === "pending";
 
               // Borrar es lo contrario de cancelar, y por eso los dos botones
               // nunca aparecen juntos: mientras el turno todavía se puede
@@ -693,6 +715,31 @@ function AdminAppointments() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      {/* Primero, y con más peso que sus vecinos: confirmar es
+                        lo que el centro viene a hacer a esta pantalla. Sale sólo
+                        sobre «Pendiente»; los otros cambios de estado siguen
+                        viviendo en «Ver turno».
+
+                        Usa el mismo `setStatus` que el diálogo de cancelar, así
+                        que el mail a la clienta y el botón «Avisar» del toast
+                        salen igual que desde la ficha. */}
+                      {seConfirma && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={setStatus.isPending}
+                          onClick={() =>
+                            setStatus.mutate({
+                              id: a.id,
+                              status: "confirmed",
+                              notify: toNotifiable(a),
+                            })
+                          }
+                        >
+                          <Check className="mr-2 h-4 w-4" /> Confirmar
+                        </Button>
+                      )}
+
                       {/* «Ver turno» y no «Ver ficha»: en este panel «ficha» ya
                         es la de la clienta —la de Clientes, con las notas
                         clínicas y el historial—, así que llamar igual a las dos
