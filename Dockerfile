@@ -140,6 +140,25 @@ COPY --from=build --chown=node:node /app/prisma.config.ts ./prisma.config.ts
 COPY --from=build --chown=node:node /app/scripts          ./scripts
 COPY --from=build --chown=node:node /app/package.json     ./package.json
 
+# Las plantillas de los mails de cuenta — confirmar-cuenta.html y
+# recuperar-contrasena.html.
+#
+# 27/8/2026: FALTABAN, y el síntoma no apuntaba para acá. En el VPS, «recuperar
+# contraseña» contestaba bien y no llegaba nada; el único rastro era una línea
+# en el log de la app: «No se encontró la plantilla del mail».
+#
+# En desarrollo no se puede ver: `plantilla()` las lee con
+# `join(process.cwd(), "emails", …)` y ahí `cwd` es la raíz del repo, donde la
+# carpeta existe. Adentro del contenedor `cwd` es /app, que se arma copiando
+# archivo por archivo — y éste no estaba en la lista. O sea que el mail de
+# recuperar contraseña NUNCA funcionó en produccion, y era justo el que
+# desbloqueaba las 4 cuentas del centro.
+#
+# Se copian y no se hornean en el bundle a propósito: así se pueden reemplazar
+# montando un volumen encima, sin reconstruir la imagen. El README de emails/ no
+# hace falta, pero viaja con la carpeta y pesa 9 KB.
+COPY --from=build --chown=node:node /app/emails           ./emails
+
 USER node
 EXPOSE 3000
 
