@@ -37,6 +37,22 @@ export const Route = createFileRoute("/_authenticated/admin/clientes")({
 function AdminClients() {
   const { can, isAdmin } = useAccess();
   const canSeeNotes = can("clients_notes");
+  /**
+   * Las tres columnas que cuentan turnos.
+   *
+   * Sin el permiso `appointments` el servidor cuenta SÓLO los turnos propios
+   * —ver el ⚠️ de `listar()` en clientas.controller.ts—, así que a una empleada
+   * con «Ver datos de clientas» y nada más le llegaban `total: 0` y `done: 0`
+   * para todas. Eso no es una fuga, es lo contrario: el filtro funcionando. El
+   * problema era que la pantalla lo mostraba como un CERO, que afirma que la
+   * clienta nunca vino, en vez de callarse.
+   *
+   * Se esconden por el mismo criterio que «Notas clínicas», acá abajo: una
+   * columna que no se puede llenar no va. Y con esto la fila queda coherente
+   * —antes «Última visita» decía «—» mientras las otras dos decían «0»,
+   * contando las tres la misma cosa.
+   */
+  const canSeeTurnos = can("appointments");
   /** La clienta cuya ficha está abierta en el panel lateral, o null. */
   const [viendo, setViendo] = useState<{ id: string; nombre: string } | null>(null);
   /**
@@ -120,9 +136,13 @@ function AdminClients() {
             <TableRow>
               <TableHead>Nombre</TableHead>
               <TableHead>Teléfono</TableHead>
-              <TableHead>Turnos</TableHead>
-              <TableHead>Realizados</TableHead>
-              <TableHead>Última visita</TableHead>
+              {canSeeTurnos && (
+                <>
+                  <TableHead>Turnos</TableHead>
+                  <TableHead>Realizados</TableHead>
+                  <TableHead>Última visita</TableHead>
+                </>
+              )}
               {/* La columna entera desaparece sin el permiso, en vez de mostrar
                   una fila de "—": así no queda la duda de si la clienta no
                   escribió nada o si es que no se puede ver. */}
@@ -135,11 +155,15 @@ function AdminClients() {
               <TableRow key={c.id}>
                 <TableCell className="text-foreground">{c.full_name ?? "Sin nombre"}</TableCell>
                 <TableCell>{c.phone ?? "—"}</TableCell>
-                <TableCell>{c.total}</TableCell>
-                <TableCell>{c.done}</TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {c.last ? formatDateTime(c.last) : "—"}
-                </TableCell>
+                {canSeeTurnos && (
+                  <>
+                    <TableCell>{c.total}</TableCell>
+                    <TableCell>{c.done}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {c.last ? formatDateTime(c.last) : "—"}
+                    </TableCell>
+                  </>
+                )}
                 {canSeeNotes && (
                   // `text-sm text-foreground` y no `text-xs text-muted-foreground`.
                   // Acá adentro hay alergias, embarazos y antecedentes —lo que
@@ -201,7 +225,9 @@ function AdminClients() {
             {clients.data && rows.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={canSeeNotes ? 7 : 6}
+                  // Nombre + Teléfono + Ficha, más las tres de turnos y la de
+                  // notas cuando corresponden. Si se suma una columna, se suma acá.
+                  colSpan={3 + (canSeeTurnos ? 3 : 0) + (canSeeNotes ? 1 : 0)}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   Todavía no hay clientas registradas.
