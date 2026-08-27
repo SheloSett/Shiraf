@@ -1,6 +1,6 @@
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { accesoDe, exigirAdmin, puede } from "@/server/services/authz.service";
+import { accesoDe, exigirAdmin, puede, puedeAlguno } from "@/server/services/authz.service";
 import { idsDelEquipo } from "@/server/services/agenda.service";
 import {
   exigirAlcanceDeClienta,
@@ -40,7 +40,14 @@ import type {
 
 export async function listar(ctx: Ctx) {
   const acceso = await accesoDe(ctx.user!.id);
-  const veNotas = puede(acceso, "clients_notes");
+  // 27/8/2026 — 'clients_notes' se absorbió en 'clients_contact' (ver
+  // PERMISSIONS). Se pregunta por los DOS y no por uno: la dueña decidió que
+  // quien gestiona turnos ve todo de la clienta, y `puede()` no expande el
+  // `implies` de 'appointments' — es una etiqueta para la pantalla de Equipo,
+  // no una regla que corra acá. Sin nombrar los dos, a una empleada con la
+  // agenda a cargo las notas le quedarían afuera.
+  // const veNotas = puede(acceso, "clients_notes");
+  const veNotas = puedeAlguno(acceso, ["clients_contact", "appointments"]);
   const veTurnosAjenos = puede(acceso, "appointments");
 
   const fichas = await prisma.profiles.findMany({
@@ -383,9 +390,11 @@ export async function reprogramarMiTurno(ctx: Ctx) {
  * La puerta la abre `clients_contact` **o** `appointments` (lo pide la ruta),
  * pero adentro cada cosa pide lo suyo:
  *
- *   · las notas clínicas       → `clients_notes`. Son alergias, embarazos,
- *     antecedentes: el permiso existe justamente para que no las vea cualquiera
- *     que pueda leer un teléfono.
+ *   · las notas clínicas       → `clients_contact` **o** `appointments`. Son
+ *     alergias, embarazos y antecedentes. Hasta el 27/8/2026 tenían candado
+ *     propio (`clients_notes`); la dueña decidió unirlas a la ficha, porque
+ *     una ficha se abre entera o no se abre, y quien maneja la agenda de una
+ *     clienta tiene que poder saber si está embarazada.
  *   · el historial de turnos   → `appointments`. Quien sólo tiene el contacto no
  *     puede ver cuándo vino ni qué se hizo, igual que en la lista.
  *
@@ -397,7 +406,14 @@ export async function verClienta(ctx: Ctx) {
   if (!id) return json({ error: "Falta la clienta." }, 400);
 
   const acceso = await accesoDe(ctx.user!.id);
-  const veNotas = puede(acceso, "clients_notes");
+  // 27/8/2026 — 'clients_notes' se absorbió en 'clients_contact' (ver
+  // PERMISSIONS). Se pregunta por los DOS y no por uno: la dueña decidió que
+  // quien gestiona turnos ve todo de la clienta, y `puede()` no expande el
+  // `implies` de 'appointments' — es una etiqueta para la pantalla de Equipo,
+  // no una regla que corra acá. Sin nombrar los dos, a una empleada con la
+  // agenda a cargo las notas le quedarían afuera.
+  // const veNotas = puede(acceso, "clients_notes");
+  const veNotas = puedeAlguno(acceso, ["clients_contact", "appointments"]);
   const veTurnos = puede(acceso, "appointments");
 
   const ficha = await prisma.profiles.findUnique({

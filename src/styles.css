@@ -65,13 +65,25 @@
 :root {
   --radius: 0.25rem;
 
-  --background: oklch(0.972 0.008 95);
+  /* Beige más marcado, pedido del centro. El crema anterior tenía croma 0.008
+     y en pantalla se leía casi como papel blanco; subo el croma a 0.023 y bajo
+     la luminosidad de 0.972 a 0.955 para que el fondo se lea beige de verdad.
+     Comentado y no borrado para poder volver al crema original si no gusta. */
+  /* --background: oklch(0.972 0.008 95); */
+  --background: oklch(0.955 0.023 91);
   --foreground: oklch(0.28 0.024 130);
 
-  --card: oklch(0.99 0.004 95);
+  /* Las tarjetas siguen un escalón por encima del fondo, pero acompañan el
+     giro a beige: si quedaban en 0.99/0.004 se veían blancas recortadas sobre
+     el fondo nuevo. */
+  /* --card: oklch(0.99 0.004 95); */
+  --card: oklch(0.984 0.01 93);
   --card-foreground: oklch(0.28 0.024 130);
 
-  --popover: oklch(0.99 0.004 95);
+  /* Mismo criterio que --card: el popover flota sobre el fondo, así que sube
+     en luminosidad pero conserva la calidez del beige. */
+  /* --popover: oklch(0.99 0.004 95); */
+  --popover: oklch(0.984 0.01 93);
   --popover-foreground: oklch(0.28 0.024 130);
 
   /* Verde oliva del logo. Croma subido de 0.032 a 0.048: a 0.032 se leía como
@@ -79,10 +91,16 @@
   --primary: oklch(0.375 0.048 132);
   --primary-foreground: oklch(0.97 0.012 92);
 
-  --secondary: oklch(0.93 0.014 100);
+  /* Los tonos de apoyo bajan un escalón para no perder separación contra el
+     fondo nuevo: si --background pasa a 0.955 y secondary queda en 0.93, la
+     diferencia se vuelve casi invisible. */
+  /* --secondary: oklch(0.93 0.014 100); */
+  --secondary: oklch(0.908 0.028 92);
   --secondary-foreground: oklch(0.33 0.028 130);
 
-  --muted: oklch(0.94 0.011 98);
+  /* Igual que secondary: mantiene el escalón respecto del fondo beige. */
+  /* --muted: oklch(0.94 0.011 98); */
+  --muted: oklch(0.922 0.024 92);
   --muted-foreground: oklch(0.52 0.02 120);
 
   /* Dorado del logo */
@@ -94,8 +112,12 @@
   --destructive: oklch(0.55 0.19 25);
   --destructive-foreground: oklch(0.98 0.005 95);
 
-  --border: oklch(0.89 0.014 98);
-  --input: oklch(0.89 0.014 98);
+  /* Bordes y campos, también un punto más abajo y más cálidos: sobre el beige
+     nuevo el borde anterior casi no se distinguía. */
+  /* --border: oklch(0.89 0.014 98); */
+  /* --input: oklch(0.89 0.014 98); */
+  --border: oklch(0.872 0.024 92);
+  --input: oklch(0.872 0.024 92);
   --ring: oklch(0.75 0.098 84);
 
   --chart-1: oklch(0.4 0.032 128);
@@ -199,7 +221,7 @@
 /*
  * ── Sistema editorial ────────────────────────────────────────────────────────
  * Cormorant recién se luce en tamaños grandes. La distancia entre `display-hero`
- * (hasta 11rem) y `text-eyebrow` (11px) es deliberada: ese salto enorme entre lo
+ * (hasta 8.75rem) y `text-eyebrow` (11px) es deliberada: ese salto enorme entre lo
  * más grande y lo más chico es lo que hace que algo se lea como compuesto y no
  * como una escala por defecto.
  */
@@ -208,7 +230,12 @@
    adelgaza las hairlines solo. */
 @utility display-hero {
   font-family: var(--font-display);
-  font-size: clamp(3.5rem, 12vw, 10rem);
+  /* Un escalón más chico a pedido del centro: el tope pasa de 10rem a 8.75rem
+     (160px → 140px) y el tramo fluido de 12vw a 10.5vw, así el titular achica
+     también en pantallas intermedias y no sólo en las anchas. Sigue siendo el
+     elemento más grande de la página por lejos. */
+  /* font-size: clamp(3.5rem, 12vw, 10rem); */
+  font-size: clamp(3.25rem, 10.5vw, 8.75rem);
   font-weight: 400;
   line-height: 0.9;
   letter-spacing: -0.012em;

@@ -33,11 +33,28 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
+/*
+ * Sección "Nuestros tratamientos" del home: apagada a pedido del centro.
+ *
+ * No la borré. Tampoco la envolví en un comentario JSX, que sería lo obvio: el
+ * bloque tiene cuatro comentarios adentro y los comentarios de JSX no se
+ * anidan — el primer cierre interno terminaría el de afuera y el resto del
+ * archivo quedaría suelto en medio del JSX. Con la bandera el código queda
+ * intacto, sin tocar una línea, y volver a mostrar la sección es poner true.
+ *
+ * El tipo va anotado como boolean a propósito: sin la anotación TypeScript la
+ * toma como el literal `false` y marca el bloque entero como inalcanzable.
+ */
+const MOSTRAR_TRATAMIENTOS: boolean = false;
+
 function Home() {
   const services = useQuery({
     queryKey: ["services", "published", "featured"],
     queryFn: async () =>
       (await api<RtaServicios>("/api/publico/servicios?orden=precio&limite=6")).servicios,
+    // Atado a la bandera: con la sección apagada el home no tiene por qué pedir
+    // servicios que no va a mostrar. Se reactiva solo al prender MOSTRAR_TRATAMIENTOS.
+    enabled: MOSTRAR_TRATAMIENTOS,
   });
 
   // El hover manda, pero antes de que el usuario toque nada mostramos el
@@ -120,14 +137,30 @@ function Home() {
             peso: el h1 llega a 10rem y esto no pasa de 2rem. Cinco veces más
             chico — el orden de lectura queda fuera de discusión.
           */}
-          <Reveal delay={180}>
-            <div className="gold-rule mt-9 w-20" />
-            <p className="mt-7 max-w-sm font-display text-[clamp(1.5rem,2.1vw,2rem)] leading-[1.12] text-foreground">
-              Cada piel es distinta.
-              <br />
-              <span className="text-muted-foreground">El tratamiento también.</span>
-            </p>
-          </Reveal>
+
+          {/*
+            Y acá estaba esa frase, "Cada piel es distinta. / El tratamiento
+            también.". La saco a pedido del centro. Comentada y no borrada por
+            si la quieren de vuelta, o por si aparece en otra sección como pasó
+            antes con el párrafo de tratamientos.
+
+            Me llevé también el filete dorado que tenía encima: su único trabajo
+            era hacer de bisagra entre el h1 y esta frase, y solo, con el titular
+            arriba y los botones abajo, quedaba colgado sin nada que presentar.
+
+            <Reveal delay={180}>
+              <div className="gold-rule mt-9 w-20" />
+              <p className="mt-7 max-w-sm font-display text-[clamp(1.5rem,2.1vw,2rem)] leading-[1.12] text-foreground">
+                Cada piel es distinta.
+                <br />
+                <span className="text-muted-foreground">El tratamiento también.</span>
+              </p>
+            </Reveal>
+
+            Los botones quedan entonces a mt-9 del titular, que es exactamente la
+            separación que tenía el filete respecto del h1. El aire de arriba del
+            bloque no cambia.
+          */}
 
           <Reveal delay={260}>
             <div className="mt-9 flex flex-wrap items-center gap-6">
@@ -231,10 +264,11 @@ function Home() {
         con guía punteada — el recurso de las cartas de restaurante y los
         índices de libro. Más denso, más cálido y sin una sola caja.
       */}
-      <section>
-        <div className="grid lg:grid-cols-12">
-          <div className="px-5 pt-20 lg:col-span-9 lg:col-start-2 lg:px-0 lg:pt-28">
-            {/*
+      {MOSTRAR_TRATAMIENTOS && (
+        <section>
+          <div className="grid lg:grid-cols-12">
+            <div className="px-5 pt-20 lg:col-span-9 lg:col-start-2 lg:px-0 lg:pt-28">
+              {/*
               Antes era `flex flex-wrap items-end justify-between`: título a la
               izquierda, "Ver todos" contra el borde derecho y un vacío enorme
               en el medio.
@@ -271,70 +305,72 @@ function Home() {
               como bajada del título. Ahí no puede flotar porque cuelga de él.
               "Ver todos" vuelve al borde derecho, alineado abajo con el bloque.
             */}
-            <Reveal className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6">
-              <div>
-                <p className="text-eyebrow text-muted-foreground">Nuestros tratamientos</p>
-                <h2 className="display-section mt-5 text-foreground">Servicios</h2>
-                <p className="mt-7 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-                  Tratamientos faciales, corporales y aparatología pensados uno por uno. Elegí tu
-                  servicio, el día, el horario y la profesional que te acompaña. Trabajamos con
-                  cosmética profesional de línea dermatológica y una evaluación previa antes de cada
-                  sesión. Nada de protocolos genéricos.
-                </p>
-              </div>
-              <Link
-                to="/servicios"
-                className="text-eyebrow text-muted-foreground underline-offset-8 transition-colors hover:text-foreground hover:underline"
-              >
-                Ver todos
-              </Link>
-            </Reveal>
+              <Reveal className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6">
+                <div>
+                  <p className="text-eyebrow text-muted-foreground">Nuestros tratamientos</p>
+                  <h2 className="display-section mt-5 text-foreground">Servicios</h2>
+                  <p className="mt-7 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
+                    Tratamientos faciales, corporales y aparatología pensados uno por uno. Elegí tu
+                    servicio, el día, el horario y la profesional que te acompaña. Trabajamos con
+                    cosmética profesional de línea dermatológica y una evaluación previa antes de
+                    cada sesión. Nada de protocolos genéricos.
+                  </p>
+                </div>
+                <Link
+                  to="/servicios"
+                  className="text-eyebrow text-muted-foreground underline-offset-8 transition-colors hover:text-foreground hover:underline"
+                >
+                  Ver todos
+                </Link>
+              </Reveal>
 
-            <Reveal className="mt-16 grid gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
-              {/* Índice. En desktop sólo los nombres: el detalle vive en el
+              <Reveal className="mt-16 grid gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
+                {/* Índice. En desktop sólo los nombres: el detalle vive en el
                   panel. En mobile no hay hover, así que cada ítem se despliega
                   con su descripción y su precio. */}
-              <ul>
-                {services.data?.map((s) => {
-                  const isActive = s.id === active?.id;
-                  return (
-                    <li key={s.id}>
-                      <Link
-                        to="/reservar"
-                        search={{ service: s.id }}
-                        onMouseEnter={() => setActiveId(s.id)}
-                        onFocus={() => setActiveId(s.id)}
-                        className="block border-t border-border py-5 lg:py-6"
-                      >
-                        <span className="flex items-baseline justify-between gap-5">
-                          <span
-                            className={`font-display text-[28px] leading-tight transition-all duration-500 ease-out lg:text-[32px] ${
-                              isActive ? "translate-x-1.5 text-foreground" : "text-muted-foreground"
-                            }`}
-                          >
-                            {s.name}
+                <ul>
+                  {services.data?.map((s) => {
+                    const isActive = s.id === active?.id;
+                    return (
+                      <li key={s.id}>
+                        <Link
+                          to="/reservar"
+                          search={{ service: s.id }}
+                          onMouseEnter={() => setActiveId(s.id)}
+                          onFocus={() => setActiveId(s.id)}
+                          className="block border-t border-border py-5 lg:py-6"
+                        >
+                          <span className="flex items-baseline justify-between gap-5">
+                            <span
+                              className={`font-display text-[28px] leading-tight transition-all duration-500 ease-out lg:text-[32px] ${
+                                isActive
+                                  ? "translate-x-1.5 text-foreground"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {s.name}
+                            </span>
+                            <span className="numeral whitespace-nowrap text-gold lg:hidden">
+                              {formatMoney(s.price)}
+                            </span>
                           </span>
-                          <span className="numeral whitespace-nowrap text-gold lg:hidden">
-                            {formatMoney(s.price)}
+                          <span className="mt-2 block text-sm leading-relaxed text-muted-foreground lg:hidden">
+                            {s.description}
                           </span>
-                        </span>
-                        <span className="mt-2 block text-sm leading-relaxed text-muted-foreground lg:hidden">
-                          {s.description}
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
+                        </Link>
+                      </li>
+                    );
+                  })}
 
-                {services.isLoading &&
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <li key={i} className="border-t border-border py-6">
-                      <div className="h-8 animate-pulse rounded-sm bg-muted" />
-                    </li>
-                  ))}
-              </ul>
+                  {services.isLoading &&
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <li key={i} className="border-t border-border py-6">
+                        <div className="h-8 animate-pulse rounded-sm bg-muted" />
+                      </li>
+                    ))}
+                </ul>
 
-              {/*
+                {/*
                 Panel de detalle. Es un campo de color con grano en vez de una
                 caja vacía, con la foto del tratamiento de fondo y el texto
                 encima.
@@ -353,53 +389,54 @@ function Home() {
                 Clase anterior:
                 className="surface-olive grain relative hidden aspect-4/5 flex-col justify-end overflow-hidden p-10 lg:sticky lg:top-28 lg:flex"
               */}
-              {active && (
-                <div className="surface-olive grain relative hidden flex-col justify-end overflow-hidden p-10 lg:sticky lg:top-28 lg:flex lg:h-[calc(100svh_-_9rem)]">
-                  {active.image_url && (
-                    <>
-                      <img
-                        src={imageUrl(active.image_url, "hero") ?? undefined}
-                        alt=""
-                        className="absolute inset-0 h-full w-full object-cover"
-                      />
-                      {/* Degradado desde abajo: sin esto el texto crema se pierde
+                {active && (
+                  <div className="surface-olive grain relative hidden flex-col justify-end overflow-hidden p-10 lg:sticky lg:top-28 lg:flex lg:h-[calc(100svh_-_9rem)]">
+                    {active.image_url && (
+                      <>
+                        <img
+                          src={imageUrl(active.image_url, "hero") ?? undefined}
+                          alt=""
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                        {/* Degradado desde abajo: sin esto el texto crema se pierde
                           sobre las zonas claras de la foto. */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/75 to-primary/20" />
-                    </>
-                  )}
-                  <div key={active.id} className="panel-in relative">
-                    <p className="text-eyebrow text-gold">{active.category}</p>
-                    <h3 className="mt-5 font-display text-5xl leading-[1.02] text-primary-foreground">
-                      {active.name}
-                    </h3>
-                    <p className="mt-6 max-w-sm text-[15px] leading-relaxed text-primary-foreground/75">
-                      {active.description}
-                    </p>
+                        <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/75 to-primary/20" />
+                      </>
+                    )}
+                    <div key={active.id} className="panel-in relative">
+                      <p className="text-eyebrow text-gold">{active.category}</p>
+                      <h3 className="mt-5 font-display text-5xl leading-[1.02] text-primary-foreground">
+                        {active.name}
+                      </h3>
+                      <p className="mt-6 max-w-sm text-[15px] leading-relaxed text-primary-foreground/75">
+                        {active.description}
+                      </p>
 
-                    <div className="mt-9 flex items-center justify-between border-t border-primary-foreground/20 pt-5">
-                      <span className="text-eyebrow text-primary-foreground/60">
-                        {active.duration_minutes} min
-                      </span>
-                      <span className="font-display text-3xl tabular-nums text-primary-foreground">
-                        {formatMoney(active.price)}
-                      </span>
+                      <div className="mt-9 flex items-center justify-between border-t border-primary-foreground/20 pt-5">
+                        <span className="text-eyebrow text-primary-foreground/60">
+                          {active.duration_minutes} min
+                        </span>
+                        <span className="font-display text-3xl tabular-nums text-primary-foreground">
+                          {formatMoney(active.price)}
+                        </span>
+                      </div>
+
+                      <Link
+                        to="/reservar"
+                        search={{ service: active.id }}
+                        className="text-eyebrow mt-8 inline-flex items-center gap-3 text-primary-foreground underline-offset-8 hover:underline"
+                      >
+                        Reservar este tratamiento
+                        <span aria-hidden="true">→</span>
+                      </Link>
                     </div>
-
-                    <Link
-                      to="/reservar"
-                      search={{ service: active.id }}
-                      className="text-eyebrow mt-8 inline-flex items-center gap-3 text-primary-foreground underline-offset-8 hover:underline"
-                    >
-                      Reservar este tratamiento
-                      <span aria-hidden="true">→</span>
-                    </Link>
                   </div>
-                </div>
-              )}
-            </Reveal>
+                )}
+              </Reveal>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/*
         Campo de color a sangre con grano. El oliva deja de ser un detalle de

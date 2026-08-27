@@ -99,7 +99,10 @@ enum app_role {
 enum app_permission {
   appointments    // gestionar turnos (ver todos, confirmar, cargar, cancelar)
   clients_contact // ver la ficha y el teléfono de las clientas
-  clients_notes   // ver las notas clínicas (alergias, embarazos)
+  clients_notes   // RETIRADO el 27/8/2026: se absorbió en clients_contact. El
+                  // valor se deja porque sacarlo de un enum de Postgres es una
+                  // migración pesada que no gana nada, y las filas que lo
+                  // tenían ya se migraron. No lo pregunta nadie: ver PERMISSIONS.
   catalog         // editar tratamientos, precios y categorías
   stock           // mover stock y editar productos
   stock_costs     // ver los costos de compra

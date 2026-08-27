@@ -245,7 +245,8 @@ export type RtaTurnosProximos = { turnos: Record<string, number> };
 /**
  * Una clienta en la lista del panel.
  *
- * `notes` viene en null si no hay nota o si no se tiene `clients_notes`, igual
+ * `notes` viene en null si no hay nota o si no se tiene `clients_contact` —ni
+ * `appointments`, que desde el 27/8/2026 también las alcanza—, igual
  * que el costo en el stock. Y `total`/`done`/`last` vienen en cero para quien
  * no tiene `appointments`: es lo que hacía la policy, no un dato faltante.
  */

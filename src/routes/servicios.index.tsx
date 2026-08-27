@@ -141,10 +141,16 @@ function ServicesPage() {
                 clienta en vez de listar el inventario del centro.
               */}
               <div>
-                {/* `text-balance`: sin eso el quiebre dejaba "hoy?" solo en la
-                    segunda línea. */}
+                {/* `text-balance`: sin eso el quiebre dejaba la última palabra
+                    sola en la segunda línea. */}
+                {/* Titular anterior, cambiado a pedido del centro. Lo dejo acá
+                    por si quieren volver:
+
+                    ¿Qué necesita tu piel hoy?
+
+                    El nuevo va tal cual me lo pasaron, sin tocarle nada. */}
                 <h1 className="display-section text-balance text-foreground">
-                  ¿Qué necesita tu piel hoy?
+                  Como te vas Consentir hoy
                 </h1>
                 <div className="gold-rule mt-6 w-24" />
               </div>

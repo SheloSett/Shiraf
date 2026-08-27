@@ -39,15 +39,38 @@ export const PERMISSIONS = [
   {
     value: "clients_contact",
     label: "Ver datos de clientas",
-    description: "La ficha de cada clienta con su teléfono.",
+    description:
+      "La ficha completa: teléfono, historial y las notas clínicas — alergias, embarazos y antecedentes.",
     enforcement: "db",
   },
-  {
-    value: "clients_notes",
-    label: "Ver notas clínicas",
-    description: "Alergias, embarazos y antecedentes que dejó la clienta.",
-    enforcement: "db",
-  },
+  /*
+   * 27/8/2026 — 'clients_notes' se absorbió adentro de 'clients_contact'.
+   *
+   * Eran dos casillas y ahora es una sola, decidido por la dueña. En la
+   * práctica nadie tenía una sin la otra por un motivo pensado: la ficha de una
+   * clienta se abre entera o no se abre, y la dueña tenía que acordarse de
+   * tildar dos cosas para dar un acceso que ella piensa como uno.
+   *
+   * ⚠️ Y con esto las notas clínicas pasan a estar al alcance de quien tiene
+   * 'appointments', por el `implies` de arriba. Es deliberado y lo decidió la
+   * dueña: quien maneja la agenda ve todo de la clienta. Antes las notas tenían
+   * candado propio. Si algún día hay que volver a separarlas —una recepcionista
+   * que atiende el teléfono no necesita saber quién está embarazada— lo que hay
+   * que hacer es desactivar esta entrada y devolver los chequeos de
+   * `veNotas` a `puede(acceso, "clients_notes")`.
+   *
+   * El valor NO se borró del enum app_permission de Postgres ni del
+   * schema.prisma: sacar un valor de un enum en Postgres es una migración
+   * pesada y no gana nada. Queda ahí, sin usarse. Las filas que lo tenían se
+   * migraron a 'clients_contact', para que nadie perdiera lo que ya tenía.
+   *
+   *   {
+   *     value: "clients_notes",
+   *     label: "Ver notas clínicas",
+   *     description: "Alergias, embarazos y antecedentes que dejó la clienta.",
+   *     enforcement: "db",
+   *   },
+   */
   {
     value: "catalog",
     label: "Editar catálogo y precios",

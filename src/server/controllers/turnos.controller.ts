@@ -234,10 +234,18 @@ export async function pendientes() {
 /**
  * La ficha de un turno.
  *
- * Pide el mismo permiso que la lista (`appointments`) y a propósito NO trae
- * `profiles.notes`: esas son las notas clínicas —alergias, embarazos— y tienen
- * su propio candado, `clients_notes`. Sumarlas acá seria abrirlas a todo el que
- * pueda gestionar turnos, que es justo lo que ese permiso separado evita.
+ * Pide el mismo permiso que la lista (`appointments`) y NO trae `profiles.notes`
+ * —las notas clínicas: alergias, embarazos, antecedentes—.
+ *
+ * ⚠️ El motivo por el que no las traía YA NO EXISTE. Hasta el 27/8/2026 tenían
+ * candado propio (`clients_notes`) y sumarlas acá hubiera sido abrirlas a todo
+ * el que gestiona turnos, que es lo que ese permiso separado evitaba. La dueña
+ * unió los dos permisos, así que hoy quien abre esta ficha ya puede ver esas
+ * notas — sólo que tiene que ir a busarlas a la ficha de la clienta.
+ *
+ * O sea que esto quedó como una decisión de pantalla y no de permisos, y hay
+ * que tomarla a propósito: si la recepcionista abre un turno, el momento en que
+ * una alergia importa es ESE. Pendiente de decidir con el centro.
  *
  * Lo que sí trae de más que la lista es el MAIL. La tabla no lo mostraba por
  * lugar, pero es el dato con el que se escribe cuando el teléfono no contesta.

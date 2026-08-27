@@ -36,7 +36,14 @@ export const Route = createFileRoute("/_authenticated/admin/clientes")({
 
 function AdminClients() {
   const { can, isAdmin } = useAccess();
-  const canSeeNotes = can("clients_notes");
+  // 27/8/2026 — 'clients_notes' se absorbió en 'clients_contact', y se
+  // preguntan los dos por lo mismo que en el controller: quien tiene la agenda
+  // a cargo ve todo de la clienta, y `can()` no expande el `implies`. Esta
+  // condición tiene que decir lo MISMO que el `veNotas` del servidor: si se
+  // separan, la pantalla esconde una columna que la API igual manda, o al
+  // revés muestra un encabezado sin nada abajo.
+  // const canSeeNotes = can("clients_notes");
+  const canSeeNotes = can("clients_contact") || can("appointments");
   /**
    * Las tres columnas que cuentan turnos.
    *
@@ -99,7 +106,8 @@ function AdminClients() {
     // compartirían la misma entrada de caché y una vería la columna de la otra.
     queryKey: ["admin-clients", canSeeNotes],
     // Las notas y los conteos vienen recortados por el SERVIDOR según el
-    // permiso: las notas sólo con `clients_notes`, y los turnos de todas sólo
+    // permiso: las notas sólo con `clients_contact` o `appointments`, y los
+    // turnos de todas sólo
     // con `appointments`. Antes la pantalla decidía no pedir las notas y la RLS
     // hacía cumplir el resto; ahora las dos cosas se resuelven del otro lado.
     // El canSeeNotes de acá abajo sigue existiendo sólo para mostrar la columna.
