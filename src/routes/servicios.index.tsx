@@ -148,9 +148,14 @@ function ServicesPage() {
 
                     ¿Qué necesita tu piel hoy?
 
-                    El nuevo va tal cual me lo pasaron, sin tocarle nada. */}
+                    El nuevo llegó escrito "Como te vas Consentir hoy" — así está
+                    en TODO.md — y la primera vez se copió tal cual. Va corregido
+                    a pedido: tilde en "Cómo", la "a" que faltaba, y "consentir"
+                    en minúscula. Es un h1 del sitio público; sin corregir se lee
+                    como error de tipeo, no como decisión. Las palabras son las
+                    que eligieron ellas, no se cambió ninguna. */}
                 <h1 className="display-section text-balance text-foreground">
-                  Como te vas Consentir hoy
+                  Cómo te vas a consentir hoy
                 </h1>
                 <div className="gold-rule mt-6 w-24" />
               </div>

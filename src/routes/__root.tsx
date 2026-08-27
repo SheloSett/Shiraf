@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -11,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
+import { WhatsappFab } from "@/components/whatsapp-fab";
 
 function NotFoundComponent() {
   return (
@@ -136,10 +138,29 @@ function RootComponent() {
   // las dos llaman a olvidarSesion() y navegan. Lo que antes llegaba por un
   // evento ahora pasa en la línea de al lado.
 
+  /*
+   * El botón flotante de WhatsApp se monta acá, una sola vez, en vez de
+   * agregarlo a cada página pública. Son siete las que hoy muestran el footer
+   * y la lista crece: puesto página por página, la que se agregue mañana nace
+   * sin el botón y nadie se entera.
+   *
+   * La única exclusión es el panel. `/admin` es de quien trabaja en el centro,
+   * no de la clienta, y un botón para escribirle a Shiraf desde adentro de
+   * Shiraf no tiene sentido. Va por prefijo y no por lista de rutas para que
+   * las pantallas nuevas del panel queden afuera solas.
+   *
+   * SÍ aparece en /auth y /recuperar, que también son de la clienta: si alguien
+   * no puede entrar o no le llega el mail de recuperación, ese es justo el
+   * momento en que quiere escribir. Si molesta, se suma al chequeo de abajo.
+   */
+  const pathname = useRouterState({ select: (estado) => estado.location.pathname });
+  const esPanel = pathname === "/admin" || pathname.startsWith("/admin/");
+
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      {!esPanel && <WhatsappFab />}
       <Toaster />
     </QueryClientProvider>
   );

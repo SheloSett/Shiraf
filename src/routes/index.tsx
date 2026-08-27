@@ -199,11 +199,20 @@ function Home() {
 
         Antes: `<OrganicRule className="mt-20 lg:mt-28" />`. Con ese margen la
         línea quedaba flotando en medio de una franja de crema vacía, sin tocar
-        ni el hero ni lo que sigue — "en el aire". Ahora va pegada al borde
-        inferior de la foto, así se lee como el subrayado del hero y no como un
-        elemento suelto.
+        ni el hero ni lo que sigue — "en el aire". Después pasó a ir pegada al
+        borde inferior de la foto, para leerse como el subrayado del hero.
+
+        Ahora va atado a MOSTRAR_TRATAMIENTOS, por lo mismo que el margen de la
+        banda oliva: el filete funcionaba de subrayado mientras abajo seguía
+        más crema (la carta de tratamientos). Apagada la carta, lo que sigue es
+        el oliva a sangre, y el filete quedaba de sándwich entre la foto y el
+        verde — sus 12px de alto se veían como una tirita clara suelta, sobre
+        todo en mobile, donde el hero termina en el borde de la foto.
+
+        El trazo no se perdió: bajó adentro de la banda oliva, en dorado. Ahí
+        separa sin abrir crema. Ver más abajo.
       */}
-      <OrganicRule />
+      {MOSTRAR_TRATAMIENTOS && <OrganicRule />}
 
       {/*
         Reemplaza la franja de tres íconos (Leaf / Clock / Star), que es el
@@ -442,7 +451,38 @@ function Home() {
         Campo de color a sangre con grano. El oliva deja de ser un detalle de
         acento y pasa a ocupar la pantalla completa.
       */}
-      <section className="surface-olive grain mt-24 lg:mt-36">
+      {/*
+        El margen de arriba va atado a MOSTRAR_TRATAMIENTOS. Ese `mt-24
+        lg:mt-36` no era aire de esta sección: era la separación contra el final
+        de la carta de tratamientos, que es texto sobre crema. Con la carta
+        apagada no queda nada arriba de lo que separarse y eran 144px de crema
+        vacía entre el filete del hero y el oliva — el hueco que se veía en el
+        sitio.
+
+        En cero, la foto del hero entrega directo al oliva y el corte lo marca
+        el trazo dorado de acá abajo, ya sobre el verde. Es como abren las otras
+        secciones oliva del sitio (contacto.tsx y servicios.$slug.tsx tampoco le
+        ponen margen). Si vuelve la carta de tratamientos, vuelven juntos el
+        margen y el filete crema del hero.
+      */}
+      <section className={`surface-olive grain ${MOSTRAR_TRATAMIENTOS ? "mt-24 lg:mt-36" : ""}`}>
+        {/*
+          El mismo trazo a mano que venía arriba, pero apoyado DENTRO del oliva
+          y en dorado en vez de `text-border`. Así el corte sigue estando
+          dibujado — no es un choque seco de foto contra verde — pero no abre
+          los 12px de crema que se veían como hueco entre las dos secciones: el
+          alto lo pone la banda, que ya era verde de todos modos.
+
+          `/35` porque a opacidad plena compite con los numerales dorados de
+          cada profesional, que son el acento real de la sección. Acá tiene que
+          ser un susurro.
+
+          No va atado a MOSTRAR_TRATAMIENTOS: esto ya no es el cierre del hero,
+          es el borde de arriba de la banda oliva, y le corresponde esté lo que
+          esté arriba.
+        */}
+        <OrganicRule className="text-gold/35" />
+
         <div className="grid lg:grid-cols-12">
           <div className="px-5 py-24 lg:col-span-10 lg:col-start-2 lg:px-0 lg:py-32">
             <Reveal>
