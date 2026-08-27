@@ -19,13 +19,29 @@ import type { DeliveryResult } from "@/lib/notifications.server";
 
 const NotifyInput = z.object({
   appointmentId: z.string().uuid(),
+  /**
+   * ⚠️ **Esta lista tiene que tener los MISMOS valores que `AppointmentEvent`**
+   * de @/lib/notifications. No es una copia decorativa: es el único lugar donde
+   * el evento se valida, así que un valor que falte acá no es un error de tipos
+   * —el validador recibe `unknown`— sino un mail que no sale.
+   *
+   * 27/8/2026: faltaba "rescheduled" y por eso el aviso de "te movimos el
+   * turno" NUNCA salió. El mensaje estaba escrito en `buildAppointmentMessage`,
+   * el evento estaba en `TO_CLIENT`, y `useReprogramarTurno` lo pedía — pero
+   * zod lo rechazaba antes de llegar. Como el hook se traga el fallo del mail
+   * para no romper la reprogramación, el síntoma era un toast que decía "Por
+   * mail no salió" con un error de validación, en la pantalla que promete
+   * "Se le avisa a la clienta con el horario nuevo".
+   */
   event: z.enum([
     "requested",
     "confirmed",
     "cancelled",
+    "rescheduled",
     "reminder",
     "new-request",
     "client-cancelled",
+    "client-rescheduled",
   ]),
 });
 
@@ -42,7 +58,15 @@ const NotifyInput = z.object({
  * cualquiera con cuenta le haga llegar a otra un "tu turno fue cancelado"
  * firmado por Shiraf.
  */
-const LOS_DISPARA_LA_CLIENTA = ["new-request", "requested", "client-cancelled"] as const;
+const LOS_DISPARA_LA_CLIENTA = [
+  "new-request",
+  "requested",
+  "client-cancelled",
+  // Se movió el turno sola desde «Mi cuenta». Va al centro, igual que
+  // "client-cancelled" y por el mismo motivo: el que tiene que enterarse es
+  // quien mira la agenda.
+  "client-rescheduled",
+] as const;
 
 /**
  * Manda el mail de un turno.

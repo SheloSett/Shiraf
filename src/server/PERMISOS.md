@@ -19,7 +19,10 @@ Las 39 están cubiertas. Se verificó de dos formas, y las dos importan:
    middlewares. Ninguno quedó sin protección salvo los que tienen que estar
    abiertos —`/api/publico/*` y el login— y `/api/turnos/mi-agenda`, que pide
    sesión pero **no** el permiso `appointments`, a propósito: ver los turnos
-   propios no es gestionar los del centro, y el alcance lo pone la sesión.
+   propios no es gestionar los del centro, y el alcance lo pone la sesión. Esa
+   ruta contesta dos vistas —los próximos y, con `?vista=historial`, los ya
+   pasados— bajo exactamente la misma regla: las dos sacan la profesional de la
+   sesión y ninguna acepta un id de profesional por parámetro.
 2. **Contra la base**, con los datos reales: sin sesión, `/api/turnos`,
    `/api/catalogo/servicios`, `/api/stock/productos`, `/api/equipo/empleadas` y
    `/api/clientas` contestan **401**; con la sesión de la dueña, **200**.
@@ -91,7 +94,7 @@ poder pedirle un permiso distinto.
 
 | ✔   | Policy                | Op     | Regla                                   | Vigente en     | Dónde queda                                                                                          |
 | --- | --------------------- | ------ | --------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
-| ✅  | `read client notes`   | SELECT | `client_id = uid` **o** `clients_notes` | 20260814010000 | clientas.controller → listar (sólo si `clients_notes`) · agenda.service → miAgenda (sólo sus turnos) |
+| ✅  | `read client notes`   | SELECT | `client_id = uid` **o** `clients_notes` | 20260814010000 | clientas.controller → listar (sólo si `clients_notes`) · agenda.service → miAgenda y miHistorial (sólo sus turnos) |
 | ✅  | `write client notes`  | INSERT | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                 |
 | ✅  | `update client notes` | UPDATE | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                 |
 

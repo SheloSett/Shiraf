@@ -64,13 +64,19 @@ import {
 /**
  * Los eventos que le hablan a la clienta. Los que no están acá van al centro.
  *
- * ⚠️ Los dos que van al centro se parecen mucho a los otros y hay que mirarlos
+ * ⚠️ Los tres que van al centro se parecen mucho a los otros y hay que mirarlos
  * dos veces antes de tocar esta lista:
  *
- *   new-request      · entró una reserva  → al centro (la clienta recibe
- *                                            "requested", que es otro texto)
- *   client-cancelled · la clienta canceló → al centro (la clienta NO recibe
- *                                            nada: lo acaba de hacer ella)
+ *   new-request        · entró una reserva  → al centro (la clienta recibe
+ *                                              "requested", que es otro texto)
+ *   client-cancelled   · la clienta canceló → al centro (la clienta NO recibe
+ *                                              nada: lo acaba de hacer ella)
+ *   client-rescheduled · la clienta se movió el turno → al centro. Ojo con
+ *                        éste: "rescheduled", que SÍ está en la lista de abajo,
+ *                        es el mismo hecho pero al revés —lo manda el centro y
+ *                        va a la clienta— y su texto empieza con "Tuvimos que
+ *                        mover tu turno". Confundirlos le manda a la clienta
+ *                        una disculpa por algo que decidió ella.
  *
  * Meter cualquiera de los dos acá adentro le manda a la clienta un mail escrito
  * para el panel, con el enlace a /admin/turnos.

@@ -1,7 +1,7 @@
 import type { appointment_status, Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { miAgenda, vincularTurnosDeInvitada } from "@/server/services/agenda.service";
+import { miAgenda, miHistorial, vincularTurnosDeInvitada } from "@/server/services/agenda.service";
 import { accesoDe } from "@/server/services/authz.service";
 import { nombreDelTratamiento, validarTurno } from "@/server/services/turnos.service";
 import { comoNumero } from "@/server/serializar";
@@ -580,7 +580,26 @@ export async function reprogramar(ctx: Ctx) {
  */
 export async function miAgendaDeHoy(ctx: Ctx) {
   const dias = Number(ctx.url.searchParams.get("dias"));
-  const turnos = await miAgenda(ctx.user!.id, Number.isFinite(dias) && dias > 0 ? dias : 30);
+  const ventana = Number.isFinite(dias) && dias > 0 ? dias : 30;
+
+  /*
+   * `?vista=historial` devuelve los turnos ya pasados en vez de los próximos.
+   *
+   * Va como parámetro de la misma ruta y no como un endpoint aparte porque las
+   * dos vistas son la misma pregunta —"mis turnos"— con el reloj para el otro
+   * lado: mismo alcance (sale de la sesión), mismo permiso (ninguno, no hay
+   * nada que permitir) y misma forma de fila. Separarlas en dos rutas obligaba
+   * a repetir ese razonamiento en PERMISOS.md y a mantener dos veces el mismo
+   * mapeo de nombres de abajo.
+   *
+   * Cualquier valor que no sea "historial" cae en los próximos, que es la vista
+   * por defecto y la que pedía esta ruta antes de que existiera la otra: una
+   * URL vieja sigue contestando exactamente lo mismo que contestaba.
+   */
+  const esHistorial = ctx.url.searchParams.get("vista") === "historial";
+  const turnos = esHistorial
+    ? await miHistorial(ctx.user!.id, ventana)
+    : await miAgenda(ctx.user!.id, ventana);
 
   return json({
     turnos: turnos.map((t) => ({

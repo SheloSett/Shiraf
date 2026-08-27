@@ -46,7 +46,16 @@ export type AppointmentEvent =
    * anunciarle a la clienta —lo acaba de hacer ella— pero el centro sí necesita
    * enterarse: le quedó un hueco en la agenda y, con suerte, el motivo escrito.
    */
-  | "client-cancelled";
+  | "client-cancelled"
+  /**
+   * La clienta se movió su propio turno desde «Mi cuenta». Va AL CENTRO.
+   *
+   * Es a `rescheduled` lo que `client-cancelled` es a `cancelled`: el mismo
+   * hecho contado para el otro lado del mostrador. Ella no necesita el mail
+   * —acaba de elegir el horario nuevo en pantalla—; el centro sí, porque la
+   * agenda del día le cambió sin que nadie del equipo lo tocara.
+   */
+  | "client-rescheduled";
 
 /** Lo mínimo para poder redactar cualquiera de los avisos. */
 export type NotifiableAppointment = {
@@ -212,6 +221,35 @@ export function buildAppointmentMessage(
           ...(appointment.cancelReason ? ["", `Motivo: ${appointment.cancelReason}`] : []),
           "",
           `El horario quedó libre: ${CONTACT.siteUrl}/admin/turnos`,
+        ],
+      };
+
+    /**
+     * Al centro, cuando la clienta se movió el turno sola.
+     *
+     * ── POR QUÉ NO DICE DE QUÉ HORARIO VENÍA ──────────────────────────────
+     *
+     * Porque acá no se sabe. El mail se arma leyendo el turno de la base
+     * DESPUÉS del UPDATE (ver `deliverAppointmentEmail`), así que el horario
+     * viejo ya no existe en ningún lado. Decirlo obligaría a que quien dispara
+     * el aviso lo mande en el pedido, y eso es justo lo que este archivo no
+     * hace: quien llama manda el id del turno y nada más.
+     *
+     * No es una pérdida grande: lo que el centro necesita saber es dónde está
+     * el turno AHORA, y el hueco viejo lo ve solo al abrir la agenda. Si algún
+     * día hace falta el "era X, ahora Y", el lugar de arreglarlo es el
+     * controller, guardando el horario anterior antes de escribir.
+     */
+    case "client-rescheduled":
+      return {
+        subject: `Turno movido por la clienta — ${appointment.clientName}`,
+        lines: [
+          `${appointment.clientName}${appointment.clientPhone ? ` · ${appointment.clientPhone}` : ""} se movió el turno.`,
+          "",
+          `Queda ${when}`,
+          ...(what ? [what] : []),
+          "",
+          `Se liberó el horario que tenía antes: ${CONTACT.siteUrl}/admin/turnos`,
         ],
       };
 
