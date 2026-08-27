@@ -114,6 +114,74 @@ Dockerfile no lo declaraba, y la imagen se venía armando con el valor vacío.
 El resto —`DATABASE_URL`, `JWT_SECRET`, `APP_URL`, las de Cloudinary del lado
 servidor, `SMTP_USER` y `SMTP_PASS`— son de runtime y van en `environment`.
 
+## ⚠️ Lo que anda en tu máquina y falla en el contenedor
+
+El 27/8/2026 el mail de recuperar contraseña falló **dos veces seguidas** en el
+VPS, andando perfecto en desarrollo. Los dos bugs eran de clases distintas y
+ninguno se podía ver sin levantar la imagen. Van anotados porque la próxima vez
+que algo funcione acá y falle allá, es probable que sea uno de estos dos.
+
+**Siempre empezar por el log.** Las dos veces el mensaje decía exactamente qué
+pasaba, y sin él cada uno era una tarde:
+
+```sh
+docker compose logs app | grep -i mail
+```
+
+### 1. Un archivo que el repo tiene y la imagen no
+
+> `[cuenta] No salió el mail: No se encontró la plantilla del mail.`
+
+La etapa `runtime` del Dockerfile **se arma copiando archivo por archivo**, no
+copiando el repo. Cualquier cosa que el código lea del disco en tiempo de
+ejecución tiene que estar en esa lista, o no existe adentro del contenedor. En
+desarrollo no se nota: ahí `process.cwd()` es la raíz del repo y está todo.
+
+Fue `emails/`, que `plantilla()` lee con `join(process.cwd(), "emails", …)`.
+
+**Antes de agregar cualquier lectura de disco nueva**, agregar el `COPY` en el
+mismo commit. Para revisar qué hay adentro:
+
+```sh
+docker run --rm --entrypoint sh shiraf-app:latest -c "ls -a /app"
+```
+
+### 2. Una variable de entorno definida pero vacía
+
+> `connect ECONNREFUSED 127.0.0.1:587`
+
+El compose mapea las opcionales así:
+
+```yaml
+SMTP_HOST: ${SMTP_HOST:-}
+```
+
+y `:-` sin nada a la derecha **no deja la variable sin definir: la define
+vacía**. En JavaScript eso rompe el patrón más común que hay:
+
+```js
+process.env.SMTP_HOST ?? "smtp.gmail.com"   // "" NO cae al default
+```
+
+`??` cae con `null` y `undefined`, con `""` no. Así que el valor queda vacío, la
+librería de turno lo lee como falsy y usa **su** default — nodemailer, localhost.
+Y el error que sale de ahí no menciona ninguna variable de entorno, que es lo
+que hace difícil encontrarlo.
+
+En desarrollo es invisible: una variable que no está en el `.env` **no existe**,
+así que el `??` funciona.
+
+**Toda variable opcional que venga del compose se lee con `||` o pasando por un
+ayudante que trate `""` como ausente.** En `email.service.ts` es `variable()`.
+Para ver qué le llega de verdad al contenedor:
+
+```sh
+docker compose exec app sh -c 'echo "HOST=[$SMTP_HOST] PORT=[$SMTP_PORT] FROM=[$MAIL_FROM]"'
+```
+
+Los corchetes importan: `HOST=[]` y `HOST=` se ven parecido y son cosas
+distintas.
+
 ## La base: backups y restauración
 
 El contenedor `pg-backup` deja un `.sql.gz` diario en `./backups`, con rotación

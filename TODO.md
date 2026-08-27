@@ -8,6 +8,76 @@
 > el estado de la tanda en curso, en la rama
 > `trabajo/panel-turnos-y-reprogramar`.
 
+## 🔜 Lo que sigue — act. 27/8/2026
+
+Cerrado hoy: la rama `trabajo/panel-turnos-y-reprogramar` se mergeó a `main`, se
+subió al VPS y **los mails salen en producción**. Eso era el bloqueo más viejo
+del proyecto. Lo que queda, por orden:
+
+### 🔴 1. HTTPS — hoy las contraseñas viajan en claro
+
+Se entra por **`http://177.7.59.16:3000`**, con `APP_BIND=0.0.0.0` y sin
+certificado. Cada login, cada registro y cada recuperación de contraseña va sin
+cifrar. Está bien para probar; **no** para que entre una clienta.
+
+Tres pasos, en orden, y el tercero se olvida:
+
+1. **El dominio.** Sigue sin saberse dónde está registrado `shiraf.com.ar`. Es
+   el cabo suelto más viejo: bloqueó Resend, ahora bloquea esto.
+2. **nginx + certbot**, un `server` block como los de los otros dos sitios del
+   VPS (el ecommerce y la inmobiliaria), apuntando a `127.0.0.1:3000`. El
+   ejemplo está en [`DOCKER.md`](DOCKER.md).
+3. **`APP_URL` a `https://…` y `APP_BIND` de vuelta a `127.0.0.1`** en el `.env`
+   del servidor. Los dos importan: de `APP_URL` sale el flag `Secure` de la
+   cookie, así que si se olvida el sitio queda con certificado y la cookie sin
+   proteger. Y `APP_URL` también arma los links de los mails, que hoy apuntan a
+   la IP.
+
+### 🟡 2. Restaurar un backup, una vez
+
+`shiraf-backup` corre y guarda desde el 27/8, pero **un backup que nunca se
+restauró es una suposición**. Hay que probarlo una vez contra una base
+descartable, no contra la de producción.
+
+Y sacar una copia **fuera del VPS**. En el mismo disco no protege de nada: si se
+pierde el disco, se pierden la base y sus respaldos juntos.
+
+### 🟡 3. No pausar Supabase todavía
+
+Es el único rollback verdadero. Recién cuando el nuevo lleve **dos semanas
+andando** y con un `pg_dump` completo guardado afuera. Antes de pausarlo hay que
+resubir las fotos que sigan en Supabase Storage.
+
+### 🟢 4. Las dos preguntas para el centro, juntas y en este orden
+
+Están desarrolladas más abajo, en «Reglas de la agenda». El orden importa porque
+la primera hace menos urgente a la segunda:
+
+1. **¿Limpieza de 15 minutos en vez de 10?** Con la agenda real de Julieta
+   —lunes 14 a 20, sesiones de 45— da los **mismos seis turnos** pero en
+   horarios redondos (`14:00 · 15:00 · 16:00 · 17:00 · 18:00 · 19:00` contra
+   `14:00 · 14:55 · 15:50 · 16:45 · 17:40 · 18:35`) y con 15 minutos muertos al
+   final en vez de 40. Con Sofia no cambia nada. **No cuesta ninguna clienta en
+   ninguna de las dos agendas.**
+2. **¿El último turno puede pasarse de la hora de salida?** (`ALLOW_OVERTIME`)
+
+### 🟢 5. Sueltos
+
+- [ ] **Destildarle «Ver datos de clientas» a `camila@gmail.com`** en la base
+      LOCAL. Se lo puse el 27/8 para probar que a una empleada no le aparece la
+      papelera de borrar clientas — la prueba pasó. Ojo que desde ese mismo día
+      ese permiso incluye **las notas clínicas**.
+- [ ] **Las 4 cuentas del VPS siguen con la contraseña del seed**, imposible de
+      acertar a propósito. Se arreglan desde «¿Olvidaste tu contraseña?», que
+      recién funciona desde el 27/8.
+- [ ] **Decidir si la ficha de un turno muestra las notas clínicas.** Hoy no las
+      trae, y el motivo por el que no las traía —que tenían candado propio— dejó
+      de existir al unir los permisos. Está anotado con ⚠️ en
+      `turnos.controller.ts`. Si la recepcionista abre un turno, el momento en
+      que una alergia importa es ése.
+
+---
+
 ## 📍 Dónde quedé — 21/8/2026
 
 ### La migración a base propia está hecha
@@ -22,7 +92,7 @@ que queda por hacer.
 
 ### 🟡 Fase 7 — el VPS. Está andando; falta el candado y el respaldo.
 
-**El sitio corre en `http://177.7.59.16:3099` desde el 25/8/2026.** Esta sección
+**El sitio corre en `http://177.7.59.16:3000` desde el 25/8/2026.** Esta sección
 decía "nada de esto se corrió todavía" hasta el 27/8 y era mentira desde el
 primer día: ver 734b322, que existe porque el sitio ya estaba arriba y la dueña
 no podía entrar.
