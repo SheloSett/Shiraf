@@ -197,7 +197,7 @@ function TeamAccountPage() {
         {isAdmin ? (
           <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             Sos la dueña del centro: entrás a todo el panel y sos la única que puede dar y quitar
-            accesos, desde <span className="text-foreground">Equipo</span>.
+            accesos, desde <span className="text-foreground">Accesos</span>.
           </p>
         ) : (
           <div className="mt-4 max-w-2xl">

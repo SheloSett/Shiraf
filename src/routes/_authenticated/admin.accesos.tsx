@@ -40,7 +40,7 @@ import {
 } from "@/lib/permissions";
 import { useAccess } from "@/hooks/useAccess";
 
-export const Route = createFileRoute("/_authenticated/admin/equipo")({
+export const Route = createFileRoute("/_authenticated/admin/accesos")({
   component: AdminTeam,
 });
 
@@ -310,8 +310,37 @@ function AdminTeam() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
+          {/*
+           * 27/8/2026 — esta sección se llamaba "Equipo" y se renombró a
+           * "Accesos".
+           *
+           * "Equipo" y "Profesionales" son dos palabras que suenan a lo mismo
+           * —la gente que trabaja en el centro— y el panel las usaba para dos
+           * cosas distintas: allá se carga la FICHA (especialidad, reseña,
+           * horarios, tratamientos), que es lo que sale publicado en el sitio;
+           * acá se reparte la LLAVE del panel. Con los dos nombres parecidos,
+           * crear a alguien en una y verla aparecer en la otra se lee como un
+           * duplicado en vez de como lo que es: la misma persona, con ficha y
+           * con cuenta.
+           *
+           * "Accesos" y no "Cuentas" porque es la palabra que ya usa el resto
+           * del panel — "sin accesos todavía", "2 de 6 accesos", "Tus accesos"
+           * en /admin/cuenta.
+           *
+           * La ruta acompañó: /admin/equipo pasó a /admin/accesos, y este
+           * archivo a admin.accesos.tsx —el ruteo es por nombre de archivo, así
+           * que las dos cosas son la misma—. Con eso hay que tocar también el
+           * `to` del menú en admin.tsx y ADMIN_ROUTES en permissions.ts, que es
+           * el guard que rebota a quien escribe la URL a mano: si esa tabla se
+           * queda con la ruta vieja, la nueva cae en el fail-closed del final y
+           * la sección se vuelve inaccesible hasta para la dueña.
+           *
+           * La API **no** cambió: sigue siendo `/api/equipo/*`. Eso no se ve
+           * desde el navegador y renombrarlo arrastra routers, controllers y
+           * claves de caché sin que nadie note la diferencia.
+           */}
           <p className="text-eyebrow text-muted-foreground">Quién entra al panel</p>
-          <h1 className="mt-3 font-display text-4xl text-foreground">Equipo</h1>
+          <h1 className="mt-3 font-display text-4xl text-foreground">Accesos</h1>
         </div>
         <Button onClick={() => setOpen(true)}>
           <Plus className="mr-2 h-4 w-4" /> Nueva empleada

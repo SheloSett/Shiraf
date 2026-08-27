@@ -277,7 +277,7 @@ export function CategoryManager({
                         desaparece, así que ese cartel ya no va. */}
                     <div className="mt-4 space-y-2">
                       <Label htmlFor="destino-categoria">Mudarlos a</Label>
-                      {/* `select` nativo, igual que en Servicios y Equipo: son
+                      {/* `select` nativo, igual que en Servicios y Accesos: son
                           pocas opciones y en el celular abre la rueda del
                           sistema, que se usa mejor que cualquier lista
                           dibujada a mano. */}

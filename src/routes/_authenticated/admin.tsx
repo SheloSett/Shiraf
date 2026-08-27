@@ -140,8 +140,8 @@ const nav = [
     children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
   },
   {
-    to: "/admin/equipo",
-    label: "Equipo",
+    to: "/admin/accesos",
+    label: "Accesos",
     icon: ShieldCheck,
     exact: false,
     access: "admin",

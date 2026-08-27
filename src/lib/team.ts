@@ -5,7 +5,7 @@ import { apiPut } from "@/lib/api";
  *
  * Lo usan las dos pantallas que pueden hacerlo, porque se llega desde los dos
  * lados: en **Profesionales** ya existe la ficha y se le crea la cuenta; en
- * **Equipo** ya existe la cuenta y se le elige la ficha. Es la misma operación
+ * **Accesos** ya existe la cuenta y se le elige la ficha. Es la misma operación
  * mirada al revés, así que vive una sola vez.
  *
  * ⚠️ Antes esto escribía `professionals.user_id` derecho desde el navegador, y

@@ -22,11 +22,11 @@ import { Route as AuthenticatedReservarRouteImport } from './routes/_authenticat
 import { Route as ServiciosIndexRouteImport } from './routes/servicios.index'
 import { Route as ServiciosSlugRouteImport } from './routes/servicios.$slug'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as AuthenticatedAdminAccesosRouteImport } from './routes/_authenticated/admin.accesos'
 import { Route as AuthenticatedAdminCategoriasProductosRouteImport } from './routes/_authenticated/admin.categorias-productos'
 import { Route as AuthenticatedAdminCategoriasServiciosRouteImport } from './routes/_authenticated/admin.categorias-servicios'
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
 import { Route as AuthenticatedAdminCuentaRouteImport } from './routes/_authenticated/admin.cuenta'
-import { Route as AuthenticatedAdminEquipoRouteImport } from './routes/_authenticated/admin.equipo'
 import { Route as AuthenticatedAdminMiAgendaRouteImport } from './routes/_authenticated/admin.mi-agenda'
 import { Route as AuthenticatedAdminProductosRouteImport } from './routes/_authenticated/admin.productos'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
@@ -98,6 +98,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const AuthenticatedAdminAccesosRoute =
+  AuthenticatedAdminAccesosRouteImport.update({
+    id: '/accesos',
+    path: '/accesos',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminCategoriasProductosRoute =
   AuthenticatedAdminCategoriasProductosRouteImport.update({
     id: '/categorias-productos',
@@ -120,12 +126,6 @@ const AuthenticatedAdminCuentaRoute =
   AuthenticatedAdminCuentaRouteImport.update({
     id: '/cuenta',
     path: '/cuenta',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
-const AuthenticatedAdminEquipoRoute =
-  AuthenticatedAdminEquipoRouteImport.update({
-    id: '/equipo',
-    path: '/equipo',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminMiAgendaRoute =
@@ -177,11 +177,11 @@ export interface FileRoutesByFullPath {
   '/reservar': typeof AuthenticatedReservarRoute
   '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios/': typeof ServiciosIndexRoute
+  '/admin/accesos': typeof AuthenticatedAdminAccesosRoute
   '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
-  '/admin/equipo': typeof AuthenticatedAdminEquipoRoute
   '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
@@ -200,11 +200,11 @@ export interface FileRoutesByTo {
   '/reservar': typeof AuthenticatedReservarRoute
   '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios': typeof ServiciosIndexRoute
+  '/admin/accesos': typeof AuthenticatedAdminAccesosRoute
   '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
-  '/admin/equipo': typeof AuthenticatedAdminEquipoRoute
   '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
@@ -227,11 +227,11 @@ export interface FileRoutesById {
   '/_authenticated/reservar': typeof AuthenticatedReservarRoute
   '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios/': typeof ServiciosIndexRoute
+  '/_authenticated/admin/accesos': typeof AuthenticatedAdminAccesosRoute
   '/_authenticated/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/_authenticated/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/_authenticated/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
-  '/_authenticated/admin/equipo': typeof AuthenticatedAdminEquipoRoute
   '/_authenticated/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/_authenticated/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
@@ -254,11 +254,11 @@ export interface FileRouteTypes {
     | '/reservar'
     | '/servicios/$slug'
     | '/servicios/'
+    | '/admin/accesos'
     | '/admin/categorias-productos'
     | '/admin/categorias-servicios'
     | '/admin/clientes'
     | '/admin/cuenta'
-    | '/admin/equipo'
     | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
@@ -277,11 +277,11 @@ export interface FileRouteTypes {
     | '/reservar'
     | '/servicios/$slug'
     | '/servicios'
+    | '/admin/accesos'
     | '/admin/categorias-productos'
     | '/admin/categorias-servicios'
     | '/admin/clientes'
     | '/admin/cuenta'
-    | '/admin/equipo'
     | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
@@ -303,11 +303,11 @@ export interface FileRouteTypes {
     | '/_authenticated/reservar'
     | '/servicios/$slug'
     | '/servicios/'
+    | '/_authenticated/admin/accesos'
     | '/_authenticated/admin/categorias-productos'
     | '/_authenticated/admin/categorias-servicios'
     | '/_authenticated/admin/clientes'
     | '/_authenticated/admin/cuenta'
-    | '/_authenticated/admin/equipo'
     | '/_authenticated/admin/mi-agenda'
     | '/_authenticated/admin/productos'
     | '/_authenticated/admin/profesionales'
@@ -420,6 +420,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/accesos': {
+      id: '/_authenticated/admin/accesos'
+      path: '/accesos'
+      fullPath: '/admin/accesos'
+      preLoaderRoute: typeof AuthenticatedAdminAccesosRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/categorias-productos': {
       id: '/_authenticated/admin/categorias-productos'
       path: '/categorias-productos'
@@ -446,13 +453,6 @@ declare module '@tanstack/react-router' {
       path: '/cuenta'
       fullPath: '/admin/cuenta'
       preLoaderRoute: typeof AuthenticatedAdminCuentaRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/equipo': {
-      id: '/_authenticated/admin/equipo'
-      path: '/equipo'
-      fullPath: '/admin/equipo'
-      preLoaderRoute: typeof AuthenticatedAdminEquipoRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/mi-agenda': {
@@ -501,11 +501,11 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAdminRouteChildren {
+  AuthenticatedAdminAccesosRoute: typeof AuthenticatedAdminAccesosRoute
   AuthenticatedAdminCategoriasProductosRoute: typeof AuthenticatedAdminCategoriasProductosRoute
   AuthenticatedAdminCategoriasServiciosRoute: typeof AuthenticatedAdminCategoriasServiciosRoute
   AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
   AuthenticatedAdminCuentaRoute: typeof AuthenticatedAdminCuentaRoute
-  AuthenticatedAdminEquipoRoute: typeof AuthenticatedAdminEquipoRoute
   AuthenticatedAdminMiAgendaRoute: typeof AuthenticatedAdminMiAgendaRoute
   AuthenticatedAdminProductosRoute: typeof AuthenticatedAdminProductosRoute
   AuthenticatedAdminProfesionalesRoute: typeof AuthenticatedAdminProfesionalesRoute
@@ -516,13 +516,13 @@ interface AuthenticatedAdminRouteChildren {
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
+  AuthenticatedAdminAccesosRoute: AuthenticatedAdminAccesosRoute,
   AuthenticatedAdminCategoriasProductosRoute:
     AuthenticatedAdminCategoriasProductosRoute,
   AuthenticatedAdminCategoriasServiciosRoute:
     AuthenticatedAdminCategoriasServiciosRoute,
   AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
   AuthenticatedAdminCuentaRoute: AuthenticatedAdminCuentaRoute,
-  AuthenticatedAdminEquipoRoute: AuthenticatedAdminEquipoRoute,
   AuthenticatedAdminMiAgendaRoute: AuthenticatedAdminMiAgendaRoute,
   AuthenticatedAdminProductosRoute: AuthenticatedAdminProductosRoute,
   AuthenticatedAdminProfesionalesRoute: AuthenticatedAdminProfesionalesRoute,
