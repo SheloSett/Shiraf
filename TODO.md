@@ -251,17 +251,16 @@ LUNES 9:00 a 13:00 - 15:00 a 17:00
 shiraf
 
 HOME
-1- fondo mas beige de lo que ya esta...
-El nombre de shiraf calma belleza y bienestar en dorado y primera letra en mayuscula
+- [x] fondo mas beige de lo que ya esta...
+- [x] El nombre de shiraf calma belleza y bienestar en dorado y primera letra en mayuscula, logo agrandado
 
-2- "Cada piel es distinta.
-El tratamiento también." en el HOME - no va
+- [x] "Cada piel es distinta. El tratamiento también." en el HOME - no va
 
-3- seccion de servicio en el Home SACARLO
+- [x] seccion de servicio en el Home SACARLO
 
 
 SERVICIOS
-4- ¿Qué necesita tu piel hoy? no va VA "Como te vas Consentir hoy"
+- [x] ¿Qué necesita tu piel hoy? no va VA "Como te vas Consentir hoy"
 
 
 
