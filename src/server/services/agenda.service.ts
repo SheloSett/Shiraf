@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { nombreDelTratamiento } from "@/server/services/turnos.service";
 
@@ -64,6 +65,66 @@ export type TurnoDeMiAgenda = {
  *     de la pantalla a las 14:01, con la clienta todavía en la camilla.
  *   · Hasta `dias` adelante, para que no se convierta en un año.
  */
+/**
+ * Las columnas que necesita una fila de agenda, y cómo se arma.
+ *
+ * Estaban escritas una sola vez porque había una sola consulta. Ahora hay dos
+ * —los próximos y el historial— y lo que devuelven tiene que ser idéntico: la
+ * misma pantalla las dibuja con el mismo JSX. Si divergen, una de las dos vistas
+ * empieza a mostrar "Sin nombre" o a perder las notas y cuesta ver por qué.
+ */
+const SELECT_DE_AGENDA = {
+  id: true,
+  starts_at: true,
+  duration_minutes: true,
+  status: true,
+  client_notes: true,
+  client_id: true,
+  guest_name: true,
+  guest_phone: true,
+  service: { select: { name: true } },
+  // El nombre congelado, por si el tratamiento ya no está en el catálogo.
+  service_name: true,
+  client: {
+    select: {
+      profile: { select: { full_name: true, phone: true } },
+      client_note: { select: { body: true } },
+    },
+  },
+} as const;
+
+/**
+ * La fila que devuelve `SELECT_DE_AGENDA`, derivada del select y no escrita a
+ * mano.
+ *
+ * La escribí a mano primero y ya salía mal en el primer intento: `client_note.
+ * body` es nullable en el esquema y yo lo había puesto `string`. Ese es
+ * exactamente el problema — un tipo copiado a mano empieza correcto y se pudre
+ * en silencio la primera vez que alguien toca el schema. Así, cambiar el select
+ * o la base rompe la compilación acá mismo en vez de mentir en producción.
+ */
+type FilaCruda = Prisma.appointmentsGetPayload<{ select: typeof SELECT_DE_AGENDA }>;
+
+function aTurnoDeMiAgenda(t: FilaCruda): TurnoDeMiAgenda {
+  return {
+    id: t.id,
+    empiezaEn: t.starts_at,
+    minutos: t.duration_minutes,
+    estado: t.status,
+    tratamiento: nombreDelTratamiento(t),
+    // La clienta puede ser una invitada: ahí el nombre y el teléfono salen de
+    // las columnas guest_*, y `esInvitada` deja que la pantalla lo aclare en
+    // vez de mostrar una ficha que no existe.
+    clienta: t.client?.profile?.full_name ?? t.guest_name,
+    telefono: t.client?.profile?.phone ?? t.guest_phone,
+    // Alergias, embarazos, antecedentes. Son las que evitan aplicar algo
+    // contraindicado, y por eso las ve — pero SÓLO de sus turnos.
+    notasClinicas: t.client?.client_note?.body ?? null,
+    notaDeLaReserva: t.client_notes,
+    esInvitada: t.client_id === null,
+  };
+}
+
 export async function miAgenda(userId: string, dias = 30): Promise<TurnoDeMiAgenda[]> {
   const fichaId = await miFichaDeProfesional(userId);
 
@@ -81,25 +142,7 @@ export async function miAgenda(userId: string, dias = 30): Promise<TurnoDeMiAgen
       starts_at: { lt: hasta },
     },
     orderBy: { starts_at: "asc" },
-    select: {
-      id: true,
-      starts_at: true,
-      duration_minutes: true,
-      status: true,
-      client_notes: true,
-      client_id: true,
-      guest_name: true,
-      guest_phone: true,
-      service: { select: { name: true } },
-      // El nombre congelado, por si el tratamiento ya no está en el catálogo.
-      service_name: true,
-      client: {
-        select: {
-          profile: { select: { full_name: true, phone: true } },
-          client_note: { select: { body: true } },
-        },
-      },
-    },
+    select: SELECT_DE_AGENDA,
   });
 
   // El corte por "cuándo termina" se hace acá y no en el WHERE porque depende de
@@ -108,23 +151,60 @@ export async function miAgenda(userId: string, dias = 30): Promise<TurnoDeMiAgen
   // profesional: filtrarlas en memoria no cuesta nada y se lee mejor.
   return turnos
     .filter((t) => t.starts_at.getTime() + t.duration_minutes * 60_000 >= ahora.getTime())
-    .map((t) => ({
-      id: t.id,
-      empiezaEn: t.starts_at,
-      minutos: t.duration_minutes,
-      estado: t.status as string,
-      tratamiento: nombreDelTratamiento(t),
-      // La clienta puede ser una invitada: ahí el nombre y el teléfono salen de
-      // las columnas guest_*, y `esInvitada` deja que la pantalla lo aclare en
-      // vez de mostrar una ficha que no existe.
-      clienta: t.client?.profile?.full_name ?? t.guest_name,
-      telefono: t.client?.profile?.phone ?? t.guest_phone,
-      // Alergias, embarazos, antecedentes. Son las que evitan aplicar algo
-      // contraindicado, y por eso las ve — pero SÓLO de sus turnos.
-      notasClinicas: t.client?.client_note?.body ?? null,
-      notaDeLaReserva: t.client_notes,
-      esInvitada: t.client_id === null,
-    }));
+    .map(aTurnoDeMiAgenda);
+}
+
+/** Tope de filas del historial. Ver `miHistorial`. */
+const TOPE_DEL_HISTORIAL = 300;
+
+/**
+ * Los turnos YA PASADOS de la profesional conectada.
+ *
+ * Mismo alcance y misma regla que `miAgenda`: el `userId` sale de la sesión y
+ * acá tampoco entra ningún id de profesional. Ver la nota de arriba del archivo.
+ *
+ * En qué se diferencia de `miAgenda`, y por qué:
+ *
+ *   · **Entran todos los estados**, cancelados incluidos. En los próximos un
+ *     cancelado es ruido porque no va a pasar; en el historial es justamente el
+ *     dato — "esta clienta canceló tres veces" es algo que se quiere ver, y una
+ *     lista que los esconde miente sobre lo que hubo. La pantalla los marca.
+ *   · **Orden descendente**: el historial se lee del último para atrás.
+ *   · **Tope de 300 filas** (`TOPE_DEL_HISTORIAL`). No hay paginado todavía; con
+ *     la ventana de días que manda la pantalla no se llega ni cerca, pero el
+ *     tope está para que el día que alguien pida "todo el año" la consulta no se
+ *     traiga miles de filas a la memoria del servidor.
+ *
+ * El corte es cuándo TERMINA el turno, no cuándo empieza — el mismo criterio que
+ * usa `miAgenda` para el turno en curso, y por eso los dos son complementarios:
+ * el que está pasando ahora sale en los próximos y NO en el historial. Con
+ * criterios distintos, un turno podría terminar apareciendo en las dos listas o
+ * en ninguna.
+ */
+export async function miHistorial(userId: string, dias = 180): Promise<TurnoDeMiAgenda[]> {
+  const fichaId = await miFichaDeProfesional(userId);
+  if (!fichaId) return [];
+
+  const ahora = new Date();
+  const desde = new Date(ahora.getTime() - Math.max(dias, 1) * 24 * 60 * 60 * 1000);
+
+  const turnos = await prisma.appointments.findMany({
+    where: {
+      professional_id: fichaId,
+      starts_at: { gte: desde, lt: ahora },
+    },
+    orderBy: { starts_at: "desc" },
+    take: TOPE_DEL_HISTORIAL,
+    select: SELECT_DE_AGENDA,
+  });
+
+  // El `take` corre ANTES que este filtro, así que en el peor caso el historial
+  // devuelve una fila menos que el tope: la del turno en curso, que se descarta
+  // acá porque ya lo muestran los próximos. No vale la pena pedir de más para
+  // compensar un desfasaje de una fila en el borde de una lista de 300.
+  return turnos
+    .filter((t) => t.starts_at.getTime() + t.duration_minutes * 60_000 < ahora.getTime())
+    .map(aTurnoDeMiAgenda);
 }
 
 /**
