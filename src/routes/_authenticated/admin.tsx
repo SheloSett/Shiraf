@@ -186,7 +186,24 @@ function AdminLayout() {
   //       return (data ?? []).some((r) => r.role === "admin");
   //     },
   //   });
-  const { canEnterPanel, can, allows, loading } = useAccess();
+  const { canEnterPanel, can, allows, loading, isAdmin, isStaff, professionalId, nombre, email } =
+    useAccess();
+
+  /**
+   * Cómo se presenta la cuenta abajo del menú.
+   *
+   * Se nombran TODAS las que apliquen y no sólo la de más alcance, porque son
+   * cosas distintas y conviven: Camila es empleada del centro **y** tiene ficha
+   * de profesional, y eso explica por qué el menú le muestra su agenda. Decir
+   * sólo una de las dos deja la mitad de la pantalla sin explicación.
+   *
+   * El rol de clienta no se nombra: lo tiene cualquiera que alguna vez sacó un
+   * turno — la dueña inclusive — y acá adentro no significa nada.
+   */
+  const rotuloDeRol =
+    [isAdmin && "Dueña", isStaff && "Empleada", professionalId && "Profesional"]
+      .filter(Boolean)
+      .join(" · ") || null;
 
   // Secciones que la persona abrió o cerró a mano con la flechita. Lo que no
   // esté acá se decide solo: la sección abierta muestra sus subsecciones.
@@ -414,6 +431,24 @@ function AdminLayout() {
             estar, porque las cuentas del centro ya no entran a /mi-cuenta —
             antes se cerraba sesión desde el header del sitio público. */}
         <div className="mt-auto flex items-center gap-1 overflow-x-auto border-t border-primary-foreground/10 px-3 py-3 lg:block lg:py-4">
+          {/* Con qué cuenta se está mirando esto.
+              Arriba de «Mi cuenta» porque es de quién son las dos cosas que
+              siguen. El rótulo del rol sólo en pantalla grande: en el celular
+              esta barra es una tira que se desplaza a lo ancho y dos renglones
+              la parten. El nombre sí va siempre — es lo que se vino a saber. */}
+          {(nombre ?? email) && (
+            <div className="min-w-0 shrink-0 px-3 lg:mb-3 lg:px-3">
+              <p
+                className="truncate text-sm font-medium text-primary-foreground"
+                title={email ?? undefined}
+              >
+                {nombre ?? email}
+              </p>
+              {rotuloDeRol && (
+                <p className="hidden text-xs text-primary-foreground/50 lg:block">{rotuloDeRol}</p>
+              )}
+            </div>
+          )}
           <Link
             to="/admin/cuenta"
             className={`flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${

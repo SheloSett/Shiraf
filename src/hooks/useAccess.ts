@@ -41,6 +41,16 @@ export function useAccess() {
     isStaff,
     professionalId,
     /**
+     * Con qué cuenta se está mirando el panel.
+     *
+     * No decide nada — no es un permiso —, pero el panel lo necesita para
+     * poder DECIRLO. Conviven la dueña, las empleadas y las profesionales, y
+     * cada una ve un menú distinto; sin el nombre a la vista, la única forma
+     * de saber con cuál entraste es deducirla de qué secciones te faltan.
+     */
+    nombre: sesion.data?.nombre ?? null,
+    email: sesion.data?.email ?? null,
+    /**
      * Entra al panel quien administra, quien trabaja en el centro, y también la
      * profesional que tiene su ficha vinculada: adentro no va a ver más que su
      * propia agenda, pero la puerta es la misma.
