@@ -42,6 +42,17 @@ services:
       dockerfile: Dockerfile
       # La etapa con node_modules, sin el build de producción. Es oven/bun.
       target: deps
+    # ⚠️ Sin esta línea el tag lo arma Docker solo, con el nombre del proyecto
+    # más el del servicio: `shiraf` + `app` = `shiraf-app:latest`. Que es
+    # EXACTAMENTE el que docker-compose.yml declara para producción, en su
+    # servicio `app` y en `migrate`. Los dos composes se pisaban la imagen: el
+    # último que construía dejaba la suya en ese tag y el otro arrancaba con
+    # ella. Los síntomas no se parecen en nada a la causa — con la de
+    # producción corriendo acá, un `docker compose run app bun install` muere
+    # con "Cannot find module '/app/bun'", porque esa imagen es node:22-slim y
+    # no tiene bun; al revés, el compose de producción arranca con la de dev,
+    # que no tiene el `.output` compilado, y falla al levantar.
+    image: shiraf-app-dev:latest
     container_name: shiraf-app-dev
     # Tres cosas, y las tres hacen falta:
     #
