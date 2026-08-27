@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { api, apiPut } from "@/lib/api";
 import type { MiTurno, RtaDisponibilidad, RtaProfesionalesConHorarios } from "@/lib/api-tipos";
-import { buildSlots, formatDateTime, WEEKDAYS } from "@/lib/shiraf";
+import { buildSlots, formatDateTime, formatTime, WEEKDAYS } from "@/lib/shiraf";
 
 /**
  * La clienta se mueve su propio turno.
@@ -206,7 +206,19 @@ export function ReprogramarTurnoDialog({
                           : "border-input bg-background text-foreground hover:border-primary"
                       }`}
                     >
-                      {h}
+                      {/* 26/8/2026 — acá decía `{h}` a secas, y `h` es el ISO en UTC
+                          que después se le manda al servidor: los botones salían
+                          escritos "2026-08-31T13:50:00.000Z" en vez de "10:50".
+                          Además de ser ilegible, mostraba la hora en UTC, tres
+                          horas corrida de la que la clienta iba a ir. El valor
+                          que viaja no cambia — sigue siendo `h`, tanto en el
+                          `key` como en `setHora` —; lo único que cambia es cómo
+                          se lee. `formatTime` es la misma función con la que
+                          pinta los horarios la pantalla de reservar, así que las
+                          dos pantallas que mueven un turno ahora dicen la hora
+                          igual. */}
+                      {/* {h} */}
+                      {formatTime(h)}
                     </button>
                   ))}
                 </div>

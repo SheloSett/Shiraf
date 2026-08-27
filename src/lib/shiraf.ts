@@ -231,17 +231,35 @@ export function formatMoney(value: number | string | null | undefined) {
 }
 
 export function formatDateTime(iso: string) {
+  // 26/8/2026 — `hourCycle: "h23"` para que diga "14:00" y no "02:00 p. m.".
+  // En Argentina un turno se dice con el reloj de 24 horas; el a. m./p. m. es
+  // más largo, se lee peor y encima obliga a mirar dos veces cuál de los dos
+  // dice. Va `hourCycle` y no `hour12: false` porque son distintos donde
+  // importa: `hour12: false` puede caer en el ciclo h24 según la build de ICU
+  // y escribir la medianoche como "24:00". `h23` la escribe "00:00" siempre.
   return new Date(iso).toLocaleString("es-AR", {
     weekday: "long",
     day: "2-digit",
     month: "long",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
 }
 
 export function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  // 26/8/2026 — `hourCycle: "h23"` para que diga "14:00" y no "02:00 p. m.".
+  // En Argentina un turno se dice con el reloj de 24 horas; el a. m./p. m. es
+  // más largo, se lee peor y encima obliga a mirar dos veces cuál de los dos
+  // dice. Va `hourCycle` y no `hour12: false` porque son distintos donde
+  // importa: `hour12: false` puede caer en el ciclo h24 según la build de ICU
+  // y escribir la medianoche como "24:00". `h23` la escribe "00:00" siempre.
+  // return new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 }
 
 export function formatDay(iso: string) {

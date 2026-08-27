@@ -658,7 +658,15 @@ function parseDateKey(key: string): Date | undefined {
  *
  * A mano y no con formatTime(), que usa toLocaleTimeString: el valor se compara
  * contra el del input para marcar el horario elegido, y alcanza con que el
- * locale devuelva "10:00 a. m." para que la comparación no case nunca.
+ * locale devuelva algo distinto de "HH:MM" para que la comparación no case
+ * nunca.
+ *
+ * 26/8/2026 — desde que formatTime() lleva `hourCycle: "h23"` devuelve "10:00"
+ * y la comparación casaría. Igual se deja a mano, y a propósito: esto no es un
+ * texto para leer sino el valor que espera <input type="time">, y atarlo a un
+ * formateador de presentación significa que el día que alguien le cambie el
+ * locale o el formato — como se acaba de hacer — se rompe el marcado del
+ * horario elegido, en silencio y lejos de donde se tocó.
  */
 function toTimeInput(iso: string): string {
   const d = new Date(iso);

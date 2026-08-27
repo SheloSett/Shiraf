@@ -113,9 +113,13 @@ function whenPhrase(startsAt: string): string {
     month: "long",
     timeZone: TIMEZONE,
   });
+  // Ver la nota de `formatTime` en shiraf.ts: 24 horas, y `hourCycle` en vez
+  // de `hour12: false` por la medianoche. Acá importa el doble, porque el mail
+  // es lo que la clienta mira el día anterior para saber a qué hora venir.
   const time = date.toLocaleTimeString("es-AR", {
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
     timeZone: TIMEZONE,
   });
   return `el ${day} a las ${time}`;

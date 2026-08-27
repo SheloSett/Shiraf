@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check } from "lucide-react";
+import { Check, Clock } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
@@ -324,12 +324,17 @@ function BookingPage() {
                   <li className="flex justify-between gap-6">
                     <span className="text-muted-foreground">Fecha y hora</span>
                     <span className="text-foreground">
+                      {/* Estas opciones son las MISMAS que las de formatDateTime()
+                          en shiraf.ts, copiadas. Se le agrega el hourCycle igual
+                          que allá para que el resumen no diga la hora distinto
+                          que el resto de la app — pero conviene unificarlo. */}
                       {new Date(slot).toLocaleString("es-AR", {
                         weekday: "long",
                         day: "2-digit",
                         month: "long",
                         hour: "2-digit",
                         minute: "2-digit",
+                        hourCycle: "h23",
                       })}
                     </span>
                   </li>
@@ -358,10 +363,36 @@ function BookingPage() {
                     cuando estaba escrita en la pantalla donde la persona
                     apretó el botón. El mismo texto le llega después por mail:
                     el número sale de una sola constante para que no puedan
-                    decir cosas distintas. */}
-                <p className="rounded-sm border border-border bg-secondary/30 p-3 text-xs text-foreground">
+                    decir cosas distintas.
+
+                    26/8/2026 — se le subió el volumen, porque no se veía. La
+                    versión comentada abajo estaba en `text-xs`, el MISMO tamaño
+                    que el renglón del pago que tiene justo encima, y sobre una
+                    card de L 0.99 el `bg-secondary/30` no llega a teñir nada.
+                    Resultado: las dos se leían como el mismo bloque de letra
+                    chica al pie — que es exactamente lo que nadie lee antes de
+                    apretar el botón. Una regla que la clienta no vio no se
+                    puede sostener después con quien llegó tarde, así que no
+                    alcanzaba con que el texto estuviera: tenía que leerse.
+
+                    Ahora va en `text-sm` y lo que carga el aviso es la barra
+                    dorada de la izquierda, el mismo recurso con el que se marca
+                    el día de hoy en el calendario. El fondo es sólo un tinte
+                    de apoyo: se eligió así a propósito para no repetir el error
+                    del calendario, donde el aviso dependía de un relleno que
+                    se mimetizaba con lo que tenía debajo. Una barra no se
+                    mezcla con nada, y se ve igual en el tema claro y el oscuro. */}
+                {/* <p className="rounded-sm border border-border bg-secondary/30 p-3 text-xs text-foreground">
                   Te esperamos hasta {TOLERANCIA_MINUTOS} minutos. Pasado ese rato el turno se
                   libera, porque atrás hay otra clienta esperando.
+                </p> */}
+                <p className="flex items-start gap-2.5 rounded-sm border-l-4 border-gold bg-gold-soft/20 p-3.5 text-sm text-foreground">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden="true" />
+                  <span>
+                    Te esperamos hasta{" "}
+                    <strong className="font-semibold">{TOLERANCIA_MINUTOS} minutos</strong>. Pasado
+                    ese rato el turno se libera, porque atrás hay otra clienta esperando.
+                  </span>
                 </p>
 
                 <Button
