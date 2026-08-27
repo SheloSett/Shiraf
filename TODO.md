@@ -20,17 +20,33 @@ Todo el detalle —incluido qué se decidió y por qué— está en
 [`MIGRACION-A-PRISMA.md`](MIGRACION-A-PRISMA.md). Lo que sigue acá es sólo lo
 que queda por hacer.
 
-### 🔴 Fase 7 — el VPS. Es lo único bloqueante.
+### 🟡 Fase 7 — el VPS. Está andando; falta el candado y el respaldo.
 
-Nada de esto se corrió todavía en el servidor.
+**El sitio corre en `http://177.7.59.16:3099` desde el 25/8/2026.** Esta sección
+decía "nada de esto se corrió todavía" hasta el 27/8 y era mentira desde el
+primer día: ver 734b322, que existe porque el sitio ya estaba arriba y la dueña
+no podía entrar.
 
-- [ ] `docker compose up -d` en el VPS. Levanta `db → migrate → app` más el
+- [x] `docker compose up -d` en el VPS. Levanta `db → migrate → app` más el
       contenedor de backups.
-- [ ] Completar el `.env` de allá. Las que no pueden faltar:
-      `POSTGRES_PASSWORD`, `JWT_SECRET`, `APP_URL` y las cuatro de Cloudinary.
-      El compose corta el arranque si falta alguna.
-- [ ] Cargar los datos con `db:seed` y ponerle contraseña a las 4 cuentas desde
-      "recuperar contraseña" — quedaron con una imposible de acertar a propósito.
+- [x] Completar el `.env` de allá. Sumadas el 27/8 las tres del correo:
+      `SMTP_USER`, `SMTP_PASS` y `MAIL_REPLY_TO`. `REMINDERS_SECRET` dejó de
+      usarse — el endpoint que la pedía ya no existe.
+- [x] Los datos están cargados y el esquema al día. Verificado el 27/8 contra el
+      servidor: `db push` en sync, post-push 3/3 triggers · 2/2 CHECK · 4/4
+      índices · 1/1, las columnas `cancel_reason` y `professional_name` puestas,
+      la migración de permisos aplicada y los dos relojes programados en hora de
+      Buenos Aires.
+- [ ] **Ponerle contraseña a las 4 cuentas** desde "recuperar contraseña".
+      Quedaron con una imposible de acertar a propósito. Recién se puede desde
+      el 27/8: hasta ese día no salía ningún mail, y era el bloqueo más viejo
+      del proyecto.
+- [ ] 🔴 **HTTPS.** Hoy se entra por IP y sin certificado, así que **las
+      contraseñas viajan en claro**. Anda por `APP_BIND=0.0.0.0`, que está
+      pensado para probar, no para que entren clientas. Hace falta el dominio,
+      un `server` block de nginx como el de los otros dos sitios del VPS, y
+      después actualizar `APP_URL` a `https://…` — de ahí sale el flag `Secure`
+      de la cookie, y si se olvida queda sin él.
 - [ ] **Restaurar un backup, una vez.** Un backup que nunca se restauró es una
       suposición. Y sacar una copia fuera del VPS: en el mismo disco no sirve.
 
