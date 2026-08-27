@@ -11,6 +11,89 @@ no se probaron.
 
 ---
 
+## ✅ Segunda tanda del 26/8 — en la máquina de casa, que SÍ tiene Docker
+
+Casi todo lo que la tanda anterior dejó sin probar **ya se probó**, y aparecieron
+cinco cosas que no estaban en el plan. Las listas de más abajo quedaron viejas:
+lo que sigue pendiente está al final de esta sección.
+
+### Lo que apareció probando, y no estaba en el plan
+
+| Qué | Por qué no se había visto |
+|---|---|
+| **`bun.lock` desincronizado** — `docker compose build` fallaba entero | La otra máquina no tenía Docker. 37771f4 sacó `@lovable.dev/vite-tanstack-config` de `package.json` pero el lockfile quedó con él y su árbol. **Bloqueaba la fase 7** |
+| **Los dos composes compartían `shiraf-app:latest`** | El de dev no declaraba `image:` y Docker se lo armaba por convención con el mismo nombre que el de producción |
+| **Reprogramar se chocaba contra sí mismo** | El horario propio volvía como ocupado, así que no se podía cambiar sólo de profesional |
+| **Los horarios de reprogramar salían en ISO** | `{h}` a secas: decía `2026-08-31T13:50:00.000Z` — y en UTC, tres horas corrida |
+| **La tolerancia no se leía** | `text-xs` sobre una card de L 0.99: misma letra chica que el renglón del pago |
+
+Y de yapa, dos trampas del entorno que hacen perder un rato largo:
+
+- **`npm install` en el host deja el typecheck roto** con errores que no existen
+  (`service_name` no existe, `slug` no existe). Es el cliente de Prisma viejo: el
+  contenedor lo regenera al arrancar y el host no. Se arregla con
+  `npx prisma generate` y `DATABASE_URL` exportada.
+- **Matar el dev server con `Stop-Process -Force` se lleva puesto el Postgres**
+  cuando la base es local sin Docker. Acá no aplica — la base corre en su
+  contenedor — pero sigue valiendo en la otra máquina.
+
+### Verificado contra la base y por HTTP real
+
+Para probar los endpoints sin la contraseña de nadie se firmó un token con el
+`JWT_SECRET` local (payload `{ id, email, role }`, cookie `shiraf_sesion`).
+Queda anotado porque sirve para la próxima.
+
+| Qué | Cómo quedó |
+|---|---|
+| **El choque de turnos llega como 409, no como 500** | Confirmado en las dos capas: el trigger levanta `23P01`, Prisma lo envuelve en un `P2039`, y `mensajeDeTrigger()` lo desentierra de `meta.driverAdapterError.cause`. Por HTTP: `409 "Ese horario ya fue tomado con esa profesional."` |
+| **La regla de 6 horas, contra el endpoint** | `422` en cancelar *y* en reprogramar, con mensajes distintos. El turno quedó `pending` |
+| **Reprogramar, camino feliz** | `200`. Cambia hora y profesional, refresca `professional_name`, **limpia `reminded_at`**, no toca el estado ni el precio |
+| **`excluir=<id>`** | Antes `10:50 · 14:00 · 14:55`; ahora `09:00 · 10:50 · 14:00 · 14:55`. Las 09:55 siguen ocultas, que es correcto |
+| **La grilla de horarios** | Sofia y Julieta dan exactamente lo calculado a mano. Ni 11:45 ni 19:30: `ALLOW_OVERTIME=false` se respeta |
+| **El SMTP de Gmail** | `transporter.verify()` conecta y hace login |
+| **Los 7 avisos de turno** | Los 7 mandados de verdad: `requested`, `new-request`, `confirmed`, `cancelled`, `client-cancelled`, `reminder`, `rescheduled` |
+| 🔴 **El motivo llega a la clienta** | El mail de cancelación trae `Motivo: …`. Confirmado leyendo el texto |
+| **La tolerancia en los mails** | Está en el del pedido y en el de la confirmación |
+| **El resumen de vencidos** | Mandado. Hay 4 vencidos y el mail se llevó 3: el del 18/8 cayó fuera de la ventana de 7 días, que es el caso de control |
+| **Los turnos se guardan bien** | `professional_name` y `service_name` congelados, `cancel_reason` vacío, `reminded_at` en null |
+
+> Todas las pruebas que escribieron en la base se revirtieron. Se sacó un
+> respaldo antes de empezar (`npm run db:backup`) y la base quedó igual que al
+> principio: 8 turnos, los mismos estados, `cancel_reason` vacío en todos.
+
+### Lo que TODAVÍA falta
+
+1. **Borrar un turno y borrar una clienta.** Nada de esto se ejecutó — es lo
+   único que borra de verdad. Los cuatro casos siguen en la lista de más abajo,
+   incluido que la papelera NO le aparezca a una empleada.
+2. **El panel, con alguien haciendo clic.** Los tres botones por fila, la
+   columna «Estado», el aro dorado del día de hoy, el «Realizado» en tono medio.
+   Nada de eso se miró en pantalla en esta tanda.
+3. **El recordatorio no dice la tolerancia.** Está en el mail del pedido y en el
+   de la confirmación, pero no en el del día previo — que es justo el que se lee
+   la noche antes. Es una decisión, no un bug; vale repreguntarla.
+4. **`shiraf-app:latest` quedó con una imagen de dev vieja** en esta máquina.
+   Antes de cualquier `docker compose up -d` de producción hay que forzar
+   `docker compose build app`.
+
+### Una decisión de agenda que conviene llevar al centro con un número
+
+`SLOT_BUFFER_MINUTES` está en 10 y TODO.md deja abierto repreguntar si conviene
+15. Con la agenda real de Julieta —lunes 14 a 20, sesiones de 45— la cuenta da:
+
+| Con 10 (hoy) | Con 15 |
+|---|---|
+| `14:00 · 14:55 · 15:50 · 16:45 · 17:40 · 18:35` | `14:00 · 15:00 · 16:00 · 17:00 · 18:00 · 19:00` |
+| Termina 19:20 → **40 minutos muertos** | Termina 19:45 → **15 minutos muertos** |
+| 6 turnos | **6 turnos** |
+
+Mismos seis turnos, horarios redondos y menos de la mitad del hueco al final.
+Con Sofia da igual con 10 o con 15. O sea que subir la limpieza a 15 **no cuesta
+ninguna clienta en ninguna de las dos agendas**, y de paso hace bastante menos
+urgente la otra decisión pendiente, `ALLOW_OVERTIME`.
+
+---
+
 ## Antes de empezar en otra máquina
 
 Esta máquina no tiene Docker: la base local es un PostgreSQL propio en
@@ -196,6 +279,10 @@ middleware de las otras rutas de `/clientas` deja pasar a quien tiene
 
 ## ⚠️ SIN PROBAR — esto es lo que hay que mirar
 
+> ⚠️ **Esta lista es de la primera tanda del 26/8 y quedó vieja.** Casi todo
+> se probó después — ver «Segunda tanda del 26/8» más arriba. Lo único que
+> sigue pendiente de acá es **borrar un turno y borrar una clienta**.
+
 **Nada de lo de abajo se ejercitó contra la base ni mandó un mail de verdad.** La
 base no se toca sin permiso, así que todo lo que pedía escribir o mandar quedó
 para probar con la app abierta.
@@ -247,6 +334,10 @@ para probarlo. Como el reloj es a las 10, para verlo antes conviene llamar a
 ---
 
 ## Lo que venía de antes (25/8) y sigue sin probarse
+
+> ✅ **Ya no.** Reprogramar desde «Mi cuenta», la regla de 6 horas y el aviso
+> `rescheduled` se probaron en la segunda tanda del 26/8. Se deja el detalle
+> porque explica qué se esperaba de cada caso.
 
 ### Reprogramar desde «Mi cuenta» — lo más importante
 

@@ -237,9 +237,9 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
 
 
 ## http://localhost:8081/admin/profesionales
-1- cuando creo a una profesional automaticamente deberia formar parte del "equipo", entonces en su creacio del profesional debo tener el campo de email y contraseño para que automaticamente ya pueda acceder
+- [x]  cuando creo a una profesional automaticamente deberia formar parte del "equipo", entonces en su creacio del profesional debo tener el campo de email y contraseño para que automaticamente ya pueda acceder
 
-2- cuando ponemos su horario solo tenemos un rango de horario por dia, es decir que si en el dia tiene su break y trabaja:
+- [x] cuando ponemos su horario solo tenemos un rango de horario por dia, es decir que si en el dia tiene su break y trabaja:
 LUNES 9:00 a 13:00
 14hrs no trabaja
 LUNES 15:00 a 17:00
