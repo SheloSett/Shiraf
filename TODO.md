@@ -347,12 +347,23 @@ HOME
 
 SERVICIOS
 - [x] ¿Qué necesita tu piel hoy? no va VA "Como te vas Consentir hoy"
+      → en el sitio va **"Cómo te vas a consentir hoy"**: mismas palabras, con la
+      tilde y la "a" que faltaban en el pedido. Corregido el 27/8 a pedido de la
+      dueña; antes estaba copiado literal y se leía como error de tipeo.
 
 
 
 x- recordatorios en el dia del turno/ y un wasap apenas saquen turno, Astrid-Profesional-cliente
+      → el mail de todos esos avisos ya sale solo. El WhatsApp hoy es a mano, con
+      el botón que abre el mensaje escrito. Automatizarlo depende de una decisión
+      de la dueña —número, plantillas y unos dólares por mes—: está todo escrito
+      en `docs/whatsapp-automatico.md`, con las tres salidas y qué preguntarle.
 
-x- todas las profesionales manejan turnos
+- [x] todas las profesionales manejan turnos
+      → la cuenta de una profesional nace con «Gestionar turnos» tildado, por las
+      dos puertas que la crean (el alta y «Darle acceso» de la tarjeta). Se puede
+      destildar en Accesos. Ojo: eso arrastra «Ver datos de clientas», notas
+      clínicas incluidas.
 
 x- 10 min de tolerancia ACLARAR AL SACAR UNO Y MANDAR POR WASAP
 
