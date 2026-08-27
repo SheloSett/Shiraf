@@ -57,6 +57,40 @@ type Correo = { transport: Transporter; user: string };
 
 let transporte: Correo | null | undefined;
 
+/**
+ * Una variable de entorno, con la cadena VACÍA contando como ausente.
+ *
+ * ── POR QUÉ NO ALCANZA CON `process.env[x] ?? default` ─────────────────────
+ *
+ * 27/8/2026: en el VPS, «recuperar contraseña» fallaba con
+ * `connect ECONNREFUSED 127.0.0.1:587`. Se conectaba a localhost teniendo el
+ * default `smtp.gmail.com` escrito dos líneas más abajo.
+ *
+ * El compose de producción mapea las seis del correo así:
+ *
+ *     SMTP_HOST: ${SMTP_HOST:-}
+ *
+ * y `:-` con nada a la derecha **no deja la variable sin definir: la define
+ * vacía**. `??` cae al default con `null` y `undefined`, con `""` NO. Así que
+ * `host` quedaba en `""`, nodemailer lo lee como falsy, se cae a su propio
+ * default —localhost— y el síntoma no menciona ninguna variable de entorno.
+ *
+ * En desarrollo es invisible: ahí las variables que no están en el `.env` no
+ * existen de verdad, así que el `??` funciona. Es un bug que SÓLO aparece
+ * adentro del contenedor.
+ *
+ * ⚠️ La que más duele no es el host sino `MAIL_FROM`, que está sin definir a
+ * propósito —ver `remitente()`— para que el remitente salga de `SMTP_USER`.
+ * Con la cadena vacía, el mail se armaba con el `From` en blanco.
+ *
+ * Cualquier variable del correo que se lea de acá en más tiene que pasar por
+ * esta función, no por `process.env` directo.
+ */
+function variable(nombre: string): string | undefined {
+  const valor = process.env[nombre];
+  return valor === undefined || valor === "" ? undefined : valor;
+}
+
 async function obtenerTransporte(): Promise<Correo | null> {
   if (transporte !== undefined) return transporte;
 
@@ -70,8 +104,10 @@ async function obtenerTransporte(): Promise<Correo | null> {
     return null;
   }
 
-  const host = process.env["SMTP_HOST"] ?? "smtp.gmail.com";
-  const port = Number(process.env["SMTP_PORT"] ?? "587");
+  // const host = process.env["SMTP_HOST"] ?? "smtp.gmail.com";
+  // const port = Number(process.env["SMTP_PORT"] ?? "587");
+  const host = variable("SMTP_HOST") ?? "smtp.gmail.com";
+  const port = Number(variable("SMTP_PORT") ?? "587");
 
   // El import va acá adentro y no arriba del archivo por lo mismo que
   // `node-cron` en reminders.service.ts: nodemailer abre sockets TCP y sólo
@@ -112,7 +148,8 @@ async function obtenerTransporte(): Promise<Correo | null> {
  * dirección del dominio.
  */
 function remitente(user: string): string {
-  return process.env["MAIL_FROM"] ?? `Shiraf <${user}>`;
+  // return process.env["MAIL_FROM"] ?? `Shiraf <${user}>`;
+  return variable("MAIL_FROM") ?? `Shiraf <${user}>`;
 }
 
 /**
@@ -138,7 +175,8 @@ export async function enviarMail(mail: {
       // La casilla que el centro mira de verdad. Cuando el remitente sea una
       // dirección de `shiraf.com.ar` que nadie lee, esto es lo que hace que la
       // respuesta de la clienta caiga donde hay alguien.
-      replyTo: process.env["MAIL_REPLY_TO"] ?? CONTACT.email,
+      // replyTo: process.env["MAIL_REPLY_TO"] ?? CONTACT.email,
+      replyTo: variable("MAIL_REPLY_TO") ?? CONTACT.email,
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
