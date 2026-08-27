@@ -67,7 +67,7 @@ Después, un `server` block de nginx junto a los otros dos sitios:
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name shiraf.tudominio.com;
+    server_name shiraf.com.ar;
 
     # ssl_certificate ... (certbot)
 
@@ -75,14 +75,67 @@ server {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
+
+        # 🔴 LAS DOS CON $remote_addr, Y NO ES LO MISMO QUE $proxy_add_x_forwarded_for.
+        #
+        # $remote_addr PISA el header con la IP de quien se conectó.
+        # $proxy_add_x_forwarded_for AGREGA esa IP al final de lo que ya venía —
+        # y lo que "ya venía" lo escribió quien llama, porque X-Forwarded-For es
+        # un header común y corriente que cualquiera puede mandar.
+        #
+        # Acá decía $proxy_add_x_forwarded_for, y con eso el freno a los intentos
+        # de login quedaba salteable AUNQUE nginx estuviera puesto: bastaba mandar
+        # "X-Forwarded-For: loquesea" para que el contador viera una persona nueva
+        # en cada intento. Con $remote_addr eso no sobrevive.
+        #
+        # Si algún día hace falta la cadena completa de proxies, se vuelve a
+        # $proxy_add_x_forwarded_for PERO leyendo el valor desde la derecha, no
+        # desde la izquierda. Hoy no hace falta: el limitador lee X-Real-IP.
         proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade           $http_upgrade;
         proxy_set_header Connection        "upgrade";
     }
 }
 ```
+
+Y en el `.env` del servidor, las tres que van juntas con esto:
+
+```sh
+TRUST_PROXY=loopback          # de dónde sale la IP de quien llama
+APP_URL=https://shiraf.com.ar # de acá sale el flag Secure de la cookie
+APP_BIND=127.0.0.1            # que no se le pueda pegar al contenedor salteando nginx
+```
+
+Las tres o ninguna. Con `APP_BIND` en `0.0.0.0` el contenedor sigue expuesto en
+el 3000 y se puede entrar salteando nginx —sin HTTPS y sin que `TRUST_PROXY`
+sirva de nada—, y sin `APP_URL` en `https://` el sitio queda con certificado y
+la cookie de sesión viajando sin el flag `Secure`.
+
+### Si en vez de nginx va Cloudflare
+
+Sirve igual y ahorra el certbot, pero **no alcanza con prender la nube naranja**.
+Tres cosas, y la tercera es la que se olvida:
+
+1. **SSL/TLS en «Full (strict)»**, nunca en «Flexible». En Flexible, Cloudflare
+   habla HTTPS con la clienta y **HTTP con el VPS**: el tramo donde viajan las
+   contraseñas queda igual de descubierto que hoy, con un candado en la barra
+   que dice lo contrario. Necesita un certificado en el origen — sirve un
+   _Origin Certificate_ de Cloudflare, que dura 15 años y no pide certbot.
+
+2. **`TRUST_PROXY=cloudflare`** en el `.env`, más `APP_URL=https://…`.
+
+3. 🔴 **Cerrarle el origen a todo lo que no sea Cloudflare.** La IP del VPS es
+   pública y está escrita en `TODO.md`. Si el puerto queda abierto, cualquiera
+   le pega directo y manda su propio `CF-Connecting-IP`, que es exactamente el
+   header en el que el limitador va a confiar. O sea que sin este paso, poner
+   Cloudflare **empeora** el problema en vez de arreglarlo.
+
+   Se hace con el firewall del VPS, dejando entrar al 443 sólo desde los rangos
+   publicados de Cloudflare (`cloudflare.com/ips`), o con un Cloudflare Tunnel,
+   que no abre ningún puerto.
 
 Actualizar a una versión nueva:
 
@@ -160,7 +213,7 @@ y `:-` sin nada a la derecha **no deja la variable sin definir: la define
 vacía**. En JavaScript eso rompe el patrón más común que hay:
 
 ```js
-process.env.SMTP_HOST ?? "smtp.gmail.com"   // "" NO cae al default
+process.env.SMTP_HOST ?? "smtp.gmail.com"; // "" NO cae al default
 ```
 
 `??` cae con `null` y `undefined`, con `""` no. Así que el valor queda vacío, la

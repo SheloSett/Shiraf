@@ -92,6 +92,16 @@ services:
       # Para armar los links de los mails de confirmación y de recuperación.
       APP_URL: ${APP_URL:?falta APP_URL en .env}
 
+      # Qué hay adelante de la app. De esto depende que el limitador de intentos
+      # de login sirva o sea decorativo: dice de dónde sale la IP de quien
+      # llama. Sin definir vale "none" —nadie adelante, la IP sale del socket—,
+      # que es lo correcto hoy y lo que menos se puede engañar.
+      #
+      # Va con `:-` y no con `:?` a propósito: el default es el más
+      # desconfiado, así que su ausencia no deja nada abierto. Los valores y
+      # cuándo usar cada uno están en src/server/middleware/loginLimiter.ts.
+      TRUST_PROXY: ${TRUST_PROXY:-}
+
       # Cloudinary del lado servidor: firma las subidas y los borrados. El api
       # secret NUNCA como build arg ni con prefijo VITE_ — eso lo dejaría
       # horneado en el bundle que baja el navegador, y con él se puede borrar
