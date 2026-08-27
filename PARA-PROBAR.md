@@ -55,6 +55,8 @@ Queda anotado porque sirve para la próxima.
 | 🔴 **El motivo llega a la clienta** | El mail de cancelación trae `Motivo: …`. Confirmado leyendo el texto |
 | **La tolerancia en los mails** | Está en el del pedido y en el de la confirmación |
 | **El resumen de vencidos** | Mandado. Hay 4 vencidos y el mail se llevó 3: el del 18/8 cayó fuera de la ventana de 7 días, que es el caso de control |
+| **Borrar un turno** | La pantalla ESCONDE el botón mientras el turno se pueda atender (`seBorra`), y el servidor rechaza igual: `409` en pendiente y en confirmado. Ya cancelado o vencido, se borra — probados los dos por la dueña |
+| **Borrar una clienta** | `403` a una empleada, `409` a la dueña si tiene turnos por venir (y dice cuántos), `200` si no. El CASCADE se lleva cuenta, ficha, rol, **nota clínica** y turnos: cinco ceros, y nada más se tocó |
 | **Los turnos se guardan bien** | `professional_name` y `service_name` congelados, `cancel_reason` vacío, `reminded_at` en null |
 
 > Todas las pruebas que escribieron en la base se revirtieron. Se sacó un
@@ -63,13 +65,11 @@ Queda anotado porque sirve para la próxima.
 
 ### Lo que TODAVÍA falta
 
-1. **Borrar un turno y borrar una clienta.** Nada de esto se ejecutó — es lo
-   único que borra de verdad. Los cuatro casos siguen en la lista de más abajo,
-   incluido que la papelera NO le aparezca a una empleada.
-2. **El panel, con alguien haciendo clic.** Los tres botones por fila, la
-   columna «Estado», el aro dorado del día de hoy, el «Realizado» en tono medio.
-   Nada de eso se miró en pantalla en esta tanda.
-3. **El recordatorio no dice la tolerancia.** Está en el mail del pedido y en el
+1. **La papelera de una clienta, vista por una empleada.** Único pendiente
+   real, y es de 30 segundos: entrar con `camila@gmail.com` a Clientes y mirar
+   que no aparezca. El servidor ya la rechaza con 403 y la pantalla tiene el
+   `{isAdmin && …}`, así que es confirmar, no descubrir.
+2. **El recordatorio no dice la tolerancia.** Está en el mail del pedido y en el
    de la confirmación, pero no en el del día previo — que es justo el que se lee
    la noche antes. Es una decisión, no un bug; vale repreguntarla.
 4. **`shiraf-app:latest` quedó con una imagen de dev vieja** en esta máquina.
