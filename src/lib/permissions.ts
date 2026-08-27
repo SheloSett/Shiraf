@@ -160,7 +160,7 @@ export function isUiOnly(permission: { enforcement: string }): boolean {
  *            igual tiene que poder cambiar la que le dictaron.
  *   "own_agenda"  quien tenga una ficha de profesional vinculada a su cuenta.
  *            No es una casilla que se tilde: se gana atando la ficha con la
- *            cuenta desde Equipo, y se pierde desactivando la ficha. Es el
+ *            cuenta desde Accesos, y se pierde desactivando la ficha. Es el
  *            único nivel que la dueña NO pasa automáticamente — no por
  *            candado, sino porque sin ficha propia no hay agenda que mostrar.
  */
@@ -187,7 +187,7 @@ const ADMIN_ROUTES = [
   // Internas del stock, no del catálogo público: agrupan cremas e insumos que
   // no aparecen en el sitio. Ver migración 20260814000000.
   { path: "/admin/categorias-productos", access: "stock" },
-  { path: "/admin/equipo", access: "admin" },
+  { path: "/admin/accesos", access: "admin" },
   // Su contraseña, no el negocio: no depende de ninguna casilla.
   { path: "/admin/cuenta", access: "panel" },
   // Sus propios turnos. Tampoco depende de una casilla: depende de que la ficha
