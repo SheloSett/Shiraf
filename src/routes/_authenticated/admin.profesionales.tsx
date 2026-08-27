@@ -35,6 +35,7 @@ import type {
   RtaTurnosProximos,
 } from "@/lib/api-tipos";
 import { useAccess } from "@/hooks/useAccess";
+import type { Permission } from "@/lib/permissions";
 import { agruparPorDia, diaConTramosSuperpuestos, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
 import { linkProfessionalAccount } from "@/lib/team";
 import { createEmployee } from "@/lib/team.functions";
@@ -67,6 +68,32 @@ const EMPTY_FORM: ProfessionalForm = {
 
 /** Fila que se agrega al tocar "Agregar tramo" con la lista vacía. */
 const DEFAULT_SCHEDULE: DraftSchedule = { weekday: 1, start_time: "09:00", end_time: "17:00" };
+
+/**
+ * Con qué accesos nace la cuenta de una profesional.
+ *
+ * 27/8/2026 — antes nacía sin ninguno: entraba, veía «Mi agenda» y nada más, y
+ * la dueña tenía que ir a Accesos a tildarle «Gestionar turnos» a cada una. Lo
+ * pidió ella: **en este centro todas las profesionales manejan turnos**. Un
+ * paso que se hace siempre, para todas y sin pensarlo, no es una decisión: es
+ * una casilla que alguna vez alguien se va a olvidar de tildar.
+ *
+ * No es un candado, es el punto de partida: la casilla sigue estando en Accesos
+ * y se puede destildar. Si mañana entra alguien que sólo tiene que ver su
+ * propia agenda, se le saca.
+ *
+ * ⚠️ «Gestionar turnos» ARRASTRA «Ver datos de clientas» —incluidas las notas
+ * clínicas: alergias, embarazos, antecedentes—. Está declarado en el `implies`
+ * de src/lib/permissions.ts y lo decidió la dueña: quien maneja la agenda ve
+ * todo de la clienta. O sea que con esto, toda profesional con cuenta ve las
+ * fichas completas. Es la consecuencia de que manejen turnos, no un descuido.
+ *
+ * Va como constante y no como dos literales sueltos porque se usa en los dos
+ * caminos que crean la cuenta —el alta y el botón «Darle acceso» de la
+ * tarjeta—, y si se separan, una profesional termina con accesos distintos
+ * según por qué puerta la cargaron.
+ */
+const ACCESOS_DE_PROFESIONAL: Permission[] = ["appointments"];
 
 /**
  * Dos horas después, en "HH:MM", sin pasarse de la medianoche.
@@ -277,9 +304,9 @@ function AdminProfessionals() {
             email: altaEmail.trim(),
             password: altaPassword,
             fullName: payload.full_name,
-            // Sin ningún acceso tildado, igual que el botón de la tarjeta: con
-            // eso ve "Mi agenda" y nada más. Lo demás se decide en Equipo.
-            permissions: [],
+            // Los mismos que el botón de la tarjeta: ve su agenda y maneja
+            // turnos. Lo demás se decide en Accesos. Ver ACCESOS_DE_PROFESIONAL.
+            permissions: ACCESOS_DE_PROFESIONAL,
           },
         });
         await linkProfessionalAccount(cuenta.id, id);
@@ -295,7 +322,7 @@ function AdminProfessionals() {
     },
     onSuccess: async (resultado) => {
       await refresh();
-      // Equipo lista las mismas cuentas: si acá se creó una, allá tiene que
+      // Accesos lista las mismas cuentas: si acá se creó una, allá tiene que
       // aparecer sin recargar a mano.
       await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-team-professionals"] });
@@ -337,14 +364,14 @@ function AdminProfessionals() {
   /**
    * Le crea la cuenta a una profesional y se la ata a su ficha, en un solo paso.
    *
-   * Antes esto eran dos pantallas: cargar la ficha acá y después ir a Equipo a
+   * Antes esto eran dos pantallas: cargar la ficha acá y después ir a Accesos a
    * crear a la misma persona de nuevo —escribiendo el nombre por segunda vez—
    * para recién ahí vincularla. El nombre ya lo sabemos: sale de la ficha.
    *
-   * La cuenta se crea SIN ningún acceso tildado. Con eso ve su agenda y nada
-   * más, que es exactamente lo que se quiso. Si además atiende el teléfono o
-   * carga turnos, las casillas se tildan después en Equipo — pero eso es una
-   * decisión aparte y no tiene por qué colarse en el alta.
+   * La cuenta se crea con ACCESOS_DE_PROFESIONAL: su agenda más «Gestionar
+   * turnos», porque en este centro las profesionales manejan sus turnos. El
+   * resto —catálogo, stock, equipo— se tilda después en Accesos, que es una
+   * decisión caso por caso y no tiene por qué colarse en el alta.
    */
   const grantAccess = useMutation({
     mutationFn: async () => {
@@ -355,12 +382,12 @@ function AdminProfessionals() {
           email: grantEmail.trim(),
           password: grantPassword,
           fullName: granting.name,
-          permissions: [],
+          permissions: ACCESOS_DE_PROFESIONAL,
         },
       });
 
       // Si el vínculo falla, la cuenta ya existe y sirve: no se deshace nada.
-      // Se avisa distinto para que se pueda atar a mano desde Equipo en vez de
+      // Se avisa distinto para que se pueda atar a mano desde Accesos en vez de
       // quedar una cuenta huérfana sin que nadie se entere.
       try {
         await linkProfessionalAccount(created.id, granting.id);
@@ -374,16 +401,18 @@ function AdminProfessionals() {
     },
     onSuccess: async (result) => {
       await refresh();
-      // Equipo lista las mismas cuentas y las mismas fichas.
+      // Accesos lista las mismas cuentas y las mismas fichas.
       await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-team-professionals"] });
       closeGrant();
       if (result.linkError) {
         toast.warning(
-          `Se creó la cuenta de ${result.fullName}, pero no se pudo atar a su ficha. Hacelo desde Equipo. (${result.linkError})`,
+          `Se creó la cuenta de ${result.fullName}, pero no se pudo atar a su ficha. Hacelo desde Accesos. (${result.linkError})`,
         );
       } else {
-        toast.success(`${result.fullName} ya entra con ${result.email} y ve su agenda.`);
+        toast.success(
+          `${result.fullName} ya entra con ${result.email}: su agenda y los turnos del centro.`,
+        );
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -559,7 +588,12 @@ function AdminProfessionals() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-eyebrow text-muted-foreground">Equipo</p>
+          {/* El par con Accesos: "Quiénes atienden" acá, "Quién entra al panel"
+              allá. Antes esto decía "Equipo", que era el nombre de la OTRA
+              sección — dos pantallas nombradas con la misma palabra se leen como
+              dos listas de lo mismo, y no lo son: acá se carga lo que sale
+              publicado en el sitio, allá quién tiene llave del panel. */}
+          <p className="text-eyebrow text-muted-foreground">Quiénes atienden</p>
           <h1 className="mt-3 font-display text-4xl text-foreground">Profesionales</h1>
         </div>
         <Button onClick={openCreate}>
@@ -667,13 +701,20 @@ function AdminProfessionals() {
               </div>
 
               {/* El acceso al panel, en la misma tarjeta donde está el resto de
-                  sus datos. Antes había que ir a Equipo y volver a cargar a la
+                  sus datos. Antes había que ir a Accesos y volver a cargar a la
                   misma persona desde cero para poder vincularla. */}
               <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
                 {p.user_id ? (
+                  /* Dice que entra, y NO qué ve. Antes decía "Entra al panel y
+                     ve su agenda", que era verdad sólo el día que se creó la
+                     cuenta: apenas la dueña le tilda una casilla en Accesos, la
+                     frase queda mintiendo — y desde que la cuenta nace con
+                     «Gestionar turnos», miente de entrada. Decir cuántos accesos
+                     tiene pide que /api/equipo/profesionales los devuelva, que
+                     hoy no lo hace. */
                   <p className="flex items-center gap-2 text-xs text-muted-foreground">
                     <CalendarCheck className="h-3.5 w-3.5 shrink-0 text-gold" />
-                    Entra al panel y ve su agenda
+                    Entra al panel — qué puede tocar se tilda en Accesos
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">Sin acceso al panel</p>
@@ -708,9 +749,11 @@ function AdminProfessionals() {
               Darle acceso a {granting?.name}
             </DialogTitle>
             <DialogDescription>
-              Se crea su cuenta y queda atada a esta ficha. Al entrar ve “Mi agenda”: sus próximos
-              turnos con el tratamiento, el día, la hora y la clienta. Ningún otro acceso — si
-              además tiene que cargar turnos o tocar el catálogo, eso se tilda en Equipo.
+              Se crea su cuenta y queda atada a esta ficha. Al entrar ve “Mi agenda” —sus próximos
+              turnos con el tratamiento, el día, la hora y la clienta— y además maneja turnos: la
+              agenda completa y las fichas de las clientas. Nada más que eso; el catálogo, el stock
+              y el equipo se tildan aparte en Accesos, donde también podés sacarle los turnos si
+              ésta no los maneja.
             </DialogDescription>
           </DialogHeader>
 
@@ -1042,9 +1085,10 @@ function AdminProfessionals() {
 
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                   Si completás estos dos campos, se le crea la cuenta y queda atada a esta ficha. Al
-                  entrar ve “Mi agenda”: sus próximos turnos con el tratamiento, el día, la hora y
-                  la clienta. Ningún otro acceso — si además carga turnos o toca el catálogo, eso se
-                  tilda después en Equipo.
+                  entrar ve “Mi agenda” —sus próximos turnos con el tratamiento, el día, la hora y
+                  la clienta— y además maneja turnos: la agenda completa y las fichas de las
+                  clientas. Nada más que eso; el catálogo, el stock y el equipo se tildan aparte en
+                  Accesos, donde también podés sacarle los turnos si ésta no los maneja.
                 </p>
 
                 <div className="mt-4 space-y-4">
