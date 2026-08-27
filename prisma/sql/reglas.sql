@@ -285,3 +285,31 @@ CREATE INDEX IF NOT EXISTS appointments_guest_phone_norm_idx
 CREATE INDEX IF NOT EXISTS appointments_pending_reminder_idx
   ON "appointments" (starts_at)
   WHERE reminded_at IS NULL AND status = 'confirmed';
+
+
+-- ── 4.1 'clients_notes' se absorbió en 'clients_contact' ────────────────────
+--
+-- 27/8/2026. Eran dos casillas en Equipo —«Ver datos de clientas» y «Ver notas
+-- clínicas»— y la dueña las unió en una: una ficha se abre entera o no se abre.
+-- El código ya no pregunta por 'clients_notes' (ver PERMISSIONS en
+-- src/lib/permissions.ts).
+--
+-- Esto va acá y no en un script suelto porque es lo único que impide que la
+-- unión le SAQUE un acceso a alguien. Quien tenía las notas y no el contacto
+-- —era el caso de una de las empleadas— se quedaría sin ver nada: el permiso
+-- que tiene guardado dejó de existir para el código, y el que ahora vale no lo
+-- tiene. El síntoma sería una ficha clínica en blanco, sin ningún error.
+--
+-- Es idempotente, como todo este archivo: después de la primera corrida no
+-- quedan filas 'clients_notes' y las dos sentencias no hacen nada.
+--
+-- El valor NO se saca del enum app_permission. Sacarlo obliga a recrear el tipo
+-- entero y todas las columnas que lo usan, y no gana nada: un valor que nadie
+-- escribe ni lee es inofensivo. Queda como el rastro de que esto pasó.
+INSERT INTO user_permissions (user_id, permission)
+SELECT user_id, 'clients_contact'::app_permission
+FROM user_permissions
+WHERE permission = 'clients_notes'
+ON CONFLICT DO NOTHING;
+
+DELETE FROM user_permissions WHERE permission = 'clients_notes';
