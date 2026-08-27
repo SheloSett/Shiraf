@@ -81,13 +81,19 @@ export function ReprogramarTurnoDialog({
   }, [dia]);
 
   const disponibilidad = useQuery({
-    queryKey: ["reprogramar", "disponibilidad", profesionalId, dia],
-    enabled: !!profesionalId && !!fecha,
+    // `turno.id` va en la clave además de en la URL: si no, dos turnos del
+    // mismo día y la misma profesional comparten entrada de cache y el segundo
+    // se abre con los horarios calculados para el primero.
+    queryKey: ["reprogramar", "disponibilidad", profesionalId, dia, turno?.id],
+    enabled: !!profesionalId && !!fecha && !!turno,
     queryFn: async () => {
       const day = new Date(fecha!);
       day.setHours(0, 0, 0, 0);
+      // `excluir` deja fuera de los ocupados al turno que se está moviendo,
+      // para que su propio horario siga a la vista — es el único que permite
+      // quedarse a la misma hora y cambiar de profesional.
       return api<RtaDisponibilidad>(
-        `/api/reservar/disponibilidad?profesional=${profesionalId}&fecha=${day.toISOString()}`,
+        `/api/reservar/disponibilidad?profesional=${profesionalId}&fecha=${day.toISOString()}&excluir=${turno!.id}`,
       );
     },
   });

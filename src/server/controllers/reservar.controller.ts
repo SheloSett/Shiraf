@@ -34,6 +34,19 @@ export async function disponibilidad(ctx: Ctx) {
   const fecha = ctx.url.searchParams.get("fecha");
   if (!profesionalId || !fecha) return json({ error: "Falta la profesional o la fecha." }, 400);
 
+  /**
+   * El turno que se está moviendo, para que no se cuente a sí mismo. Lo manda
+   * el diálogo de reprogramar; al reservar de cero no viene.
+   *
+   * No se valida de quién es, y no hace falta — mirar el 🔴 de arriba, que
+   * dice qué se devuelve: `{ starts_at, duration_minutes }` y nada más.
+   * Mandar un id ajeno no revela nada nuevo, sólo ESCONDE un rato ocupado; y
+   * quien se esconda un horario ocupado lo único que consigue es que la
+   * reserva le rebote con el 409 del trigger, que es la única autoridad sobre
+   * el solape. Pedir sesión para esto sería pedirla para nada.
+   */
+  const excluir = ctx.url.searchParams.get("excluir");
+
   const desde = new Date(fecha);
   if (Number.isNaN(desde.getTime())) return json({ error: "Esa fecha no se entiende." }, 400);
   desde.setHours(0, 0, 0, 0);
@@ -46,7 +59,7 @@ export async function disponibilidad(ctx: Ctx) {
       select: { weekday: true, start_time: true, end_time: true },
       orderBy: [{ weekday: "asc" }, { start_time: "asc" }],
     }),
-    horariosOcupados(profesionalId, desde, hasta),
+    horariosOcupados(profesionalId, desde, hasta, excluir ?? undefined),
   ]);
 
   return json({

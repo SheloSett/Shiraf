@@ -139,12 +139,26 @@ export async function horariosOcupados(
   profesionalId: string,
   desde: Date,
   hasta: Date,
+  /**
+   * Un turno que NO cuenta como ocupado. Es el que se está moviendo.
+   *
+   * Sin esto, reprogramar se choca contra sí mismo: el turno de las 09:00
+   * vuelve entre los ocupados, `buildSlots` le tacha las 09:00, y la clienta
+   * no puede quedarse en su horario y cambiar sólo de profesional — ni
+   * entiende por qué su propia hora desapareció de la lista.
+   *
+   * La base ya lo hacía bien: `check_appointment_overlap` tiene
+   * `AND a.id <> NEW.id` desde siempre. Lo que faltaba era que la pantalla
+   * ofreciera lo que el servidor ya aceptaba.
+   */
+  excluirId?: string,
 ): Promise<{ empiezaEn: Date; minutos: number }[]> {
   const turnos = await prisma.appointments.findMany({
     where: {
       professional_id: profesionalId,
       status: { in: ["pending", "confirmed"] },
       starts_at: { gte: desde, lt: hasta },
+      ...(excluirId ? { id: { not: excluirId } } : {}),
     },
     select: { starts_at: true, duration_minutes: true },
     orderBy: { starts_at: "asc" },
