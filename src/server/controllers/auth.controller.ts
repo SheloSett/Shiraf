@@ -88,6 +88,22 @@ async function retrato(userId: string) {
   };
 }
 
+/**
+ * ¿Esto que está guardado es un hash de bcrypt de verdad?
+ *
+ * Se mira la FORMA, no el contenido: 60 caracteres que arrancan con `$2`. Es lo
+ * que produce bcrypt siempre, y alcanza para separar un hash real de un
+ * marcador como el del seed.
+ *
+ * Existe para que el login tarde lo mismo en los tres casos —mail inexistente,
+ * contraseña mala, cuenta sin estrenar—. Lo que NO hace es autorizar nada: si
+ * devuelve false se compara igual contra el hash de descarte, que tampoco da
+ * true nunca. Es una decisión sobre el reloj, no sobre el acceso.
+ */
+function esHash(valor: string | undefined): valor is string {
+  return typeof valor === "string" && valor.length === 60 && valor.startsWith("$2");
+}
+
 // ── Entrar ──────────────────────────────────────────────────────────────────
 
 export async function login(ctx: Ctx) {
@@ -113,8 +129,26 @@ export async function login(ctx: Ctx) {
   // Sin esto, un login con mail inexistente contesta más rápido que uno con
   // mail real y contraseña mala — y esa diferencia de tiempo alcanza para ir
   // averiguando qué direcciones están registradas.
+  //
+  // 🔴 Y TAMBIÉN cuando lo guardado NO ES UN HASH, que es el caso que se
+  // escapaba. El seed escribe `!sin-contrasena-todavia!` en las cuentas que
+  // todavía no fijaron contraseña (ver `SIN_CONTRASENA` en prisma/seed.ts): es
+  // deliberado —no hay contraseña que lo haga dar true— pero bcrypt lo descarta
+  // por la forma, sin llegar a calcular nada, y contesta en 0 ms contra los ~90
+  // de un hash de verdad.
+  //
+  // Medido el 28/8/2026: mail inexistente 92 ms, cuenta con contraseña real
+  // 92 ms, cuenta del equipo todavía sin fijarla **0 ms**. O sea que el mismo
+  // reloj que este bloque cierra por un lado lo abría por el otro, y encima
+  // señalaba justo las casillas del centro.
+  //
+  // No delata ninguna contraseña, pero sí cuáles de un listado de mails son
+  // cuentas del panel que nunca se estrenaron. Se arregla acá y no en el seed a
+  // propósito: en el seed sólo valdría para las bases que se siembren de ahora
+  // en más, y las cuatro cuentas del VPS ya tienen el texto guardado.
   const HASH_DESCARTE = "$2a$10$" + "x".repeat(53);
-  const valida = await bcrypt.compare(password, usuario?.password ?? HASH_DESCARTE);
+  const guardado = usuario?.password;
+  const valida = await bcrypt.compare(password, esHash(guardado) ? guardado : HASH_DESCARTE);
 
   if (!usuario || !valida) {
     return json({ error: "Credenciales inválidas." }, 401);
