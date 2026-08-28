@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiPost } from "@/lib/api";
+import { imageUrl } from "@/lib/cloudinary";
 import type { RtaDisponibilidad, RtaProfesionalesConHorarios, RtaServicios } from "@/lib/api-tipos";
 import { buildSlots, formatMoney, formatTime, toDateKey, TOLERANCIA_MINUTOS } from "@/lib/shiraf";
 import { isTeamAccount } from "@/lib/roles";
@@ -195,22 +196,65 @@ function BookingPage() {
                 <button
                   key={s.id}
                   type="button"
+                  // `aria-pressed` y no sólo el color del borde: con la foto
+                  // arriba, "elegido" se apoyaba entero en un cambio de tinte que
+                  // un lector de pantalla no anuncia y que a simple vista compite
+                  // con la imagen.
+                  aria-pressed={active}
                   onClick={() => {
                     setServiceId(s.id);
                     setProfessionalId(undefined);
                     setSlot(undefined);
                   }}
-                  className={`rounded-sm border p-4 text-left transition-colors ${
+                  className={`group overflow-hidden rounded-sm border text-left transition-colors ${
                     active
                       ? "border-primary bg-primary/5"
                       : "border-border bg-card hover:border-primary/40"
                   }`}
                 >
-                  <p className="text-eyebrow text-gold">{s.category}</p>
-                  <p className="mt-2 font-display text-xl text-foreground">{s.name}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {s.duration_minutes} min · {formatMoney(s.price)}
-                  </p>
+                  {/*
+                    Misma foto y MISMO recorte que las tarjetas de /servicios
+                    (`aspect-[4/3]` con el preset "card"). Es a propósito: casi
+                    todas las que llegan acá vienen de mirar el catálogo, y lo que
+                    tiene que pasar es que reconozcan la que ya eligieron. Con
+                    otro encuadre la misma foto se ve como otra foto.
+                  */}
+                  <div className="relative aspect-[4/3] overflow-hidden bg-primary">
+                    {s.image_url ? (
+                      <img
+                        src={imageUrl(s.image_url, "card") ?? undefined}
+                        // Decorativa: el nombre del tratamiento está escrito justo
+                        // abajo, así que describir la foto lo hace repetir dos veces
+                        // a quien escucha la página.
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                      />
+                    ) : (
+                      /* Sin foto cargada: inicial del tratamiento sobre el oliva
+                         con grano. El mismo relleno que el catálogo, para que el
+                         hueco se lea como decisión y no como imagen rota. */
+                      <div className="grain absolute inset-0 flex items-center justify-center">
+                        <span className="font-display text-6xl text-primary-foreground/25">
+                          {s.name.charAt(0)}
+                        </span>
+                      </div>
+                    )}
+
+                    {active && (
+                      <span className="absolute top-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                        <Check className="h-4 w-4" />
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="p-4">
+                    <p className="text-eyebrow text-gold">{s.category}</p>
+                    <p className="mt-2 font-display text-xl text-foreground">{s.name}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {s.duration_minutes} min · {formatMoney(s.price)}
+                    </p>
+                  </div>
                 </button>
               );
             })}

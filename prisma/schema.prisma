@@ -107,6 +107,7 @@ enum app_permission {
   stock           // mover stock y editar productos
   stock_costs     // ver los costos de compra
   team            // gestionar profesionales, sus horarios y tratamientos
+  metrics         // ver el Dashboard y las Métricas del negocio (28/8/2026)
 }
 
 enum appointment_status {

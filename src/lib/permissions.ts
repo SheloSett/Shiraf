@@ -72,6 +72,13 @@ export const PERMISSIONS = [
    *   },
    */
   {
+    value: "metrics",
+    label: "Ver métricas del negocio",
+    description:
+      "El Dashboard y la sección Métricas: facturación, ocupación de la agenda y comportamiento de las clientas.",
+    enforcement: "db",
+  },
+  {
     value: "catalog",
     label: "Editar catálogo y precios",
     description: "Tratamientos, precios, fotos y categorías.",
@@ -190,6 +197,10 @@ const ADMIN_ROUTES = [
   // Internas del stock, no del catálogo público: agrupan cremas e insumos que
   // no aparecen en el sitio. Ver migración 20260814000000.
   { path: "/admin/categorias-productos", access: "stock" },
+  // El Dashboard y las Métricas van juntos y piden lo mismo: el Dashboard es un
+  // recorte de Métricas, no una pantalla más liviana. Los dos muestran plata.
+  { path: "/admin/dashboard", access: "metrics" },
+  { path: "/admin/metricas", access: "metrics" },
   { path: "/admin/accesos", access: "admin" },
   // Su contraseña, no el negocio: no depende de ninguna casilla.
   { path: "/admin/cuenta", access: "panel" },

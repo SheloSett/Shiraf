@@ -28,6 +28,8 @@ import { Route as AuthenticatedAdminCategoriasProductosRouteImport } from './rou
 import { Route as AuthenticatedAdminCategoriasServiciosRouteImport } from './routes/_authenticated/admin.categorias-servicios'
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
 import { Route as AuthenticatedAdminCuentaRouteImport } from './routes/_authenticated/admin.cuenta'
+import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin.dashboard'
+import { Route as AuthenticatedAdminMetricasRouteImport } from './routes/_authenticated/admin.metricas'
 import { Route as AuthenticatedAdminMiAgendaRouteImport } from './routes/_authenticated/admin.mi-agenda'
 import { Route as AuthenticatedAdminProductosRouteImport } from './routes/_authenticated/admin.productos'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
@@ -135,6 +137,18 @@ const AuthenticatedAdminCuentaRoute =
     path: '/cuenta',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminDashboardRoute =
+  AuthenticatedAdminDashboardRouteImport.update({
+    id: '/dashboard',
+    path: '/dashboard',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminMetricasRoute =
+  AuthenticatedAdminMetricasRouteImport.update({
+    id: '/metricas',
+    path: '/metricas',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminMiAgendaRoute =
   AuthenticatedAdminMiAgendaRouteImport.update({
     id: '/mi-agenda',
@@ -190,6 +204,8 @@ export interface FileRoutesByFullPath {
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
+  '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/metricas': typeof AuthenticatedAdminMetricasRoute
   '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
@@ -214,6 +230,8 @@ export interface FileRoutesByTo {
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
+  '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/metricas': typeof AuthenticatedAdminMetricasRoute
   '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
@@ -242,6 +260,8 @@ export interface FileRoutesById {
   '/_authenticated/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
   '/_authenticated/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
+  '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/_authenticated/admin/metricas': typeof AuthenticatedAdminMetricasRoute
   '/_authenticated/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/_authenticated/admin/productos': typeof AuthenticatedAdminProductosRoute
   '/_authenticated/admin/profesionales': typeof AuthenticatedAdminProfesionalesRoute
@@ -270,6 +290,8 @@ export interface FileRouteTypes {
     | '/admin/categorias-servicios'
     | '/admin/clientes'
     | '/admin/cuenta'
+    | '/admin/dashboard'
+    | '/admin/metricas'
     | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
@@ -294,6 +316,8 @@ export interface FileRouteTypes {
     | '/admin/categorias-servicios'
     | '/admin/clientes'
     | '/admin/cuenta'
+    | '/admin/dashboard'
+    | '/admin/metricas'
     | '/admin/mi-agenda'
     | '/admin/productos'
     | '/admin/profesionales'
@@ -321,6 +345,8 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/categorias-servicios'
     | '/_authenticated/admin/clientes'
     | '/_authenticated/admin/cuenta'
+    | '/_authenticated/admin/dashboard'
+    | '/_authenticated/admin/metricas'
     | '/_authenticated/admin/mi-agenda'
     | '/_authenticated/admin/productos'
     | '/_authenticated/admin/profesionales'
@@ -475,6 +501,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminCuentaRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/dashboard': {
+      id: '/_authenticated/admin/dashboard'
+      path: '/dashboard'
+      fullPath: '/admin/dashboard'
+      preLoaderRoute: typeof AuthenticatedAdminDashboardRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/metricas': {
+      id: '/_authenticated/admin/metricas'
+      path: '/metricas'
+      fullPath: '/admin/metricas'
+      preLoaderRoute: typeof AuthenticatedAdminMetricasRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/mi-agenda': {
       id: '/_authenticated/admin/mi-agenda'
       path: '/mi-agenda'
@@ -527,6 +567,8 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminCategoriasServiciosRoute: typeof AuthenticatedAdminCategoriasServiciosRoute
   AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
   AuthenticatedAdminCuentaRoute: typeof AuthenticatedAdminCuentaRoute
+  AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
+  AuthenticatedAdminMetricasRoute: typeof AuthenticatedAdminMetricasRoute
   AuthenticatedAdminMiAgendaRoute: typeof AuthenticatedAdminMiAgendaRoute
   AuthenticatedAdminProductosRoute: typeof AuthenticatedAdminProductosRoute
   AuthenticatedAdminProfesionalesRoute: typeof AuthenticatedAdminProfesionalesRoute
@@ -545,6 +587,8 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
     AuthenticatedAdminCategoriasServiciosRoute,
   AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
   AuthenticatedAdminCuentaRoute: AuthenticatedAdminCuentaRoute,
+  AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
+  AuthenticatedAdminMetricasRoute: AuthenticatedAdminMetricasRoute,
   AuthenticatedAdminMiAgendaRoute: AuthenticatedAdminMiAgendaRoute,
   AuthenticatedAdminProductosRoute: AuthenticatedAdminProductosRoute,
   AuthenticatedAdminProfesionalesRoute: AuthenticatedAdminProfesionalesRoute,

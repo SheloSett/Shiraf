@@ -1,7 +1,12 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
-import { deliverAppointmentEmail, deliverOverdueDigest } from "@/lib/notifications.server";
+import {
+  deliverAppointmentEmail,
+  deliverAppointmentWhatsapp,
+  deliverOverdueDigest,
+} from "@/lib/notifications.server";
 import type { TurnoVencido } from "@/lib/notifications";
+import { whatsappConfigurado } from "@/server/services/whatsapp.service";
 
 /**
  * El recordatorio del día antes.
@@ -147,23 +152,66 @@ export async function runDailyReminders(): Promise<ReminderRun> {
   const skipped: { id: string; reason: string }[] = [];
   let sent = 0;
 
+  // Se pregunta UNA vez por corrida y no por turno: las variables de entorno no
+  // cambian mientras el proceso vive. Sirve para dos cosas, las dos de log —
+  // callar el "no está configurado" repetido treinta veces, y que el día que el
+  // canal se encienda sus fallas se vean.
+  const conWhatsapp = whatsappConfigurado();
+
   // De a uno y en serie, no en paralelo: son pocos por día —lo que entra en la
   // agenda de un centro— y Resend limita los envíos por segundo. Un Promise.all
   // de treinta mails se come el límite y falla la mitad.
   for (const appointment of appointments) {
-    const result = await deliverAppointmentEmail(appointment.id, "reminder");
+    const mail = await deliverAppointmentEmail(appointment.id, "reminder");
 
-    if (!result.sent) {
+    /*
+     * El WhatsApp del recordatorio. Hoy no sale: el canal está apagado mientras
+     * no haya credenciales de Meta (ver `docs/whatsapp-automatico.md`), y en ese
+     * estado devuelve "todavía no está configurado" sin llamar a nadie.
+     *
+     * ── POR QUÉ ALCANZA CON QUE SALGA UNO DE LOS DOS ──────────────────────
+     *
+     * `reminded_at` significa "a esta clienta ya se le avisó del turno de
+     * mañana", y no "salió el mail". Marcándolo cuando cualquiera de los dos
+     * canales llegó, la segunda pasada del día no le manda un WhatsApp repetido
+     * a quien ya recibió el aviso — que además de molestar se cobra.
+     *
+     * La contra es que un mail que falla no se reintenta si el WhatsApp salió.
+     * Se elige igual: la clienta ya está avisada, que es lo que importaba, y el
+     * motivo del fallo queda en el log de todas formas.
+     */
+    const whatsapp = await deliverAppointmentWhatsapp(appointment.id, "reminder");
+
+    if (!mail.sent && !whatsapp.sent) {
       // Sin marcar: que hoy no tuviera mail no significa que mañana tampoco. Y
-      // si el motivo fue una caída de Resend, dejarlo sin marcar es lo que
+      // si el motivo fue una caída del proveedor, dejarlo sin marcar es lo que
       // permite que un reintento lo levante.
-      skipped.push({ id: appointment.id, reason: result.reason });
+      //
+      // El motivo del WhatsApp sólo se nombra si el canal está encendido. Con
+      // el canal apagado —que es el estado de hoy— su "motivo" es siempre el
+      // mismo cartel de "no está configurado", y agregarlo a los 30 renglones
+      // del día no informa nada: sólo hace que el motivo real, que es el del
+      // mail, se lea peor.
+      skipped.push({
+        id: appointment.id,
+        reason: conWhatsapp ? `mail: ${mail.reason} · whatsapp: ${whatsapp.reason}` : mail.reason,
+      });
       continue;
     }
 
-    // El mail YA salió. Si la marca falla, lo que no se puede hacer es contarlo
-    // como no enviado: el próximo intento se lo mandaría de nuevo. Se registra
-    // para que quede en el log del servidor y se sigue.
+    // El aviso YA salió por al menos un canal. Si la marca falla, lo que no se
+    // puede hacer es contarlo como no enviado: el próximo intento se lo mandaría
+    // de nuevo. Se registra para que quede en el log del servidor y se sigue.
+    //
+    // Cuando salió uno solo de los dos, el motivo del otro va al log igual: sin
+    // eso, un WhatsApp que empieza a fallar todos los días queda invisible
+    // detrás de un mail que sí sale.
+    if (!mail.sent) {
+      console.warn(`[recordatorios] turno ${appointment.id} · sin mail: ${mail.reason}`);
+    }
+    if (conWhatsapp && !whatsapp.sent) {
+      console.warn(`[recordatorios] turno ${appointment.id} · sin whatsapp: ${whatsapp.reason}`);
+    }
     //
     // Con Prisma esto pasa de un `error` que se revisa a una excepción que hay
     // que atrapar. El try/catch no es defensivo por las dudas: es exactamente

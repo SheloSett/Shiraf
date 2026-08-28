@@ -14,6 +14,24 @@ Cerrado hoy: la rama `trabajo/panel-turnos-y-reprogramar` se mergeó a `main`, s
 subió al VPS y **los mails salen en producción**. Eso era el bloqueo más viejo
 del proyecto. Lo que queda, por orden:
 
+### 🟡 0. Correr `db:sync` por el permiso «Ver métricas» — act. 28/8/2026
+
+El Dashboard y Métricas ya andan **para la dueña**: `puede()` cortocircuita en
+`esAdmin`, así que no necesita que nadie le tilde nada.
+
+Lo que falta es poder **delegarlo**. El valor `metrics` se agregó al enum
+`app_permission` en `schema.prisma`, pero la base todavía no lo tiene. Hasta que
+se corra:
+
+    bun run db:sync
+
+la casilla «Ver métricas» aparece en Accesos y **guardarla tira un error de
+Postgres** (`invalid input value for enum app_permission`). No rompe nada más:
+leer permisos no necesita el valor, sólo escribirlo.
+
+Agregar un valor a un enum no borra datos y no pide reset. Hay que correrlo en
+las dos: la local y la del VPS.
+
 ### 🔴 1. HTTPS — hoy las contraseñas viajan en claro
 
 Se entra por **`http://177.7.59.16:3000`**, con `APP_BIND=0.0.0.0` y sin

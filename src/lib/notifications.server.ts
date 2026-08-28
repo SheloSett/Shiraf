@@ -5,8 +5,10 @@ import {
   type TurnoVencido,
   type AppointmentEvent,
   type AppointmentMessage,
+  toWhatsappNumber,
   type NotifiableAppointment,
 } from "@/lib/notifications";
+import { PLANTILLAS } from "@/lib/whatsapp-plantillas";
 
 /**
  * El envío de los mails de turnos. **Sólo servidor.**
@@ -178,6 +180,20 @@ export type DeliveryResult =
   | { sent: false; reason: string };
 
 /**
+ * Lo que devuelve `notifyAppointment`: cómo le fue al mail, más el WhatsApp.
+ *
+ * `sent` y `reason` son los del MAIL y siguen significando lo mismo que antes de
+ * que existiera el segundo canal — de eso dependen los toasts del panel, que
+ * dicen "por mail no salió". El WhatsApp va en su propio campo justamente para
+ * no tocar eso: hoy el canal está apagado en las dos instalaciones, y si
+ * entrara en el mismo booleano, cada aviso se reportaría como fallado aunque el
+ * mail hubiera salido perfecto.
+ *
+ * Es opcional para que las pantallas que no lo miran compilen igual.
+ */
+export type NotifyResult = DeliveryResult & { whatsapp?: DeliveryResult };
+
+/**
  * Manda el mail. Sin SMTP configurado no falla: no manda y lo dice.
  *
  * Acá adentro había un segundo cliente de Resend, escrito aparte del de
@@ -210,10 +226,23 @@ async function sendEmail(input: {
  * proceso—. La autorización la resuelve cada una antes de llamar acá; esto ya
  * asume que se puede.
  */
-export async function deliverAppointmentEmail(
-  appointmentId: string,
-  event: AppointmentEvent,
-): Promise<DeliveryResult> {
+/**
+ * El turno, ya en la forma que necesitan los avisos, más cómo se le escribe.
+ *
+ * Se separó de `deliverAppointmentEmail` cuando apareció el segundo canal: el
+ * mail y el WhatsApp necesitan exactamente lo mismo —quién es, cuándo, de qué, y
+ * su dirección o su teléfono— y con la consulta adentro de una de las dos
+ * funciones, la otra tenía que escribirla de nuevo. Dos consultas al mismo turno
+ * es cómo empiezan a divergir: una suma un campo y la otra no, y el mismo aviso
+ * dice cosas distintas según el canal.
+ */
+type DatosDelAviso = {
+  notifiable: NotifiableAppointment;
+  /** Null cuando la clienta no tiene mail: la invitada que cargó el centro. */
+  clientEmail: string | null;
+};
+
+async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | null> {
   const { prisma } = await import("@/server/db");
 
   // El mail y el nombre de la clienta salen del mismo viaje que el turno.
@@ -238,11 +267,16 @@ export async function deliverAppointmentEmail(
       // igual tiene que decir de qué es el turno.
       service_name: true,
       professional: { select: { full_name: true } },
-      client: { select: { email: true, profile: { select: { full_name: true } } } },
+      // El teléfono del profile entró con el WhatsApp: hasta entonces sólo
+      // viajaba `guest_phone`, así que de una clienta CON cuenta no se sabía el
+      // número. Para el mail eso se notaba poco —los avisos al centro decían el
+      // teléfono sólo de las invitadas—; para el WhatsApp es la dirección misma,
+      // sin ella no hay a dónde mandar.
+      client: { select: { email: true, profile: { select: { full_name: true, phone: true } } } },
     },
   });
 
-  if (!appointment) return { sent: false, reason: "El turno no existe." };
+  if (!appointment) return null;
 
   // ── Quién es la clienta y cómo se le escribe ──────────────────────────────
   // Los datos de invitada son el respaldo: si hay cuenta, mandan los de la
@@ -253,13 +287,25 @@ export async function deliverAppointmentEmail(
   const notifiable: NotifiableAppointment = {
     startsAt: appointment.starts_at.toISOString(),
     clientName,
-    clientPhone: appointment.guest_phone,
+    // Igual que el nombre: si tiene cuenta manda el profile, y los datos de
+    // invitada son el respaldo.
+    clientPhone: appointment.client?.profile?.phone ?? appointment.guest_phone,
     serviceName: appointment.service?.name ?? appointment.service_name ?? null,
     professionalName: appointment.professional?.full_name ?? null,
     cancelReason: appointment.cancel_reason,
   };
 
-  const recipient = TO_CLIENT.includes(event) ? clientEmail : CONTACT.email;
+  return { notifiable, clientEmail };
+}
+
+export async function deliverAppointmentEmail(
+  appointmentId: string,
+  event: AppointmentEvent,
+): Promise<DeliveryResult> {
+  const datos = await datosDelAviso(appointmentId);
+  if (!datos) return { sent: false, reason: "El turno no existe." };
+
+  const recipient = TO_CLIENT.includes(event) ? datos.clientEmail : CONTACT.email;
 
   if (!recipient) {
     // El caso real: una invitada cargada por teléfono, de la que el centro tiene
@@ -268,7 +314,7 @@ export async function deliverAppointmentEmail(
     return { sent: false, reason: "Esta clienta no tiene mail cargado." };
   }
 
-  const message = buildAppointmentMessage(event, notifiable);
+  const message = buildAppointmentMessage(event, datos.notifiable);
 
   return sendEmail({
     to: recipient,
@@ -276,6 +322,74 @@ export async function deliverAppointmentEmail(
     text: message.lines.join("\n"),
     html: renderEmailHtml(message),
   });
+}
+
+/**
+ * El mismo aviso, por WhatsApp. **Hoy apagado.**
+ *
+ * Sin `WHATSAPP_TOKEN` ni `WHATSAPP_PHONE_ID` esto no intenta nada y contesta
+ * que el canal no está configurado, igual que hace el mail sin SMTP. Es el
+ * estado de las dos instalaciones mientras la dueña no decida encararlo — ver
+ * `docs/whatsapp-automatico.md`.
+ *
+ * ── LO QUE VIAJA NO ES EL TEXTO ───────────────────────────────────────────
+ *
+ * WhatsApp no acepta texto libre fuera de las 24 horas siguientes a que la
+ * clienta escriba, y ningún aviso de turno cae adentro de esa ventana. Lo que se
+ * manda es el NOMBRE de una plantilla aprobada por Meta más los valores de sus
+ * huecos: el texto lo arma Meta. Por eso esto no llama a
+ * `buildAppointmentMessage` —que devuelve el mensaje entero— sino a `PLANTILLAS`
+ * de `whatsapp-plantillas.ts`.
+ *
+ * ── A QUIÉN LE LLEGA ──────────────────────────────────────────────────────
+ *
+ * El mismo reparto que el mail, con la otra libreta: los cinco avisos de
+ * `TO_CLIENT` van al teléfono de la clienta; los tres internos, al WhatsApp del
+ * centro. Y como en el mail, quien llama nunca dice a qué número mandar — manda
+ * el id del turno y el destinatario sale de la base. Si el número viajara en el
+ * pedido, esto sería un formulario abierto para mandar WhatsApp a nombre del
+ * centro.
+ */
+export async function deliverAppointmentWhatsapp(
+  appointmentId: string,
+  event: AppointmentEvent,
+): Promise<DeliveryResult> {
+  const { whatsappConfigurado, enviarWhatsapp } =
+    await import("@/server/services/whatsapp.service");
+
+  // Se pregunta ANTES de ir a la base: sin canal encendido, buscar el turno para
+  // después no mandar nada es una consulta por cada confirmación de turno.
+  if (!whatsappConfigurado()) {
+    return { sent: false, reason: "El envío de WhatsApp todavía no está configurado." };
+  }
+
+  const datos = await datosDelAviso(appointmentId);
+  if (!datos) return { sent: false, reason: "El turno no existe." };
+
+  const crudo = TO_CLIENT.includes(event) ? datos.notifiable.clientPhone : CONTACT.whatsappNumber;
+
+  // La misma normalización que usa el enlace `wa.me` del panel: agrega el 9 de
+  // los celulares argentinos y descarta el 0 y el 15, que no viajan al formato
+  // internacional. Devuelve null cuando el número no da para nada confiable.
+  const numero = toWhatsappNumber(crudo);
+
+  if (!numero) {
+    return {
+      sent: false,
+      reason: crudo
+        ? "El teléfono cargado no tiene forma de número argentino."
+        : "Esta clienta no tiene teléfono cargado.",
+    };
+  }
+
+  const plantilla = PLANTILLAS[event];
+  const envio = await enviarWhatsapp({
+    to: numero,
+    plantilla: plantilla.nombre,
+    params: plantilla.params(datos.notifiable),
+  });
+
+  return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
 }
 
 /**

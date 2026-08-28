@@ -465,6 +465,106 @@ export type FilaDeMiAgenda = {
 
 export type RtaMiAgenda = { turnos: FilaDeMiAgenda[] };
 
+// ───────────────────────────────────────────────────────────────────────
+// Métricas
+// ───────────────────────────────────────────────────────────────────────
+
+/** Una fila de ranking: cuántas veces y cuánta plata. */
+export type FilaConTotal = { nombre: string; cantidad: number; total: number };
+
+/**
+ * Lo que devuelve `/api/metricas`. Lo dibujan el Dashboard y la sección
+ * Métricas: el Dashboard es un recorte de esto con el rango puesto en el mes.
+ *
+ * Vive acá y no en `metricas.service.ts` por la misma razón que el resto de este
+ * archivo: es el contrato entre las dos puntas. El servicio lo importa y lo
+ * cumple con `satisfies`, así que si alguien le agrega un campo al cálculo sin
+ * declararlo acá —o al revés— no compila. Al derecho no se puede: el servicio
+ * importa Prisma, y con la flecha apuntando para allá una pantalla terminaría
+ * arrastrando el cliente de la base a su grafo de imports.
+ */
+export type RtaMetricas = {
+  rango: { desde: string; hasta: string };
+  plata: {
+    /** Cobrado: sólo los turnos en estado `completed` del rango. */
+    facturado: number;
+    /** Lo que viene: turnos futuros sin cancelar. Todavía no es plata. */
+    agendado: number;
+    ticketPromedio: number;
+    turnosRealizados: number;
+    porTratamiento: FilaConTotal[];
+    porProfesional: FilaConTotal[];
+    porMes: { mes: string; facturado: number; turnos: number }[];
+  };
+  agenda: {
+    /**
+     * Minutos vendidos sobre minutos de agenda abierta.
+     *
+     * `minutosDisponibles` en 0 NO es 0% de ocupación: es una profesional sin
+     * horarios cargados. La pantalla los distingue, porque son dos problemas
+     * distintos y uno de los dos se arregla en Profesionales.
+     */
+    ocupacion: {
+      nombre: string;
+      minutosVendidos: number;
+      minutosDisponibles: number;
+      porcentaje: number;
+    }[];
+    /** Cuándo se piden turnos. `dia`: 0 = domingo. `hora`: 0..23. */
+    mapaDiaHora: { dia: number; hora: number; cantidad: number }[];
+    /** Cuántos días antes reservan, en promedio. Null si no hubo turnos. */
+    anticipacionPromedioDias: number | null;
+  };
+  clientas: {
+    frecuentes: {
+      nombre: string;
+      telefono: string | null;
+      visitas: number;
+      ultima: string;
+      total: number;
+    }[];
+    /** Cuenta CLIENTAS y no turnos: la que vino tres veces en el mes es una. */
+    nuevasPorMes: { mes: string; nuevas: number; repetidas: number }[];
+    /** Habituales que dejaron de venir y no tienen nada agendado. */
+    enRiesgo: {
+      nombre: string;
+      telefono: string | null;
+      visitas: number;
+      ultima: string;
+      diasSinVenir: number;
+    }[];
+    cancelacion: {
+      total: number;
+      canceladas: number;
+      porcentaje: number;
+      motivos: { motivo: string; cantidad: number }[];
+    };
+  };
+  /**
+   * Turnos del período cuya hora ya pasó y que siguen en pendiente o confirmado.
+   *
+   * No es una métrica del negocio: es una advertencia sobre las demás. Todo lo
+   * que dice "facturado" y "visitas" cuenta sólo turnos en Realizado, así que
+   * cada turno que se atendió y nadie cerró es plata que el panel no ve. Sin
+   * este aviso, el número bajo se lee como "vendimos poco" en vez de "falta
+   * cerrar turnos", que es una conclusión muy distinta y muy cara.
+   */
+  alertas: {
+    vencidosSinCerrar: number;
+    /** Cuánta plata representan esos turnos, si se cerraran. */
+    montoSinCerrar: number;
+  };
+  /** Los ocho que vienen. Ignoran el rango: la pregunta es "qué viene ahora". */
+  proximosTurnos: {
+    id: string;
+    empiezaEn: string;
+    tratamiento: string;
+    clienta: string | null;
+    profesional: string | null;
+    estado: string;
+  }[];
+};
+
 /**
  * Lo que hace falta para dibujar los horarios libres de un día.
  *

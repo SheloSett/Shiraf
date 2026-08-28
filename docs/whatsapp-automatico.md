@@ -237,7 +237,82 @@ WhatsApp se manda desde la pantalla de Avisos, que ya está.
 
 ---
 
-## 8. Sobre el número, si al final va la opción A
+## 8. El código ya está escrito, y apagado — 28/8/2026
+
+Se decidió ir por la opción A, así que la mitad que no depende de Meta está
+hecha. **No manda nada todavía**: sin `WHATSAPP_TOKEN` ni `WHATSAPP_PHONE_ID` el
+canal contesta "todavía no está configurado" y los avisos salen sólo por mail,
+exactamente como venía. Encenderlo es pegar dos variables en el `.env`.
+
+| Archivo | Qué es |
+| --- | --- |
+| `src/lib/whatsapp-plantillas.ts` | Los 8 textos como plantillas de Meta, con sus huecos |
+| `src/server/services/whatsapp.service.ts` | El envío. Gemelo de `email.service.ts` |
+| `deliverAppointmentWhatsapp()` en `notifications.server.ts` | Busca el turno, resuelve a quién y manda |
+
+Sale por los mismos dos caminos que el mail: `notifyAppointment` (el panel y la
+clienta) y la tarea diaria de `reminders.service.ts`.
+
+### Las 8 plantillas que hay que cargar en Meta
+
+Todas de categoría **utility** e idioma **es_AR** (si en el panel quedan como
+`es` a secas, hay que poner `WHATSAPP_LANG=es`, o Meta contesta que la plantilla
+no existe).
+
+| Nombre en Meta | Aviso | Variables, en orden |
+| --- | --- | --- |
+| `turno_pedido` | Reservó por el sitio, falta confirmar | nombre · cuándo · qué |
+| `turno_confirmado` | El centro se lo confirmó | nombre · cuándo · qué |
+| `turno_cancelado` | El centro lo dio de baja | nombre · cuándo · qué · motivo |
+| `turno_movido` | El centro lo movió de horario | nombre · **qué** · **cuándo** |
+| `turno_recordatorio` | El día antes | nombre · cuándo · qué |
+| `centro_turno_nuevo` | Al centro: entró una reserva | quién · cuándo · qué |
+| `centro_clienta_cancelo` | Al centro: canceló sola | quién · cuándo · qué · motivo |
+| `centro_clienta_movio` | Al centro: se movió el turno sola | quién · cuándo · qué |
+
+⚠️ Ojo con `turno_movido`: es la única donde **el tratamiento va antes que la
+fecha**. No es un descuido, es cómo quedó redactada la frase — los huecos siguen
+al texto y no a una convención. Cargarla con el orden de las otras hace que el
+mensaje diga el tratamiento donde va la fecha.
+
+**El texto exacto para pegar en el formulario está en el campo `cuerpo` de cada
+plantilla, en `src/lib/whatsapp-plantillas.ts`.** No se copia acá a propósito: dos
+copias del mismo texto es cómo empiezan a decir cosas distintas. Ese archivo es
+la fuente.
+
+### Las tres reglas de Meta que ya están contempladas
+
+- **Ningún parámetro puede ir vacío** — Meta rechaza el mensaje entero. Los datos
+  opcionales (el tratamiento, el motivo de una cancelación) tienen texto de
+  reemplazo, y el servicio además lo verifica antes de mandar.
+- **Ningún parámetro puede tener saltos de línea.** Lo que en el mail es un
+  renglón aparte, en la plantilla va adentro de la misma frase.
+- **El cuerpo no puede empezar ni terminar con un hueco**, ni tener dos pegados.
+  Por eso en los avisos al centro el nombre y el teléfono de la clienta van en el
+  mismo parámetro.
+
+### Cuando cambies un texto
+
+Si tocás el `cuerpo` de una plantilla y **no** volvés a pedir aprobación en Meta,
+no pasa nada visible y es peor: Meta sigue mandando **su** versión, la vieja, y el
+archivo miente. Si además agregás o sacás un `{{n}}`, la cantidad de parámetros
+deja de coincidir y Meta rechaza el envío con un error de parámetros.
+
+### Qué falta para encenderlo
+
+1. Cuenta de Meta Business (sin verificar alcanza — ver §2.2).
+2. El chip nuevo, registrado (§9).
+3. Cargar las 8 plantillas y esperar la aprobación (minutos a un día).
+4. Sacar el **token permanente** — no el temporal de 24 horas, que vence y corta
+   los avisos sin que cambie nada en el código.
+5. `WHATSAPP_TOKEN` y `WHATSAPP_PHONE_ID` en el `.env` de la local y del VPS.
+
+Al encenderlo, el recordatorio del día antes pasa a salir por los dos canales, y
+la pantalla de Avisos queda como respaldo y como registro.
+
+---
+
+## 9. Sobre el número, si al final va la opción A
 
 La duda que aparece siempre: «si Meta me come el número que ya tengo, ¿cómo
 hago?». Se saca un chip nuevo, y es menos trabajo de lo que parece.

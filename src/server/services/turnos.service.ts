@@ -287,7 +287,16 @@ async function exigirQueEntreEnLaAgenda(
   }
 }
 
-type HoraDelCentro = {
+/**
+ * ⚠️ Exportado a propósito desde 28/8/2026: lo usa `metricas.service`.
+ *
+ * Agrupar turnos por día, por hora o por mes es el MISMO problema que validar un
+ * horario — pasar un instante absoluto a hora de pared de Buenos Aires— y
+ * escribirlo dos veces es garantizar que un día den distinto. Con la zona del
+ * proceso (UTC en el contenedor) un turno de las 21:00 cae en el día siguiente y
+ * las métricas del lunes se cuentan el martes.
+ */
+export type HoraDelCentro = {
   /** "2026-08-21", para detectar el cruce de medianoche. */
   fecha: string;
   /** 0 = domingo, igual que EXTRACT(DOW) de Postgres y que WEEKDAYS. */
@@ -295,7 +304,7 @@ type HoraDelCentro = {
   minutosDelDia: number;
 };
 
-function enHoraDelCentro(instante: Date): HoraDelCentro {
+export function enHoraDelCentro(instante: Date): HoraDelCentro {
   // en-CA da "2026-08-21" y en-GB da "14:30:00", los dos en 24 horas. Es la
   // forma menos frágil de sacar los componentes sin parsear un texto localizado.
   const fecha = instante.toLocaleDateString("en-CA", { timeZone: TIMEZONE });

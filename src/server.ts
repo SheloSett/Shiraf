@@ -151,6 +151,13 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // Los números del negocio: Dashboard y Métricas.
+      if (pathname.startsWith("/api/metricas")) {
+        const { metricasRouter } = await import("./server/routes/metricas.routes");
+        const respuesta = await metricasRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       // Reservar: los horarios libres y el alta del turno.
       if (pathname.startsWith("/api/reservar")) {
         const { reservarRouter } = await import("./server/routes/reservar.routes");

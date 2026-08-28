@@ -14,6 +14,8 @@ import {
   CalendarDays,
   ChevronDown,
   ClipboardList,
+  LayoutDashboard,
+  LineChart,
   LogOut,
   Package,
   ShieldCheck,
@@ -85,6 +87,20 @@ export const Route = createFileRoute("/_authenticated/admin")({
 // así que es también su pantalla de entrada al panel.
 const nav = [
   {
+    // Primera de la lista a pedido de la dueña.
+    //
+    // No se pisa con la nota de acá abajo sobre "Mi agenda": pide `metrics`, que
+    // una profesional no tiene, así que a ella el menú le sigue abriendo en su
+    // agenda. Si algún día se le tilda `metrics` a una profesional, esa persona
+    // va a entrar al Dashboard — y ahí habrá que decidir cuál de las dos manda.
+    to: "/admin/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    exact: false,
+    access: "metrics",
+    children: [],
+  },
+  {
     to: "/admin/mi-agenda",
     label: "Mi agenda",
     icon: CalendarCheck,
@@ -140,6 +156,16 @@ const nav = [
     icon: Users,
     exact: false,
     access: "clients_contact",
+    children: [],
+  },
+  {
+    // Arriba de Productos, como se pidió. Queda además después de Clientes, que
+    // es de dónde salen la mitad de estos números.
+    to: "/admin/metricas",
+    label: "Métricas",
+    icon: LineChart,
+    exact: false,
+    access: "metrics",
     children: [],
   },
   {

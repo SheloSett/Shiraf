@@ -136,6 +136,18 @@ services:
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
 
+      # WhatsApp por la Cloud API de Meta. Las cuatro van vacías por ahora y el
+      # canal queda apagado: sin token ni id de número, los avisos salen sólo por
+      # mail y nada falla. Encenderlo depende de un trámite con Meta —ver
+      # docs/whatsapp-automatico.md—, no de tocar esto.
+      #
+      # ⚠️ WHATSAPP_PHONE_ID es el ID del número, una tira de dígitos que da el
+      # panel de Meta. NO es el número de teléfono.
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+      WHATSAPP_PHONE_ID: ${WHATSAPP_PHONE_ID:-}
+      WHATSAPP_LANG: ${WHATSAPP_LANG:-}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-}
+
       # Acá vivía REMINDERS_SECRET, que era obligatoria —con `:?`, o sea que sin
       # ella el contenedor no levantaba— y ya no existe. Era la llave de
       # POST /api/recordatorios, el endpoint que disparaba un cron de afuera.

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/serverfn-auth";
-import type { DeliveryResult } from "@/lib/notifications.server";
+import type { NotifyResult } from "@/lib/notifications.server";
 
 /**
  * La puerta desde el navegador para mandar el aviso de un turno.
@@ -85,7 +85,7 @@ const LOS_DISPARA_LA_CLIENTA = [
 export const notifyAppointment = createServerFn({ method: "POST" })
   .middleware([requireAuth])
   .validator((data: unknown) => NotifyInput.parse(data))
-  .handler(async ({ data, context }): Promise<DeliveryResult> => {
+  .handler(async ({ data, context }): Promise<NotifyResult> => {
     const { prisma } = await import("@/server/db");
 
     if ((LOS_DISPARA_LA_CLIENTA as readonly string[]).includes(data.event)) {
@@ -115,6 +115,29 @@ export const notifyAppointment = createServerFn({ method: "POST" })
 
     // Dinámico y adentro del handler, como todo lo demás: notifications.server
     // importa Prisma, así que no puede entrar por un import de nivel superior.
-    const { deliverAppointmentEmail } = await import("@/lib/notifications.server");
-    return deliverAppointmentEmail(data.appointmentId, data.event);
+    const { deliverAppointmentEmail, deliverAppointmentWhatsapp } =
+      await import("@/lib/notifications.server");
+
+    /*
+     * Los dos canales, y el mail manda el resultado.
+     *
+     * En serie y no con `Promise.all`: son dos, tardan poco, y con el paralelo
+     * un fallo de uno no queda claro cuál fue. Lo que gana el paralelo acá son
+     * milisegundos; lo que cuesta es un log confuso a las tres de la mañana.
+     *
+     * ── POR QUÉ EL WHATSAPP VA APARTE Y NO CAMBIA `sent` ──────────────────
+     *
+     * Porque `sent` lo leen los toasts del panel, que ya dicen "por mail no
+     * salió" con su motivo. Si el WhatsApp entrara en ese mismo booleano, un
+     * canal apagado —que es el estado normal hoy— haría que TODOS los avisos se
+     * reporten como fallados aunque el mail haya salido perfecto.
+     *
+     * Entonces viaja en su propio campo, opcional. Las pantallas que hoy sólo
+     * miran `sent` y `reason` siguen andando sin tocar una línea, y el día que
+     * el canal se encienda hay dónde mirar cómo le fue.
+     */
+    const mail = await deliverAppointmentEmail(data.appointmentId, data.event);
+    const whatsapp = await deliverAppointmentWhatsapp(data.appointmentId, data.event);
+
+    return { ...mail, whatsapp };
   });

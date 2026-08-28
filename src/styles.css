@@ -120,6 +120,47 @@
   --input: oklch(0.872 0.024 92);
   --ring: oklch(0.75 0.098 84);
 
+  /*
+   * ── Colores de los gráficos (Dashboard y Métricas) ───────────────────────
+   *
+   * NO son --primary ni --gold, y no es un descuido. El oliva de la marca
+   * (oklch 0.375 0.048) falla dos de los seis chequeos de contraste como color
+   * de gráfico: queda fuera de la banda de luminosidad para marcas sobre fondo
+   * claro y su croma 0.048 está por debajo del piso, o sea que en una barra se
+   * lee como gris. Sirve para un campo de color grande; no para una marca chica
+   * al lado de otra.
+   *
+   * Estos son el escalón más cercano que SÍ pasa, manteniendo los dos matices
+   * de la marca (verde y dorado). Verificado, no estimado:
+   *
+   *   banda de luminosidad  PASS  (los dos dentro de 0.43–0.77)
+   *   piso de croma         PASS  (los dos >= 0.1)
+   *   separación CVD        PASS  ΔE 15.7 protan / 26.9 tritan
+   *   visión normal         PASS  ΔE 23.9
+   *   contraste vs fondo     WARN  el dorado da 2.41:1
+   *
+   * ⚠️ Ese WARN no se ignora: obliga a que todo lo pintado de dorado lleve su
+   * número escrito al lado. Por eso los rankings muestran el valor en texto y no
+   * sólo el largo de la barra — si alguien saca esas etiquetas, el gráfico deja
+   * de ser legible y no es una cuestión de gusto.
+   *
+   * El modo oscuro no se escalonó porque hoy no se puede llegar a él: `.dark`
+   * está definido en este archivo pero nada le pone la clase al <html>. Si
+   * alguna vez se prende, estos dos hay que volver a pasarlos por el validador
+   * contra el fondo oscuro — no alcanza con invertirlos.
+   */
+  --serie-a: #3b793f;
+  --serie-b: #cf9a35;
+
+  /* Rampa secuencial para el mapa de día × hora: UN solo matiz, de claro a
+     oscuro. Un arcoíris acá haría que "poco" y "mucho" no se puedan ordenar de
+     un vistazo. La luminosidad baja parejo: 0.945 → 0.865 → 0.765 → 0.645 → 0.52. */
+  --rampa-1: #e6f0e6;
+  --rampa-2: #c1dbc1;
+  --rampa-3: #95c095;
+  --rampa-4: #669e68;
+  --rampa-5: #3b793f;
+
   --chart-1: oklch(0.4 0.032 128);
   --chart-2: oklch(0.75 0.098 84);
   --chart-3: oklch(0.58 0.05 140);
