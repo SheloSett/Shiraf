@@ -179,6 +179,9 @@ export type AccessRequirement = Permission | "admin" | "panel" | "own_agenda";
  */
 const ADMIN_ROUTES = [
   { path: "/admin/turnos", access: "appointments" },
+  // Los recordatorios de mañana para mandar por WhatsApp. Es la agenda de un día
+  // mirada de otra forma, así que pide lo mismo que verla.
+  { path: "/admin/avisos", access: "appointments" },
   { path: "/admin/servicios", access: "catalog" },
   { path: "/admin/categorias-servicios", access: "catalog" },
   { path: "/admin/profesionales", access: "team" },

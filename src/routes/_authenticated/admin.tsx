@@ -9,6 +9,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
+  BellRing,
   CalendarCheck,
   CalendarDays,
   ChevronDown,
@@ -103,6 +104,16 @@ const nav = [
     to: "/admin/turnos",
     label: "Turnos",
     icon: ClipboardList,
+    exact: false,
+    access: "appointments",
+    children: [],
+  },
+  {
+    // Va pegada a Turnos porque es lo mismo mirado de otra forma: la agenda de
+    // mañana, ordenada para ir mandando los WhatsApp de a uno.
+    to: "/admin/avisos",
+    label: "Avisos",
+    icon: BellRing,
     exact: false,
     access: "appointments",
     children: [],

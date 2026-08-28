@@ -100,13 +100,20 @@ const MAXIMO_EN_EL_MAIL = 15;
  *
  * `en-CA` no es un capricho: es el único locale que devuelve la fecha en
  * AAAA-MM-DD, que es lo que hay que concatenar.
+ *
+ * Se exporta porque «los turnos de mañana» lo miran DOS cosas: esta tarea, que
+ * manda el mail sola, y la pantalla de Avisos, desde donde alguien del centro
+ * dispara el WhatsApp a mano. Si cada una calculara su propio "mañana", entre
+ * las 21 y la medianoche la pantalla mostraría un día y el mail saldría por
+ * otro, y nadie entendería por qué.
  */
-function tomorrowInBuenosAires(): { from: string; to: string } {
+export function tomorrowInBuenosAires(): { from: string; to: string; day: string } {
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const day = tomorrow.toLocaleDateString("en-CA", { timeZone: TIMEZONE });
   return {
     from: `${day}T00:00:00${AR_OFFSET}`,
     to: `${day}T23:59:59.999${AR_OFFSET}`,
+    day,
   };
 }
 

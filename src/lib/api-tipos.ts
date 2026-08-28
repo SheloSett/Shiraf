@@ -334,6 +334,39 @@ export type TurnoDelPanel = {
 export type RtaTurnos = { turnos: TurnoDelPanel[] };
 
 /**
+ * Un turno de mañana, en la pantalla de Avisos.
+ *
+ * Trae menos que `TurnoDelPanel` porque esta pantalla no decide nada sobre el
+ * turno —no confirma, no cancela, no cobra—: sólo hay que poder redactar el
+ * recordatorio y ver a quién se le manda. Por eso no viajan ni el precio ni el
+ * estado: son todos confirmados, si no no estarían en la lista.
+ *
+ * La forma de `services`, `professionals` y `person` es la que espera
+ * `toNotifiable()`, a propósito: así el mensaje lo arma la misma función que en
+ * las otras dos pantallas y no hay una tercera redacción del mismo texto.
+ */
+export type TurnoParaAvisar = {
+  id: string;
+  starts_at: string;
+  duration_minutes: number;
+  /** Alergias, embarazos, lo que la clienta dejó escrito. */
+  client_notes: string | null;
+  /**
+   * Cuándo salió el recordatorio **por mail**, o null si todavía no salió.
+   *
+   * ⚠️ No dice nada del WhatsApp. Esa marca no existe: el WhatsApp se manda a
+   * mano y nadie puede saber desde acá si la persona apretó enviar.
+   */
+  reminded_at: string | null;
+  services: { name: string } | null;
+  professionals: { full_name: string } | null;
+  person: PersonaDelTurno;
+};
+
+/** `dia` en AAAA-MM-DD y hora de Buenos Aires, para poder escribirlo en pantalla. */
+export type RtaAvisosDeManana = { dia: string; turnos: TurnoParaAvisar[] };
+
+/**
  * Un turno solo, con todo lo que hace falta para decidir sobre él.
  *
  * Es lo mismo que una fila de la tabla más lo que ahí no entraba: el mail de

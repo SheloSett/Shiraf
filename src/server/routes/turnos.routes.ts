@@ -2,6 +2,7 @@ import { createRouter } from "@/server/http";
 import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middleware";
 import {
   alcanceDeInvitada,
+  avisosDeManana,
   borrar,
   calendario,
   cambiarEstado,
@@ -37,6 +38,9 @@ const gestionarTurnos = [authMiddleware, exigeMiddleware("appointments")] as con
 turnosRouter.get("/", ...gestionarTurnos, listar);
 turnosRouter.get("/pendientes", ...gestionarTurnos, pendientes);
 turnosRouter.get("/calendario", ...gestionarTurnos, calendario);
+// Los turnos de mañana, para mandarles el WhatsApp a mano. Un solo segmento, así
+// que va ANTES de "/:id" como todas las de acá arriba.
+turnosRouter.get("/manana", ...gestionarTurnos, avisosDeManana);
 turnosRouter.put("/:id/estado", ...gestionarTurnos, cambiarEstado);
 // Moverle el día y la hora. Es la salida de un turno vencido: no se le puede
 // inventar una profesional ni darlo por realizado, pero sí correrlo de fecha.

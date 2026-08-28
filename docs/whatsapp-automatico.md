@@ -178,16 +178,45 @@ Un chip aparte, que sale un par de mil pesos por única vez.
   web.
 - ❌ Se paga Meta **más** el proveedor, todos los meses.
 
-### C. Seguir a mano — costo cero
+### C. Seguir a mano — costo cero ← *hecha el 28/8/2026*
 
 El mail sale automático y el WhatsApp lo dispara alguien del centro con un botón
 que ya abre el mensaje escrito. No cuesta nada y no depende de Meta.
 
-Lo que se puede mejorar **gratis** dentro de esta opción: hoy el recordatorio del
-día anterior no tiene botón de WhatsApp en ninguna pantalla. Se puede armar una
-vista **«avisos de mañana»** con los turnos del día siguiente y un botón por
-cada uno. La persona del centro entra una vez por día, aprieta seis veces y
-listo. No es automático, pero son cinco minutos de trabajo diario y cero costo.
+**Ya está la pantalla**: `Avisos` en el menú del panel (`/admin/avisos`). Muestra
+los turnos **confirmados de mañana**, en orden, cada uno con su botón de
+WhatsApp. La persona del centro entra una vez por día, aprieta los botones y
+listo — cinco minutos de trabajo diario.
+
+Detalles que conviene saber:
+
+- **«Mañana» es el mismo que usa el mail.** Sale de `tomorrowInBuenosAires()` en
+  `reminders.service.ts`, la misma función. Si cada uno calculara el suyo, entre
+  las 21 y la medianoche —cuando en UTC ya es otro día— la pantalla mostraría una
+  fecha y el mail saldría por otra.
+- **Sólo confirmados**, igual que el mail: recordarle a alguien que venga a algo
+  que el centro todavía no aceptó es prometerle un horario que puede no existir.
+- **El texto es el mismo** que el del mail. Lo arma `buildAppointmentMessage` con
+  el evento `reminder`, así que no hay una segunda redacción que con el tiempo
+  diga otra cosa.
+- Muestra la **nota de la clienta** (alergias, embarazos) a la vista de quien
+  está por escribirle, y avisa cuáles **no tienen teléfono cargado**.
+
+#### Lo que le falta, y es el paso siguiente
+
+**No marca cuáles ya se avisaron por WhatsApp.** Abrir `wa.me` deja el mensaje
+escrito en la app; si la persona apretó enviar o cerró la ventana, desde el panel
+no hay forma de saberlo. Y una tilde que dice "avisado" sin serlo es peor que
+ninguna.
+
+Tampoco se puede reusar `reminded_at`: ésa es la marca del **mail**, y escribirla
+haría que la tarea de la mañana saltee a esa clienta y se quede sin el mail.
+
+La marca de verdad necesita **una columna propia** en `appointments`, del tipo
+`notified_wa_at`, que se escriba cuando alguien aprieta el botón. Es un cambio
+chico —una columna nullable, un endpoint que la sella— pero toca la base, así que
+queda anotado acá y no hecho de prepo. Mientras tanto, la pantalla sí dice si el
+**mail** salió, que es la información que hay.
 
 ---
 
@@ -203,5 +232,29 @@ Tres preguntas, en este orden:
 3. **¿Está dispuesta a que el equipo deje de usar WhatsApp desde el celular?**
    Sólo si contesta que sí tiene sentido mirar la opción B.
 
-**Mientras tanto no hay nada bloqueado**: los avisos por mail funcionan y el
-WhatsApp manual también.
+**Mientras tanto no hay nada bloqueado**: los avisos por mail salen solos y el
+WhatsApp se manda desde la pantalla de Avisos, que ya está.
+
+---
+
+## 8. Sobre el número, si al final va la opción A
+
+La duda que aparece siempre: «si Meta me come el número que ya tengo, ¿cómo
+hago?». Se saca un chip nuevo, y es menos trabajo de lo que parece.
+
+- **Un prepago común alcanza.** Cualquier compañía. El número tiene que poder
+  recibir **un** código de verificación —por SMS o por llamada— el día que se da
+  de alta, y después vive dentro de la API.
+- **Ese número no puede tener WhatsApp instalado.** Si alguna vez se usó en la
+  app, hay que borrar esa cuenta de WhatsApp antes de registrarlo.
+- **Conviene mantener el chip vivo** con una carga mínima cada tanto: si algún
+  día hay que volver a registrarlo, hace falta recibir el código otra vez, y una
+  línea prepaga vencida se da de baja sola.
+- **Ojo con los números virtuales / VoIP**: muchos los rechaza Meta. El chip
+  físico es el camino sin sorpresas.
+- El número **de siempre no se toca**: el centro sigue chateando desde el
+  celular como hasta ahora, y el botón flotante del sitio sigue apuntando ahí.
+
+Que a la clienta le llegue el aviso de un número que no tiene agendado se atenúa
+poniéndole foto de perfil y nombre del negocio, y aclarando en el propio mensaje
+a qué número escribir si quiere contestar.

@@ -4,9 +4,11 @@ import { json, type Ctx } from "@/server/http";
 import { miAgenda, miHistorial, vincularTurnosDeInvitada } from "@/server/services/agenda.service";
 import { accesoDe } from "@/server/services/authz.service";
 import { nombreDelTratamiento, validarTurno } from "@/server/services/turnos.service";
+import { tomorrowInBuenosAires } from "@/server/services/reminders.service";
 import { comoNumero } from "@/server/serializar";
 import type {
   RtaAlcanceInvitada,
+  RtaAvisosDeManana,
   RtaCalendario,
   RtaClientasParaElegir,
   RtaCorreccion,
@@ -942,4 +944,81 @@ export async function cambiarProfesional(ctx: Ctx) {
     data: { professional_id: nuevaId, professional_name: nuevoNombre },
   });
   return json({ ok: true });
+}
+
+/**
+ * Los turnos de mañana, para avisarlos por WhatsApp a mano.
+ *
+ * ── POR QUÉ ESTA PANTALLA EXISTE ──────────────────────────────────────────
+ *
+ * El recordatorio del día antes ya sale solo, pero sólo por mail
+ * (`reminders.service.ts`). Por WhatsApp no puede salir solo: eso necesita la
+ * API de Meta, con verificación del negocio, plantillas aprobadas una por una y
+ * un número que deja de funcionar en el celular — está todo en
+ * `docs/whatsapp-automatico.md`. Mientras esa decisión no esté tomada, el canal
+ * que las clientas realmente leen depende de que alguien del centro se acuerde
+ * de escribir, turno por turno, buscándolos en la agenda.
+ *
+ * Esto es la lista ya hecha: los turnos de mañana, en orden, con el botón que
+ * abre el WhatsApp con el mensaje escrito. Cinco minutos por día y sin depender
+ * de Meta.
+ *
+ * ── MISMO CRITERIO QUE EL MAIL, Y A PROPÓSITO ─────────────────────────────
+ *
+ * "Mañana" sale de `tomorrowInBuenosAires()`, la MISMA función que usa la tarea
+ * del mail. Si acá se recalculara, entre las 21 y la medianoche —cuando en UTC
+ * ya es otro día— la pantalla mostraría una fecha y el mail saldría por otra.
+ *
+ * Y sólo los CONFIRMADOS, igual que el mail: un turno pendiente no es un turno,
+ * y recordarle a alguien que venga a algo que el centro todavía no aceptó es
+ * prometerle un horario que puede no existir.
+ *
+ * `reminded_at` viaja para que la pantalla pueda decir si el mail ya salió. NO
+ * dice nada del WhatsApp: esa marca no existe todavía, y no se puede reusar
+ * ésta porque escribirla dejaría a la clienta sin el mail.
+ */
+export async function avisosDeManana(ctx: Ctx) {
+  void ctx;
+  const { from, to, day } = tomorrowInBuenosAires();
+
+  const turnos = await prisma.appointments.findMany({
+    where: {
+      status: "confirmed",
+      starts_at: { gte: new Date(from), lte: new Date(to) },
+    },
+    orderBy: { starts_at: "asc" },
+    select: {
+      id: true,
+      starts_at: true,
+      duration_minutes: true,
+      // La nota de la clienta se muestra: es donde dice "estoy embarazada" o
+      // "soy alérgica", y quien está por escribirle tiene que verla antes.
+      client_notes: true,
+      reminded_at: true,
+      ...DATOS_DE_LA_PERSONA,
+      service: { select: { name: true } },
+      service_name: true,
+      professional: { select: { full_name: true } },
+      professional_name: true,
+    },
+  });
+
+  const salida: RtaAvisosDeManana = {
+    dia: day,
+    turnos: turnos.map((t) => ({
+      id: t.id,
+      starts_at: t.starts_at.toISOString(),
+      duration_minutes: t.duration_minutes,
+      client_notes: t.client_notes,
+      reminded_at: t.reminded_at?.toISOString() ?? null,
+      // El nombre congelado es el respaldo, igual que en la lista del panel: si
+      // el tratamiento se borró del catálogo, el mensaje igual tiene que decir
+      // de qué es el turno.
+      services: t.service ?? (t.service_name ? { name: t.service_name } : null),
+      professionals:
+        t.professional ?? (t.professional_name ? { full_name: t.professional_name } : null),
+      person: personaDe(t),
+    })),
+  };
+  return json(salida);
 }
