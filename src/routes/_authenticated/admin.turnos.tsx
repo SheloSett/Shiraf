@@ -538,7 +538,10 @@ function AdminAppointments() {
               // «Marcar realizado» no aparecían NUNCA —porque `filter` vale
               // "todos" y nunca es igual a "pending" ni a "confirmed"—, así que
               // desde la pestaña por defecto no se podía cerrar ningún turno.
-              const estado = estadoVisible(a.status, a.starts_at, ahora);
+              const estado = estadoVisible(
+                { status: a.status, startsAt: a.starts_at, minutos: a.duration_minutes },
+                ahora,
+              );
 
               // «Cancelar» es el único botón de estado que queda en la tabla, y
               // sólo sobre un turno que sigue en pie. Vencido queda afuera: ahí
@@ -660,8 +663,7 @@ function AdminAppointments() {
                       const q = quienAtiende(
                         a.professionals,
                         a.professional_name,
-                        a.status,
-                        a.starts_at,
+                        { status: a.status, startsAt: a.starts_at, minutos: a.duration_minutes },
                         ahora,
                       );
 
@@ -711,7 +713,12 @@ function AdminAppointments() {
                   </TableCell>
                   <TableCell>{formatMoney(a.services?.price)}</TableCell>
                   <TableCell>
-                    <EstadoTurno status={a.status} startsAt={a.starts_at} now={ahora} />
+                    <EstadoTurno
+                      status={a.status}
+                      startsAt={a.starts_at}
+                      minutos={a.duration_minutes}
+                      now={ahora}
+                    />
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

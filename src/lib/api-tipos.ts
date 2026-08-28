@@ -431,6 +431,12 @@ export type RtaPendientes = { total: number; sinProfesional: number };
 export type TurnoDelCalendario = {
   id: string;
   starts_at: string;
+  /**
+   * Cuánto dura. No lo usa la grilla para dibujar —las pastillas son todas del
+   * mismo alto— sino `estadoVisible`, que necesita saber cuándo TERMINA el turno
+   * para no marcarlo vencido mientras está pasando. Ver `yaVencio`.
+   */
+  duration_minutes: number;
   status: string;
   /** Siempre está: si el tratamiento se borró, sale el nombre congelado. */
   services: { name: string };

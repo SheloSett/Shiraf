@@ -6,6 +6,7 @@ import {
   deliverOverdueDigest,
 } from "@/lib/notifications.server";
 import type { TurnoVencido } from "@/lib/notifications";
+import { yaVencio } from "@/lib/shiraf";
 import { whatsappConfigurado } from "@/server/services/whatsapp.service";
 
 /**
@@ -238,10 +239,15 @@ export async function runDailyReminders(): Promise<ReminderRun> {
 /**
  * Los turnos que ya pasaron y siguen abiertos, y el aviso al centro.
  *
- * "Abierto" es pendiente o confirmado con la hora ya pasada: es exactamente el
- * «Vencido» que muestran las pantallas, que no es un estado de la base sino el
- * cruce de esos dos datos. La regla vive en `estadoVisible()` para las
- * pantallas y acá para el mail; si alguna vez cambia, hay que tocar las dos.
+ * "Abierto" es pendiente o confirmado con el turno YA TERMINADO —más los minutos
+ * de tolerancia—: es exactamente el «Vencido» que muestran las pantallas, que no
+ * es un estado de la base sino el cruce de esos datos.
+ *
+ * La regla ya NO está escrita dos veces. Vivía acá y en `estadoVisible()`, con un
+ * comentario que pedía acordarse de tocar las dos, y pasó lo que se pedía no
+ * pasara: la de las pantallas cortaba por `starts_at` y marcaba vencido un turno
+ * que recién empezaba. Ahora las dos llaman a `yaVencio()`, que es la única
+ * definición.
  *
  * Lo que el centro tiene que hacer con cada uno está en el texto del mail:
  * reprogramarlo —que es lo único que recupera ese turno— o cerrarlo.
@@ -254,27 +260,37 @@ async function avisarDeLosVencidos(): Promise<void> {
   // como string[] y Prisma espera el enum de la columna.
   const where: Prisma.appointmentsWhereInput = {
     status: { in: ["pending", "confirmed"] },
+    // Corte grueso, sólo para no traer el futuro: lo fino —que haya TERMINADO,
+    // no que haya empezado— depende de `starts_at` y `duration_minutes` juntas,
+    // y eso Prisma no lo sabe expresar sin bajar a SQL crudo. Se afina abajo, con
+    // `yaVencio`, igual que hace `miAgenda` con el mismo problema.
     starts_at: { lt: ahora, gte: desde },
   };
 
+  const candidatos = await prisma.appointments.findMany({
+    where,
+    orderBy: { starts_at: "asc" },
+    select: {
+      id: true,
+      starts_at: true,
+      duration_minutes: true,
+      guest_name: true,
+      service_name: true,
+      service: { select: { name: true } },
+      client: { select: { profile: { select: { full_name: true } } } },
+    },
+  });
+
+  // Acá se cae el turno que está pasando ahora mismo, que es justamente el que
+  // no hay que avisar: nadie tiene que hacer nada con él todavía.
+  const vencidos = candidatos.filter((t) =>
+    yaVencio(t.starts_at, t.duration_minutes, ahora.getTime()),
+  );
+
   // La cuenta va aparte de la lista: el mail nombra unos pocos y dice cuántos
   // más quedaron, así que necesita el total de verdad y no el largo del recorte.
-  const [total, filas] = await Promise.all([
-    prisma.appointments.count({ where }),
-    prisma.appointments.findMany({
-      where,
-      orderBy: { starts_at: "asc" },
-      take: MAXIMO_EN_EL_MAIL,
-      select: {
-        id: true,
-        starts_at: true,
-        guest_name: true,
-        service_name: true,
-        service: { select: { name: true } },
-        client: { select: { profile: { select: { full_name: true } } } },
-      },
-    }),
-  ]);
+  const total = vencidos.length;
+  const filas = vencidos.slice(0, MAXIMO_EN_EL_MAIL);
 
   if (total === 0) return;
 

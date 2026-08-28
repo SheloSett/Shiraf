@@ -2,6 +2,7 @@ import { prisma } from "@/server/db";
 import { normalizarTelefono } from "@/server/services/agenda.service";
 import { enHoraDelCentro } from "@/server/services/turnos.service";
 import type { FilaConTotal, RtaMetricas } from "@/lib/api-tipos";
+import { yaVencio } from "@/lib/shiraf";
 
 /**
  * Los números del negocio: el Dashboard y la sección Métricas.
@@ -264,13 +265,14 @@ export async function calcularMetricas(desde: Date, hasta: Date): Promise<RtaMet
   );
   const cancelados = turnos.filter((t) => t.status === "cancelled");
 
-  // Los que ya pasaron y siguen abiertos. El corte es cuándo TERMINAN, igual que
-  // en "mi agenda": un turno de las 14:00 que dura una hora no está vencido a
-  // las 14:05, está pasando.
+  // Los que ya pasaron y siguen abiertos. La definición de "vencido" es `yaVencio`
+  // y no una copia local: es la misma que pinta el cartelito rojo en Turnos y la
+  // que dispara el mail al centro, así que el número de este aviso y el de esa
+  // pantalla no pueden discrepar.
   const vencidos = turnos.filter(
     (t) =>
       (ABIERTOS as readonly string[]).includes(t.status) &&
-      t.starts_at.getTime() + t.duration_minutes * 60_000 < ahora.getTime(),
+      yaVencio(t.starts_at, t.duration_minutes, ahora.getTime()),
   );
 
   const facturado = realizados.reduce((suma, t) => suma + t.price.toNumber(), 0);

@@ -329,6 +329,10 @@ export async function calendario(ctx: Ctx) {
     select: {
       id: true,
       starts_at: true,
+      // La duración no se dibuja en la grilla: la necesita `estadoVisible` para
+      // saber cuándo termina el turno y no pintarlo de vencido mientras está
+      // pasando. Sin esto el calendario marcaba en rojo el turno en curso.
+      duration_minutes: true,
       status: true,
       service: { select: { name: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
@@ -352,6 +356,7 @@ export async function calendario(ctx: Ctx) {
     turnos: turnos.map((t) => ({
       id: t.id,
       starts_at: t.starts_at.toISOString(),
+      duration_minutes: t.duration_minutes,
       status: t.status,
       services: { name: nombreDelTratamiento(t) },
       professionals: t.professional,

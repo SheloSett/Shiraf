@@ -77,14 +77,55 @@ export const ESTADO_VISIBLE_LABEL: Record<EstadoVisible, string> = {
  * allá ya es el día siguiente, así que decidir qué venció daría distinto en cada
  * lado y React se quejaría del cambio.
  */
-export function estadoVisible(status: string, startsAt: string, now: number | null): EstadoVisible {
-  const guardado = toStatus(status);
+export function estadoVisible(
+  /*
+   * Los tres datos del turno van juntos en un objeto y no sueltos como
+   * parámetros. Es por una razón concreta: `minutos` y `now` son los dos
+   * números, así que sueltos se pueden pasar al revés y TypeScript no dice nada
+   * — el turno quedaría durando 1.7 billones de minutos y nunca vencería.
+   */
+  turno: { status: string; startsAt: string; minutos: number },
+  now: number | null,
+): EstadoVisible {
+  const guardado = toStatus(turno.status);
   if (!guardado) return "pending";
 
   const abierto = guardado === "pending" || guardado === "confirmed";
-  if (abierto && now !== null && new Date(startsAt).getTime() < now) return "overdue";
+  if (abierto && now !== null && yaVencio(turno.startsAt, turno.minutos, now)) return "overdue";
 
   return guardado;
+}
+
+/**
+ * ¿Este turno ya pasó y sigue abierto?
+ *
+ * ── EL CORTE ES CUÁNDO TERMINA, MÁS LA TOLERANCIA ─────────────────────────
+ *
+ * No cuándo empieza. Ese era el bug: un turno de las 14:50 se marcaba «Vencido»
+ * a las 14:50 en punto, con la clienta entrando por la puerta. Un turno que está
+ * PASANDO no está vencido — vencido significa "ya terminó y nadie lo cerró",
+ * que es una tarea pendiente para alguien; mientras la sesión corre no hay nada
+ * que hacer.
+ *
+ * Es la misma lección que ya estaba aprendida en `miAgenda`, donde el comentario
+ * dice textual: "con `starts_at >= now()` el turno de las 14:00 se borraba de la
+ * pantalla a las 14:01, con la clienta todavía en la camilla". Acá faltaba.
+ *
+ * Y encima suma `TOLERANCIA_MINUTOS`, los 10 que el centro promete esperarle a
+ * la que llega tarde — en la pantalla de reserva y en el mail de confirmación.
+ * Si se le está esperando por escrito, el panel no puede darla por perdida en el
+ * mismo minuto: la que llega 9 minutos tarde a un turno de 60 se va a las 15:59,
+ * no a las 14:50.
+ *
+ * 🔴 **Esta es LA definición de «vencido» y no hay otra.** La usan las pantallas
+ * (vía `estadoVisible`), el mail de vencidos que le llega al centro
+ * (`reminders.service`) y el aviso del panel de métricas. Estuvo escrita por
+ * separado en dos lados y se desincronizaron; si cambia, cambia acá y en ningún
+ * otro lugar.
+ */
+export function yaVencio(startsAt: string | Date, minutos: number, now: number): boolean {
+  const inicio = typeof startsAt === "string" ? new Date(startsAt).getTime() : startsAt.getTime();
+  return inicio + (minutos + TOLERANCIA_MINUTOS) * 60_000 < now;
 }
 
 /**
@@ -153,11 +194,11 @@ export type QuienAtiende =
 export function quienAtiende(
   profesional: { full_name: string; is_active: boolean } | null | undefined,
   nombreCongelado: string | null | undefined,
-  status: string,
-  startsAt: string,
+  /* Mismo objeto que `estadoVisible`, y por el mismo motivo. */
+  turno: { status: string; startsAt: string; minutos: number },
   now: number | null,
 ): QuienAtiende {
-  const estado = estadoVisible(status, startsAt, now);
+  const estado = estadoVisible(turno, now);
   const seArregla = estado === "pending" || estado === "confirmed";
 
   if (profesional?.is_active) return { caso: "asignada", nombre: profesional.full_name };
