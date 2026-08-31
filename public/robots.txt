@@ -1,8 +1,35 @@
+# Qué puede rastrear un buscador.
+#
+# Lo que había antes era el archivo que dejó Lovable: `Allow: /` para todos y
+# nada más. No es un agujero de seguridad —las rutas del panel piden sesión y a
+# un bot sin cookie le contestan un redirect—, pero Google igual las visitaba y
+# el informe de cobertura de Search Console se llenaba de páginas "rastreada
+# pero no indexada" que no aportan nada.
+#
+# ⚠️ Esto NO protege nada. Un robots.txt es una lista de pedidos, no un
+# candado: quien quiera entrar a /admin lo escribe en la barra igual. Lo que
+# protege esas rutas es el authMiddleware, no este archivo.
+#
+# Los dos bots de vista previa —Twitterbot y facebookexternalhit, que es el que
+# usan también WhatsApp e Instagram— quedan con acceso completo a propósito: no
+# indexan, sólo leen los meta og: para armar la tarjetita cuando alguien pega el
+# link. Bloquearlos deja el link sin foto ni texto.
+
 User-agent: Googlebot
 Allow: /
+Disallow: /admin
+Disallow: /mi-cuenta
+Disallow: /reservar
+Disallow: /auth
+Disallow: /recuperar
 
 User-agent: Bingbot
 Allow: /
+Disallow: /admin
+Disallow: /mi-cuenta
+Disallow: /reservar
+Disallow: /auth
+Disallow: /recuperar
 
 User-agent: Twitterbot
 Allow: /
@@ -12,3 +39,10 @@ Allow: /
 
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /mi-cuenta
+Disallow: /reservar
+Disallow: /auth
+Disallow: /recuperar
+
+Sitemap: https://shiraf.com.ar/sitemap.xml

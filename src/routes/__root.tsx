@@ -13,6 +13,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { WhatsappFab } from "@/components/whatsapp-fab";
+import { CONTACT } from "@/lib/contact";
 
 function NotFoundComponent() {
   return (
@@ -82,9 +83,61 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "author", content: "Shiraf" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+
+      // ── La tarjetita del link ────────────────────────────────────────────
+      //
+      // Sin esto, pegar shiraf.com.ar en Instagram, en WhatsApp o en un mail
+      // sale como un rectángulo gris con la URL pelada. `og:type` y
+      // `twitter:card` ya estaban, pero solos no alcanzan: los que arman la
+      // vista previa son el título, la descripción y sobre todo la imagen.
+      //
+      // ⚠️ `og:image` TIENE que ser una URL absoluta. Con "/logo_shiraf.jpeg"
+      // a secas, Facebook y WhatsApp no la resuelven y la tarjeta sale sin
+      // foto — es el error clásico y no da ningún mensaje. Por eso sale de
+      // CONTACT.siteUrl, que es el mismo lugar de donde salen los mails.
+      { property: "og:site_name", content: "Shiraf" },
+      { property: "og:locale", content: "es_AR" },
+      { property: "og:title", content: "Shiraf — Centro de estética" },
+      {
+        property: "og:description",
+        content: "Calma, belleza y bienestar. Reservá tu turno en Shiraf.",
+      },
+      // 🔴 Acá había un `og:url` fijo a CONTACT.siteUrl y NO puede estar en el
+      // root: este head lo heredan todas las páginas, así que la ficha de
+      // /servicios/drenaje-linfatico también decía que su dirección es la
+      // portada. Compartir una ficha por WhatsApp mostraba la vista previa del
+      // sitio entero.
+      //
+      // Sin `og:url`, quien comparte usa la dirección que efectivamente pegó,
+      // que es lo correcto. El día que se quiera uno de verdad, va en cada
+      // ruta —al lado del og:title que cada una ya define— y no acá.
+      // { property: "og:url", content: CONTACT.siteUrl },
+      { property: "og:image", content: `${CONTACT.siteUrl}/logo_shiraf.jpeg` },
+      { property: "og:image:alt", content: "Shiraf — centro de estética" },
+      { name: "twitter:title", content: "Shiraf — Centro de estética" },
+      {
+        name: "twitter:description",
+        content: "Calma, belleza y bienestar. Reservá tu turno en Shiraf.",
+      },
+      { name: "twitter:image", content: `${CONTACT.siteUrl}/logo_shiraf.jpeg` },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      // 🔴 Acá había un `canonical` fijo a CONTACT.siteUrl, y era un tiro en el
+      // pie. Un canonical le dice a Google "la versión buena de ESTA página es
+      // aquella"; puesto en el root lo heredan todas, así que las seis fichas
+      // de tratamientos le estarían declarando a Google que son copias de la
+      // portada. El resultado no es que se posicionen menos: es que Google las
+      // saca de los resultados.
+      //
+      // El problema que venía a resolver —que shiraf.com.ar y
+      // www.shiraf.com.ar sirven lo mismo y Google los cuenta como dos sitios—
+      // se arregla mejor y en un solo lugar, redirigiendo el www al dominio
+      // pelado en nginx. Ver DOCKER.md.
+      //
+      // Si algún día se quiere el canonical igual, va POR RUTA, con la
+      // dirección de cada una, nunca acá.
+      // { rel: "canonical", href: CONTACT.siteUrl },
       { rel: "icon", type: "image/png", href: "/favicon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },

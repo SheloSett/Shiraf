@@ -114,6 +114,34 @@ el 3000 y se puede entrar salteando nginx —sin HTTPS y sin que `TRUST_PROXY`
 sirva de nada—, y sin `APP_URL` en `https://` el sitio queda con certificado y
 la cookie de sesión viajando sin el flag `Secure`.
 
+### El `www` tiene que redirigir, no servir
+
+Hoy `shiraf.com.ar` y `www.shiraf.com.ar` sirven **lo mismo** desde el mismo
+`server` block. Para una persona da igual; para Google son dos sitios distintos
+con el catálogo duplicado, y el posicionamiento se reparte entre los dos en vez
+de sumar en uno.
+
+Se arregla en nginx, sacando el `www` del bloque que sirve y dándole uno propio
+que redirige:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name www.shiraf.com.ar;
+    # los mismos ssl_certificate que puso certbot en el bloque de al lado
+    return 301 https://shiraf.com.ar$request_uri;
+}
+```
+
+Y del bloque que sirve, el `server_name` queda sólo con `shiraf.com.ar`.
+
+> La otra forma de resolverlo es una etiqueta `canonical` en el HTML, y **se
+> probó y se descartó**: en este proyecto el `<head>` común vive en el root de
+> TanStack, así que un canonical puesto ahí lo heredan todas las páginas y las
+> fichas de tratamientos terminan declarándole a Google que son copias de la
+> portada. Eso no las posiciona peor: las saca de los resultados. Un canonical
+> correcto pediría escribirlo ruta por ruta. El redirect es un lugar solo.
+
 ### Si en vez de nginx va Cloudflare
 
 Sirve igual y ahorra el certbot, pero **no alcanza con prender la nube naranja**.

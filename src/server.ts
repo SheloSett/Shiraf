@@ -83,6 +83,17 @@ export default {
     try {
       const pathname = new URL(request.url).pathname;
 
+      // El mapa del sitio para los buscadores. No lleva prefijo /api porque no
+      // es de la app: es una dirección que Google espera encontrar en la raíz,
+      // y así está declarada en public/robots.txt.
+      //
+      // Va antes que todo lo demás y devuelve directo, sin el `if (respuesta)`
+      // de los routers: acá no hay ruta que pueda no matchear.
+      if (pathname === "/sitemap.xml") {
+        const { sitemap } = await import("./server/sitemap");
+        return await sitemap();
+      }
+
       // Las cuentas: /api/auth/*. Van acá y no como server functions porque el
       // login TIENE que poder correr sin sesión, y las server functions de este
       // proyecto pasan todas por el middleware que exige una.
