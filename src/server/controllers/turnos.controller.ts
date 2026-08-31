@@ -653,6 +653,9 @@ export async function serviciosParaTurno() {
       name: true,
       category: true,
       duration_minutes: true,
+      // Para que el diálogo del panel encadene los horarios igual que
+      // /reservar: sin esto, buildSlots no sabría cada cuánto ofrecerlos.
+      buffer_minutes: true,
       price: true,
       is_published: true,
     },

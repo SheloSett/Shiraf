@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarCheck, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarCheck, CalendarOff, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,19 +30,66 @@ import {
 } from "@/components/ui/dialog";
 import { api, apiDelete, apiPost, apiPut } from "@/lib/api";
 import type {
+  AusenciaDeAgenda,
+  RtaAusenciaGuardada,
   RtaProfesionalesAdmin,
   RtaServiciosParaElegir,
   RtaTurnosProximos,
 } from "@/lib/api-tipos";
 import { useAccess } from "@/hooks/useAccess";
 import type { Permission } from "@/lib/permissions";
-import { agruparPorDia, diaConTramosSuperpuestos, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
+import {
+  agruparPorDia,
+  diaConTramosSuperpuestos,
+  formatDateTime,
+  soloHoraYMinutos,
+  WEEKDAYS,
+} from "@/lib/shiraf";
 import { linkProfessionalAccount } from "@/lib/team";
 import { createEmployee } from "@/lib/team.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/profesionales")({
   component: AdminProfessionals,
 });
+
+/** Lo que se está escribiendo en el formulario de «no voy a estar». */
+type AusenciaForm = { desde: string; hasta: string; motivo: string };
+
+const AUSENCIA_VACIA: AusenciaForm = { desde: "", hasta: "", motivo: "" };
+
+/**
+ * El renglón que resume las ausencias en la tarjeta.
+ *
+ * Dice el próximo tramo y cuántos más hay, en vez del número solo: "no está del
+ * 15/09 al 29/09" es lo que la dueña necesita saber de un vistazo, y "2 tramos"
+ * la obligaría a abrir el diálogo para enterarse de lo mismo.
+ */
+function resumenDeAusencias(ausencias: AusenciaDeAgenda[]): string {
+  const [proxima, ...resto] = ausencias;
+  if (!proxima) return "Anotar días que no está";
+
+  const cuando =
+    proxima.starts_on === proxima.ends_on
+      ? `el ${comoDiaCorto(proxima.starts_on)}`
+      : `del ${comoDiaCorto(proxima.starts_on)} al ${comoDiaCorto(proxima.ends_on)}`;
+
+  return resto.length === 0
+    ? `No está ${cuando}`
+    : `No está ${cuando} y ${resto.length} ${resto.length === 1 ? "tramo más" : "tramos más"}`;
+}
+
+/**
+ * "2026-09-15" → "15/09". El año sólo si no es el que corre.
+ *
+ * Se parte el texto en vez de usar `new Date("2026-09-15")`, que lo lee como
+ * medianoche UTC y en Buenos Aires termina mostrando el día anterior. Es el
+ * mismo motivo por el que estas fechas viajan como texto y no como instante.
+ */
+function comoDiaCorto(fecha: string): string {
+  const [anio, mes, dia] = fecha.split("-");
+  const esteAnio = String(new Date().getFullYear());
+  return anio === esteAnio ? `${dia}/${mes}` : `${dia}/${mes}/${anio}`;
+}
 
 type ProfessionalForm = {
   full_name: string;
@@ -347,6 +394,74 @@ function AdminProfessionals() {
             ? "Profesional creada, con su acceso al panel."
             : "Profesional creada.",
       );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  /**
+   * El formulario de ausencia abierto, por ficha.
+   *
+   * Se guarda por id de profesional y no en un solo estado suelto porque las
+   * tarjetas se dibujan todas juntas: con un estado compartido, escribir la
+   * fecha de una llenaría el formulario de la de al lado.
+   */
+  const [ausenciaDe, setAusenciaDe] = useState<Record<string, AusenciaForm>>({});
+
+  /** La ficha cuyo diálogo de ausencias está abierto, o null. */
+  const [ausenciasDe, setAusenciasDe] = useState<string | null>(null);
+
+  /**
+   * Los turnos que quedaron en pie después de cargar una ausencia.
+   *
+   * Se muestran hasta que la dueña los cierre a mano: son los que tiene que ir
+   * a reprogramar o cancelar, y un toast que se va solo a los cinco segundos no
+   * alcanza para una lista que hay que trabajar.
+   */
+  const [turnosEnPie, setTurnosEnPie] = useState<RtaAusenciaGuardada | null>(null);
+
+  function formDeAusencia(id: string): AusenciaForm {
+    return ausenciaDe[id] ?? AUSENCIA_VACIA;
+  }
+
+  function cambiarAusencia(id: string, campos: Partial<AusenciaForm>) {
+    setAusenciaDe((previo) => ({
+      ...previo,
+      [id]: { ...(previo[id] ?? AUSENCIA_VACIA), ...campos },
+    }));
+  }
+
+  const guardarAusencia = useMutation({
+    mutationFn: async (profesionalId: string) => {
+      const form = formDeAusencia(profesionalId);
+      return apiPost<RtaAusenciaGuardada>(`/api/equipo/profesionales/${profesionalId}/ausencias`, {
+        starts_on: form.desde,
+        // Un día suelto es el mismo día de los dos lados. Dejar «hasta»
+        // vacío es lo que hace cualquiera al anotar un solo día.
+        ends_on: form.hasta || form.desde,
+        reason: form.motivo.trim() || null,
+      });
+    },
+    onSuccess: async (rta, profesionalId) => {
+      await refresh();
+      setAusenciaDe((previo) => ({ ...previo, [profesionalId]: AUSENCIA_VACIA }));
+      if (rta.turnos_en_pie.length > 0) {
+        // El de los turnos en pie reemplaza a éste en vez de apilarse encima:
+        // dos diálogos abiertos a la vez tapan el de atrás y dejan la duda de
+        // si lo de abajo se guardó.
+        setAusenciasDe(null);
+        setTurnosEnPie(rta);
+      } else {
+        toast.success("Anotado. Esos días no se le pueden sacar turnos.");
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const borrarAusencia = useMutation({
+    mutationFn: (id: string) => apiDelete(`/api/equipo/ausencias/${id}`),
+    onSuccess: async () => {
+      await refresh();
+      toast.success("Listo, esos días vuelven a estar disponibles.");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -697,6 +812,20 @@ function AdminProfessionals() {
                       <li className="text-xs">Sin horarios — no se le pueden sacar turnos</li>
                     )}
                   </ul>
+
+                  {/* Las ausencias son la EXCEPCIÓN de esta lista, así que viven
+                      pegadas a ella y no en una sección propia. En la tarjeta va
+                      sólo el resumen: son días sueltos que se cargan dos veces al
+                      año, y un formulario de tres campos siempre abierto ocupaba
+                      media ficha para eso. Lo demás está en el diálogo. */}
+                  <button
+                    type="button"
+                    onClick={() => setAusenciasDe(p.id)}
+                    className="mt-3 flex items-center gap-2 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    <CalendarOff className="h-3.5 w-3.5 shrink-0" />
+                    {resumenDeAusencias(p.professional_absences)}
+                  </button>
                 </div>
               </div>
 
@@ -1205,6 +1334,148 @@ function AdminProfessionals() {
             >
               Desactivar igual
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/*
+        Los días que una profesional no está.
+
+        En diálogo y no en la tarjeta: se cargan dos o tres veces al año —unas
+        vacaciones, un día de médico— y tenerlo siempre abierto le comía media
+        ficha a algo que casi nunca se toca. Acá adentro, en cambio, hay lugar
+        para las fechas, el motivo y la lista de lo ya anotado sin apretar nada.
+      */}
+      <Dialog open={!!ausenciasDe} onOpenChange={(next) => !next && setAusenciasDe(null)}>
+        <DialogContent>
+          {(() => {
+            const ficha = team.data?.find((p) => p.id === ausenciasDe);
+            if (!ficha) return null;
+            const form = formDeAusencia(ficha.id);
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Días que {ficha.full_name} no está</DialogTitle>
+                  <DialogDescription>
+                    Esos días nadie va a poder reservar con ella. Sus horarios de siempre quedan
+                    como están.
+                  </DialogDescription>
+                </DialogHeader>
+
+                {ficha.professional_absences.length > 0 && (
+                  <ul className="space-y-1">
+                    {ficha.professional_absences.map((a) => (
+                      <li
+                        key={a.id}
+                        className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm"
+                      >
+                        <span>
+                          {a.starts_on === a.ends_on
+                            ? comoDiaCorto(a.starts_on)
+                            : `${comoDiaCorto(a.starts_on)} al ${comoDiaCorto(a.ends_on)}`}
+                          {a.reason ? (
+                            <span className="text-muted-foreground"> · {a.reason}</span>
+                          ) : null}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 shrink-0 px-2 text-xs"
+                          disabled={borrarAusencia.isPending}
+                          onClick={() => borrarAusencia.mutate(a.id)}
+                        >
+                          Sacar
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="ausencia-desde">Desde</Label>
+                    <Input
+                      id="ausencia-desde"
+                      type="date"
+                      value={form.desde}
+                      onChange={(e) => cambiarAusencia(ficha.id, { desde: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ausencia-hasta">Hasta</Label>
+                    <Input
+                      id="ausencia-hasta"
+                      type="date"
+                      /* No deja elegir una vuelta anterior a la salida. El
+                         servidor lo rechaza igual; esto evita el viaje. */
+                      min={form.desde || undefined}
+                      value={form.hasta}
+                      onChange={(e) => cambiarAusencia(ficha.id, { hasta: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="ausencia-motivo">Motivo (opcional)</Label>
+                  <Input
+                    id="ausencia-motivo"
+                    placeholder="Vacaciones"
+                    value={form.motivo}
+                    onChange={(e) => cambiarAusencia(ficha.id, { motivo: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Es para acordarte vos: no sale en el sitio ni en ningún mail.
+                  </p>
+                </div>
+
+                <Button
+                  className="w-full"
+                  disabled={!form.desde || guardarAusencia.isPending}
+                  onClick={() => guardarAusencia.mutate(ficha.id)}
+                >
+                  {form.hasta && form.hasta !== form.desde ? "Anotar esos días" : "Anotar ese día"}
+                </Button>
+                <p className="text-center text-xs text-muted-foreground">
+                  Dejando «Hasta» vacío se anota un día solo.
+                </p>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/*
+        Los turnos que quedaron en pie después de anotar una ausencia.
+
+        La ausencia YA se guardó cuando esto aparece — el título lo dice en esas
+        palabras a propósito, para que no se lea como "¿confirmás?". Lo único que
+        falta es resolver estos turnos, y eso se hace uno por uno desde Turnos,
+        con el mail que cada caso merezca.
+      */}
+      <AlertDialog open={!!turnosEnPie} onOpenChange={(next) => !next && setTurnosEnPie(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Anotado — pero quedan turnos esos días</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ya nadie puede reservar en esas fechas. Estos turnos se dieron antes y siguen en pie:
+              reprogramalos o cancelalos desde Turnos, así las clientas se enteran.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
+            {turnosEnPie?.turnos_en_pie.map((t) => (
+              <li key={t.id} className="rounded-md border border-border px-3 py-2">
+                <p className="font-medium">{formatDateTime(t.starts_at)}</p>
+                <p className="text-muted-foreground">
+                  {t.quien} · {t.tratamiento}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setTurnosEnPie(null)}>Entendido</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

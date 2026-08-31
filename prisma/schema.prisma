@@ -259,6 +259,24 @@ model services {
   description      String?
   category         String   @default("General")
   duration_minutes Int      @default(60)
+  // Los minutos de limpieza que este tratamiento pide DESPUÉS, antes de que
+  // entre la clienta siguiente.
+  //
+  // Era `SLOT_BUFFER_MINUTES`, un 10 fijo para todo el catálogo. Dejó de
+  // alcanzar: una depilación deja la cabina para limpiar y un masaje no, y con
+  // un solo número o se le regala tiempo a uno o se le queda corto al otro.
+  //
+  // ── MANDA EL TRATAMIENTO QUE TERMINA ─────────────────────────────────────
+  //
+  // Entre dos turnos seguidos el margen lo pone el de ATRÁS, porque el rato es
+  // para limpiar lo que ése acaba de usar: una depilación de 20 seguida de un
+  // masaje deja 20, y el masaje de 5 seguido de una depilación deja 5. Lo
+  // implementa `buildSlots`.
+  //
+  // El default de 10 es el número que el centro había definido el 18/8/2026
+  // para todo el catálogo, así que ningún tratamiento cambia de comportamiento
+  // porque esta columna aparezca.
+  buffer_minutes   Int      @default(10)
   price            Decimal  @default(0) @db.Decimal(12, 2)
   // La mantiene el trigger sync_service_cover, igualada a la primera foto de la
   // galería. No la escribas a mano ni la seedees. Ver Fase 3.
@@ -319,6 +337,7 @@ model professionals {
   user         users?                   @relation(fields: [user_id], references: [id], onDelete: SetNull)
   services     professional_services[]
   schedules    professional_schedules[]
+  absences     professional_absences[]
   appointments appointments[]
 }
 
@@ -347,6 +366,49 @@ model professional_schedules {
   professional professionals @relation(fields: [professional_id], references: [id], onDelete: Cascade)
 }
 
+// Los días que una profesional NO está, aunque su horario semanal diga que sí.
+//
+// `professional_schedules` es una semana que se repite para siempre: dice "los
+// martes de 12 a 16" y no sabe decir "menos el martes que viene". Esta tabla es
+// esa excepción, y por eso vive al lado.
+//
+// ── POR QUÉ UN RANGO Y NO UNA FILA POR DÍA ──────────────────────────────────
+//
+// Porque el caso real son las vacaciones. Con una fila por día, dos semanas son
+// catorce filas que hay que cargar de a una y después borrar de a una, y alcanza
+// con que se escape una para que quede un agujero raro en el medio. El día
+// suelto sigue entrando: es `starts_on` = `ends_on`.
+//
+// ── LOS DOS EXTREMOS ESTÁN INCLUIDOS ────────────────────────────────────────
+//
+// Del 15 al 29 son quince días sin trabajar, no catorce: el 29 tampoco está. Es
+// la lectura que tiene cualquiera que escriba esas dos fechas en un papel, y la
+// que hace `estaAusente()`.
+//
+// ── DATE Y NO TIMESTAMPTZ ───────────────────────────────────────────────────
+//
+// Un día de ausencia es un día del almanaque del centro, no un instante: el 15
+// de septiembre empieza y termina en Buenos Aires. Es el mismo criterio por el
+// que `professional_schedules` guarda TIME sin zona.
+model professional_absences {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  professional_id String   @db.Uuid
+  starts_on       DateTime @db.Date
+  ends_on         DateTime @db.Date
+  // Para que la dueña se acuerde de por qué la cargó. Es interna: no sale en
+  // ningún mail ni en el sitio público. Opcional a propósito — obligar a
+  // escribir algo termina con todo el mundo poniendo "x".
+  reason          String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  professional professionals @relation(fields: [professional_id], references: [id], onDelete: Cascade)
+
+  // Las dos consultas que existen son "qué ausencias tiene esta profesional" y
+  // "hay alguna que tape este día". Las dos entran por profesional y después por
+  // fechas.
+  @@index([professional_id, starts_on, ends_on])
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Turnos
 // ─────────────────────────────────────────────────────────────────────────────
@@ -364,6 +426,13 @@ model appointments {
   starts_at       DateTime           @db.Timestamptz(6)
   // Lo pisa la base con el del tratamiento: no lo manda el cliente.
   duration_minutes Int               @default(60)
+  // El margen de limpieza del tratamiento, congelado igual que el precio.
+  //
+  // No es prolijidad: `service_id` es nullable a propósito —el turno sobrevive
+  // al borrado del tratamiento— y sin esta copia un turno huérfano no tendría
+  // de dónde sacar su margen, así que la agenda calcularía mal los huecos que
+  // lo rodean. Lo escribe `validarTurno`, nunca quien llama.
+  buffer_minutes  Int               @default(10)
   status          appointment_status @default(pending)
   client_notes    String?
   admin_notes     String?

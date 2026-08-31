@@ -2,11 +2,10 @@
 
 > ### 👉 Si venís a seguir el trabajo, empezá por [`PARA-PROBAR.md`](PARA-PROBAR.md)
 >
-> Ahí está lo último que se hizo (26/8/2026), qué quedó verificado y **qué falta
+> Ahí está lo último que se hizo (31/8/2026), qué quedó verificado y **qué falta
 > probar** — que es bastante, porque nada que escriba en la base o mande un mail
 > se ejercitó. Este archivo son los pendientes de fondo del proyecto; aquél es
-> el estado de la tanda en curso, en la rama
-> `trabajo/panel-turnos-y-reprogramar`.
+> el estado de la tanda en curso, en la rama `trabajo/margen-y-ausencias`.
 
 ## 🔜 Lo que sigue — act. 27/8/2026
 
@@ -209,19 +208,24 @@ tratamiento**, no un ratito fijo. Esa misma profesional, con una depilación de
 90, encadena 12:00 y 13:40; en `true` se le suma 15:20, que termina **16:50** —
 cincuenta minutos tarde. La regla no distingue "un ratito" de "casi una hora".
 
-### 2. ✅ `SLOT_BUFFER_MINUTES` — decidido: 10 minutos (18/8/2026)
+### 2. ✅ El margen de limpieza — ahora lo decide cada tratamiento (31/8/2026)
 
-El centro definió **10 minutos de limpieza** entre clienta y clienta. Ya está
-aplicado. Antes estaba en `0` y los turnos iban pegados.
+El centro definió **10 minutos** el 18/8/2026, para todo el catálogo, en
+`SLOT_BUFFER_MINUTES`. El 31/8 dejó de ser un número único: es
+`services.buffer_minutes`, una columna por tratamiento, porque una depilación
+deja la cabina para limpiar y un masaje no.
 
-La profesional de 12 a 16 con sesiones de 45 pasa de `12:00 · 12:45 · 13:30 ·
-14:15 · 15:00` a `12:00 · 12:55 · 13:50 · 14:45`: entra una clienta menos.
+La constante sigue existiendo, pero **sólo como el default** de esa columna —el
+valor que se usa cuando el dato falta. No se calcula ninguna agenda con ella.
 
-- [ ] **Repreguntar si conviene `15` en vez de `10`.** Con 15 esa agenda queda
-      `12:00 · 13:00 · 14:00 · 15:00` — entran las mismas cuatro clientas, así
-      que no cuesta ningún turno, pero los horarios quedan redondos en vez de
-      caer en :55, :50 y :45, que son horribles de dictar por teléfono. Es
-      cambiar un número.
+Entre dos turnos manda el margen del que TERMINA: el rato es para limpiar lo que
+ése acaba de usar. Está explicado en `buildSlots`.
+
+- [x] ~~**Repreguntar si conviene `15` en vez de `10`.**~~ Sin objeto: ya no hay
+      un número para todo el catálogo. Lo que era una decisión global pasó a ser
+      un campo del formulario de tratamientos, y el centro lo ajusta por
+      tratamiento sin tocar código. La cuenta de horarios redondos que estaba en
+      PARA-PROBAR.md sigue sirviendo para elegir el de cada uno.
 
 ### 3. Recalcular vs. grilla fija — decidido, pero revisable
 
@@ -303,8 +307,15 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
 - [x] ~~**Vincular una invitada con su cuenta.**~~ Hecho (migración
       `20260816020000`): por mail se vincula sola al confirmarse la cuenta, y por
       teléfono a mano desde la lista de turnos.
-- [ ] **Bloqueos de agenda:** vacaciones, feriados, francos. Hoy solo hay horario
-      semanal fijo, sin excepciones por fecha: un 25 de diciembre es reservable.
+- [x] ~~**Bloqueos de agenda por profesional:** vacaciones, francos.~~ Hecho el
+      31/8/2026: `professional_absences`, un rango de días por profesional que se
+      carga desde su ficha en Accesos. Lo hacen cumplir `buildSlots` en la
+      pantalla y `exigirQueEntreEnLaAgenda` en el servidor.
+- [ ] **Feriados del centro** — los que valen para TODAS, no para una. Hoy hay
+      que cargar el 25 de diciembre profesional por profesional, y una que se
+      agregue después nace sin él. Es la misma tabla con `professional_id`
+      nullable, o una propia; conviene decidirlo antes de que haya muchas filas
+      cargadas a mano.
 
 ## ✅ Tanda 3 — los 5 bugs medianos, hechos (16/8/2026)
 

@@ -1,4 +1,6 @@
+import { estaAusente } from "@/lib/shiraf";
 import { prisma } from "@/server/db";
+import { comoFecha } from "@/server/serializar";
 import { ErrorDeAcceso, puede, type Acceso } from "@/server/services/authz.service";
 
 /**
@@ -130,6 +132,15 @@ export type TurnoValidado = {
   price: string;
   duration_minutes: number;
   /**
+   * El margen de limpieza del tratamiento, congelado igual que el precio.
+   *
+   * Va con los otros congelados y no con un join a `services` porque
+   * `service_id` puede quedar en NULL: el turno sobrevive al borrado del
+   * tratamiento, y sin esta copia la agenda no sabría cuánto tarda en liberarse
+   * la cabina que ese turno ocupó. Ver `appointments.buffer_minutes`.
+   */
+  buffer_minutes: number;
+  /**
    * El nombre del tratamiento, congelado en el turno igual que el precio.
    *
    * Es lo que permite BORRAR un tratamiento del catálogo sin que los turnos
@@ -187,13 +198,20 @@ export async function validarTurno(
 
   const servicio = await prisma.services.findUnique({
     where: { id: turno.service_id },
-    select: { name: true, price: true, duration_minutes: true, is_published: true },
+    select: {
+      name: true,
+      price: true,
+      duration_minutes: true,
+      buffer_minutes: true,
+      is_published: true,
+    },
   });
   if (!servicio) throw new ErrorDeRegla("El tratamiento no existe.");
 
   const validado: TurnoValidado = {
     price: servicio.price.toString(),
     duration_minutes: servicio.duration_minutes,
+    buffer_minutes: servicio.buffer_minutes,
     service_name: servicio.name,
     professional_name: null,
   };
@@ -241,7 +259,7 @@ export async function validarTurno(
 }
 
 /**
- * Que el turno entre en el horario de la profesional.
+ * Que el turno entre en el horario de la profesional, y que ese día esté.
  *
  * ── EL HUSO HORARIO NO ES UN DETALLE ──────────────────────────────────────
  *
@@ -284,6 +302,41 @@ async function exigirQueEntreEnLaAgenda(
 
   if (!entra) {
     throw new ErrorDeRegla("Ese horario está fuera de la agenda de la profesional.");
+  }
+
+  /*
+   * ── Y QUE NO SEA UNO DE LOS DÍAS QUE AVISÓ QUE NO VIENE ─────────────────
+   *
+   * El horario semanal dice "los martes de 12 a 16" y no sabe de excepciones;
+   * esto es la excepción. Va DESPUÉS del chequeo de arriba a propósito: un
+   * horario fuera de agenda es un error distinto de un día que la profesional
+   * no viene, y quien reserva merece leer cuál de los dos le pasó.
+   *
+   * ⚠️ Este candado es el que importa. La pantalla ya no ofrece esos días
+   * —`buildSlots` los descarta—, pero eso es comodidad: un POST armado a mano
+   * no pasa por ninguna pantalla. Es el mismo motivo por el que el solape lo
+   * sigue frenando la base y no el formulario.
+   */
+  const tapan = await prisma.professional_absences.findMany({
+    // Corte grueso, para traer sólo las que podrían tapar ese día. Quien
+    // decide es `estaAusente`, abajo: la regla de que los dos extremos entran
+    // está escrita ahí y en ningún otro lado. Es la lección de `yaVencio`, que
+    // existe porque "vencido" se había escrito dos veces y se separaron.
+    where: {
+      professional_id: profesionalId,
+      starts_on: { lte: fin },
+      ends_on: { gte: inicio },
+    },
+    select: { starts_on: true, ends_on: true },
+  });
+
+  const ausente = estaAusente(
+    desde.fecha,
+    tapan.map((a) => ({ starts_on: comoFecha(a.starts_on), ends_on: comoFecha(a.ends_on) })),
+  );
+
+  if (ausente) {
+    throw new ErrorDeRegla("Esa profesional no atiende ese día.");
   }
 }
 

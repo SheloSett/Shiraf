@@ -114,7 +114,8 @@ function BookingPage() {
       date,
       availability.data.schedules,
       availability.data.busy,
-      service.duration_minutes,
+      { minutos: service.duration_minutes, margen: service.buffer_minutes },
+      availability.data.ausencias,
     );
   }, [date, service, availability.data]);
 

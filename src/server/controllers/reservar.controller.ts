@@ -1,9 +1,9 @@
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { horariosOcupados } from "@/server/services/agenda.service";
+import { ausenciasDe, horariosOcupados } from "@/server/services/agenda.service";
 import { accesoDe } from "@/server/services/authz.service";
 import { validarTurno } from "@/server/services/turnos.service";
-import { comoHora } from "@/server/serializar";
+import { comoFecha, comoHora } from "@/server/serializar";
 import type { RtaDisponibilidad } from "@/lib/api-tipos";
 
 /**
@@ -26,8 +26,14 @@ import type { RtaDisponibilidad } from "@/lib/api-tipos";
  * `{ starts_at, duration_minutes }` y nunca la fila. Quién reservó, qué
  * tratamiento y con qué nota no son asunto de quien está eligiendo horario.
  *
- * Está garantizado por `horariosOcupados()`, que ya devuelve sólo esos dos
- * campos: **no lo cambies para que devuelva el turno entero.**
+ * Está garantizado por `horariosOcupados()`, que ya devuelve sólo esos campos:
+ * **no lo cambies para que devuelva el turno entero.** El `buffer_minutes` que
+ * se sumó el 31/8/2026 entra en la misma promesa: es cuánto tarda la cabina en
+ * quedar libre, no algo de la clienta que la ocupó.
+ *
+ * Las AUSENCIAS salen igual de acotadas: de tal día a tal día, sin el motivo.
+ * Por qué la profesional no viene es asunto interno del centro y se queda en
+ * `equipo.controller`.
  */
 export async function disponibilidad(ctx: Ctx) {
   const profesionalId = ctx.url.searchParams.get("profesional");
@@ -53,13 +59,14 @@ export async function disponibilidad(ctx: Ctx) {
   const hasta = new Date(desde);
   hasta.setDate(hasta.getDate() + 1);
 
-  const [horarios, ocupados] = await Promise.all([
+  const [horarios, ocupados, ausencias] = await Promise.all([
     prisma.professional_schedules.findMany({
       where: { professional_id: profesionalId },
       select: { weekday: true, start_time: true, end_time: true },
       orderBy: [{ weekday: "asc" }, { start_time: "asc" }],
     }),
     horariosOcupados(profesionalId, desde, hasta, excluir ?? undefined),
+    ausenciasDe(profesionalId, desde, hasta),
   ]);
 
   return json({
@@ -71,6 +78,11 @@ export async function disponibilidad(ctx: Ctx) {
     busy: ocupados.map((o) => ({
       starts_at: o.empiezaEn.toISOString(),
       duration_minutes: o.minutos,
+      buffer_minutes: o.margen,
+    })),
+    ausencias: ausencias.map((a) => ({
+      starts_on: comoFecha(a.empiezaEl),
+      ends_on: comoFecha(a.terminaEl),
     })),
   } satisfies RtaDisponibilidad);
 }

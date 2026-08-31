@@ -174,6 +174,9 @@ export async function misTurnos(ctx: Ctx) {
       starts_at: true,
       status: true,
       duration_minutes: true,
+      // Lo pide «Reprogramar», que arma los horarios con buildSlots y sin el
+      // margen no sabría cada cuánto encadenarlos.
+      buffer_minutes: true,
       client_notes: true,
       service: { select: { name: true, price: true, category: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
@@ -194,6 +197,7 @@ export async function misTurnos(ctx: Ctx) {
       starts_at: t.starts_at.toISOString(),
       status: t.status,
       duration_minutes: t.duration_minutes,
+      buffer_minutes: t.buffer_minutes,
       client_notes: t.client_notes,
       // Los nombres anidados vienen del select de supabase-js y se conservan
       // para no tener que tocar el JSX.

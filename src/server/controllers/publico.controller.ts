@@ -68,6 +68,9 @@ const CAMPOS_DEL_CATALOGO = {
   description: true,
   category: true,
   duration_minutes: true,
+  // Lo pide la agenda: es cada cuánto se pueden encadenar dos turnos de este
+  // tratamiento. Ver `services.buffer_minutes`.
+  buffer_minutes: true,
   price: true,
   image_url: true,
 } as const;

@@ -3,9 +3,11 @@ import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middle
 import {
   activar,
   borrar,
+  borrarAusencia,
   activarCuenta,
   cambiarPermiso,
   crear,
+  crearAusencia,
   editar,
   listar,
   listarEmpleadas,
@@ -39,6 +41,12 @@ equipoRouter.post("/profesionales", ...soloEquipo, crear);
 equipoRouter.put("/profesionales/:id", ...soloEquipo, editar);
 equipoRouter.put("/profesionales/:id/activa", ...soloEquipo, activar);
 equipoRouter.delete("/profesionales/:id", ...soloEquipo, borrar);
+
+// Los días que una profesional no está. Piden `team` como el resto de la
+// pantalla: es la misma ficha y la misma decisión —cuándo atiende— que los
+// horarios semanales de arriba.
+equipoRouter.post("/profesionales/:id/ausencias", ...soloEquipo, crearAusencia);
+equipoRouter.delete("/ausencias/:id", ...soloEquipo, borrarAusencia);
 
 // ⚠️ Sólo authMiddleware acá, y el candado adentro del controller: atar una
 // ficha a una cuenta lo puede hacer SÓLO la dueña, no quien tiene `team`.

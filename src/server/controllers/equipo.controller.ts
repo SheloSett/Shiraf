@@ -8,9 +8,11 @@ import {
   puede,
 } from "@/server/services/authz.service";
 import { PERMISSION_VALUES, type Permission } from "@/lib/permissions";
-import { diaConTramosSuperpuestos, WEEKDAYS } from "@/lib/shiraf";
-import { comoHora, horaDesdeTexto } from "@/server/serializar";
+import { diaConTramosSuperpuestos, estaAusente, WEEKDAYS } from "@/lib/shiraf";
+import { comoFecha, comoHora, fechaDesdeTexto, horaDesdeTexto } from "@/server/serializar";
+import { enHoraDelCentro, nombreDelTratamiento } from "@/server/services/turnos.service";
 import type {
+  RtaAusenciaGuardada,
   RtaEmpleadas,
   RtaProfesionalesAdmin,
   RtaServiciosParaElegir,
@@ -35,6 +37,18 @@ type HorarioAGuardar = { id?: string; weekday: number; start_time: Date; end_tim
  * `guard_professional_account_link` y ahora `exigirPoderAtarFicha`.
  */
 
+/**
+ * Hoy, como día del almanaque del centro.
+ *
+ * `new Date()` a secas serviría casi siempre y fallaría de noche: a las 22:30
+ * de Buenos Aires el servidor —que en el contenedor corre en UTC— ya está en
+ * el día siguiente, y una ausencia que empieza hoy se dejaría de mostrar unas
+ * horas antes de tiempo.
+ */
+function hoyEnElCentro(): Date {
+  return fechaDesdeTexto(enHoraDelCentro(new Date()).fecha) ?? new Date();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lectura
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,12 +72,20 @@ export async function listar() {
         select: { id: true, weekday: true, start_time: true, end_time: true },
         orderBy: [{ weekday: "asc" }, { start_time: "asc" }],
       },
+      // Las que todavía tapan algo: las que terminan de hoy en adelante. Una
+      // ausencia vieja no cambia qué se puede reservar y en la pantalla sería
+      // ruido; sigue en la base, nomás no se muestra.
+      absences: {
+        where: { ends_on: { gte: hoyEnElCentro() } },
+        select: { id: true, starts_on: true, ends_on: true, reason: true },
+        orderBy: { starts_on: "asc" },
+      },
     },
     orderBy: { full_name: "asc" },
   });
 
   const salida: RtaProfesionalesAdmin = {
-    profesionales: fichas.map(({ services, schedules, ...ficha }) => ({
+    profesionales: fichas.map(({ services, schedules, absences, ...ficha }) => ({
       ...ficha,
       professional_services: services.map((s) => ({
         id: s.id,
@@ -75,6 +97,12 @@ export async function listar() {
         weekday: h.weekday,
         start_time: comoHora(h.start_time),
         end_time: comoHora(h.end_time),
+      })),
+      professional_absences: absences.map((a) => ({
+        id: a.id,
+        starts_on: comoFecha(a.starts_on),
+        ends_on: comoFecha(a.ends_on),
+        reason: a.reason,
       })),
     })),
   };
@@ -530,5 +558,135 @@ export async function activarCuenta(ctx: Ctx) {
   }
 
   await prisma.users.update({ where: { id: userId }, data: { is_active: activa } });
+  return json({ ok: true });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los días que no está
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Cargar un tramo en que la profesional no atiende.
+ *
+ * ── SE GUARDA AUNQUE HAYA TURNOS ADENTRO ──────────────────────────────────
+ *
+ * Y se devuelven, para que la pantalla los muestre. Es una decisión del centro
+ * (31/8/2026) y tiene su motivo: esos turnos son clientas con una confirmación
+ * por mail en la mano. Cancelarlos en masa acá sería mandar de golpe un mail de
+ * cancelación a cada una, sin forma de volver atrás; y no dejar guardar hasta
+ * resolverlos obligaría a hacerlo justo cuando la dueña está anotando algo
+ * rápido antes de olvidárselo.
+ *
+ * Entonces la ausencia entra —desde ya nadie reserva más ese día— y los turnos
+ * que ya estaban quedan a la vista para reprogramarlos o cancelarlos uno por
+ * uno, con el mail que cada caso merezca.
+ */
+export async function crearAusencia(ctx: Ctx) {
+  const profesionalId = ctx.params["id"];
+  if (!profesionalId) return json({ error: "Falta la profesional." }, 400);
+
+  const ficha = await prisma.professionals.findUnique({
+    where: { id: profesionalId },
+    select: { id: true },
+  });
+  if (!ficha) return json({ error: "Esa profesional no existe." }, 404);
+
+  const desde = fechaDesdeTexto(ctx.body["starts_on"]);
+  const hasta = fechaDesdeTexto(ctx.body["ends_on"]);
+  if (!desde || !hasta) return json({ error: "Poné las dos fechas." }, 400);
+  if (hasta < desde) return json({ error: "La fecha de vuelta va después de la de salida." }, 400);
+
+  const motivo = typeof ctx.body["reason"] === "string" ? ctx.body["reason"].trim() : "";
+
+  const ausencia = await prisma.professional_absences.create({
+    data: {
+      professional_id: profesionalId,
+      starts_on: desde,
+      ends_on: hasta,
+      reason: motivo || null,
+    },
+    select: { id: true, starts_on: true, ends_on: true, reason: true },
+  });
+
+  const salida: RtaAusenciaGuardada = {
+    ausencia: {
+      id: ausencia.id,
+      starts_on: comoFecha(ausencia.starts_on),
+      ends_on: comoFecha(ausencia.ends_on),
+      reason: ausencia.reason,
+    },
+    turnos_en_pie: await turnosDentroDe(profesionalId, desde, hasta),
+  };
+  return json(salida, 201);
+}
+
+/**
+ * Los turnos abiertos que caen adentro de un tramo de ausencia.
+ *
+ * ⚠️ El recorte por fecha es GRUESO y sobra un día de cada lado a propósito.
+ * `starts_at` es un instante y el tramo son días de Buenos Aires: en UTC, el
+ * turno de las 21:00 del 15 cae el 16. Quien decide de verdad es `estaAusente`,
+ * sobre la fecha de cada turno ya pasada a hora del centro — la misma función
+ * que usan la pantalla de reserva y el candado del servidor, para que las tres
+ * no puedan discrepar.
+ */
+async function turnosDentroDe(
+  profesionalId: string,
+  desde: Date,
+  hasta: Date,
+): Promise<RtaAusenciaGuardada["turnos_en_pie"]> {
+  const UN_DIA = 24 * 60 * 60 * 1000;
+
+  const candidatos = await prisma.appointments.findMany({
+    where: {
+      professional_id: profesionalId,
+      status: { in: ["pending", "confirmed"] },
+      starts_at: {
+        gte: new Date(desde.getTime() - UN_DIA),
+        lt: new Date(hasta.getTime() + 2 * UN_DIA),
+      },
+    },
+    select: {
+      id: true,
+      starts_at: true,
+      guest_name: true,
+      service_name: true,
+      service: { select: { name: true } },
+      client: { select: { profile: { select: { full_name: true } } } },
+    },
+    orderBy: { starts_at: "asc" },
+  });
+
+  const tramo = [{ starts_on: comoFecha(desde), ends_on: comoFecha(hasta) }];
+
+  return candidatos
+    .filter((t) => estaAusente(enHoraDelCentro(t.starts_at).fecha, tramo))
+    .map((t) => ({
+      id: t.id,
+      starts_at: t.starts_at.toISOString(),
+      // El mismo orden que en el resto del proyecto: primero la cuenta, y si no
+      // hay, el nombre que el centro anotó a mano para la invitada.
+      quien: t.client?.profile?.full_name ?? t.guest_name ?? "Sin nombre",
+      tratamiento: nombreDelTratamiento(t),
+    }));
+}
+
+/**
+ * Borrar un tramo de ausencia: la profesional sí va a estar esos días.
+ *
+ * No devuelve nada de los turnos porque no hay nada que avisar — sacar una
+ * ausencia sólo vuelve a abrir horarios que estaban cerrados.
+ */
+export async function borrarAusencia(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta la ausencia." }, 400);
+
+  const existe = await prisma.professional_absences.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!existe) return json({ error: "Esa ausencia ya no está." }, 404);
+
+  await prisma.professional_absences.delete({ where: { id } });
   return json({ ok: true });
 }

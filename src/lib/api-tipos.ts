@@ -52,6 +52,13 @@ export type ServicioPublico = {
   description: string | null;
   category: string;
   duration_minutes: number;
+  /**
+   * Los minutos de limpieza que este tratamiento pide después.
+   *
+   * Hace falta en la pantalla: sin él, `buildSlots` no sabe cada cuánto
+   * encadenar los horarios. Ver `services.buffer_minutes`.
+   */
+  buffer_minutes: number;
   /** Número, no Decimal: lo espera `formatMoney()`. */
   price: number;
   image_url: string | null;
@@ -79,6 +86,21 @@ export type HorarioDeAgenda = {
   weekday: number;
   start_time: string;
   end_time: string;
+};
+
+/**
+ * Un tramo en que una profesional no atiende, con los dos extremos incluidos.
+ *
+ * Las fechas son "YYYY-MM-DD" y no instantes: un día de ausencia es un día del
+ * almanaque del centro. Así se comparan como texto, que ordena igual que como
+ * fechas y no arrastra ninguna zona horaria. Ver `professional_absences`.
+ */
+export type AusenciaDeAgenda = {
+  id: string;
+  starts_on: string;
+  ends_on: string;
+  /** Interno: no sale en ningún mail ni en el sitio público. */
+  reason: string | null;
 };
 
 /**
@@ -220,9 +242,37 @@ export type ProfesionalAdmin = {
     services: { id: string; name: string };
   }[];
   professional_schedules: HorarioConId[];
+  /**
+   * Los días que avisó que no viene, de hoy en adelante.
+   *
+   * Las viejas no vienen: la pantalla es para decidir qué se puede reservar,
+   * y unas vacaciones de marzo ahí sólo son ruido. Quedan en la base igual.
+   */
+  professional_absences: AusenciaDeAgenda[];
 };
 
 export type RtaProfesionalesAdmin = { profesionales: ProfesionalAdmin[] };
+
+/**
+ * Lo que vuelve al cargar una ausencia.
+ *
+ * `turnos_en_pie` es la parte que importa: la ausencia SE GUARDA igual, y
+ * estos son los turnos que ya estaban dados dentro del rango y que nadie tocó.
+ * No se cancelan solos a propósito — son clientas con un turno confirmado por
+ * mail, y cancelarlas en masa sin que la dueña lo pida no se puede deshacer.
+ *
+ * Viene vacío cuando no hay ninguno, que es el caso normal.
+ */
+export type RtaAusenciaGuardada = {
+  ausencia: AusenciaDeAgenda;
+  turnos_en_pie: {
+    id: string;
+    starts_at: string;
+    /** El nombre de la clienta, o el de la invitada que cargó el centro. */
+    quien: string;
+    tratamiento: string;
+  }[];
+};
 
 /** El selector de tratamientos del formulario del equipo. */
 export type RtaServiciosParaElegir = {
@@ -282,6 +332,13 @@ export type MiTurno = {
   starts_at: string;
   status: string;
   duration_minutes: number;
+  /**
+   * El margen de limpieza, congelado en el turno.
+   *
+   * Lo necesita «Reprogramar», que arma los horarios con `buildSlots` y sin
+   * esto no sabría cada cuánto encadenarlos.
+   */
+  buffer_minutes: number;
   client_notes: string | null;
   // `category` es null cuando el tratamiento ya no está en el catálogo. `name`
   // y `price` no: el turno los tiene congelados desde el día que se reservó.
@@ -580,7 +637,23 @@ export type RtaMetricas = {
  */
 export type RtaDisponibilidad = {
   schedules: HorarioDeAgenda[];
-  busy: { starts_at: string; duration_minutes: number }[];
+  /**
+   * Cuándo, cuánto y con cuánto margen — y nada más. Ver el 🔴 de
+   * `disponibilidad()`: quién reservó y de qué no son asunto de quien está
+   * eligiendo horario.
+   *
+   * `buffer_minutes` es el DEL TURNO, congelado, no el del tratamiento que se
+   * está por reservar: entre dos turnos manda el margen del que termina.
+   */
+  busy: { starts_at: string; duration_minutes: number; buffer_minutes: number }[];
+  /**
+   * Los días que esa profesional no está, dentro de la ventana consultada.
+   *
+   * Van aparte de `schedules` a propósito: el horario semanal sigue diciendo
+   * que trabaja los martes, y esto es la excepción que lo tapa. Mezclarlos haría
+   * imposible distinguir "ese día no trabaja nunca" de "ese día no viene".
+   */
+  ausencias: { starts_on: string; ends_on: string }[];
 };
 
 export type RtaClientasParaElegir = {
@@ -594,6 +667,8 @@ export type RtaServiciosParaTurno = {
     name: string;
     category: string;
     duration_minutes: number;
+    /** El margen de limpieza, para que el panel encadene igual que /reservar. */
+    buffer_minutes: number;
     price: number;
     is_published: boolean;
   }[];

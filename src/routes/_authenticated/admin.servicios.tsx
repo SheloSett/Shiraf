@@ -50,6 +50,8 @@ type ServiceForm = {
   category: string;
   description: string;
   duration_minutes: number;
+  /** Los minutos de limpieza que van DESPUÉS de este tratamiento. */
+  buffer_minutes: number;
   price: number;
   /**
    * La galería, en orden. La primera imagen es la portada.
@@ -67,9 +69,30 @@ const EMPTY_FORM: ServiceForm = {
   category: "",
   description: "",
   duration_minutes: 60,
+  // El que el centro definió el 18/8/2026 y hasta ahora valía para todo el
+  // catálogo. Un tratamiento nuevo arranca con eso y se ajusta si hace falta.
+  buffer_minutes: 10,
   price: 0,
   media: [],
 };
+
+/**
+ * A qué hora queda libre la cabina para la clienta siguiente, arrancando 12:00.
+ *
+ * Es para el formulario de tratamientos: poner un número y ver el horario que
+ * sale dice mucho más que el número solo. Vale para mostrar, nada más — la
+ * agenda de verdad la calcula `buildSlots`.
+ */
+function horaSiguiente(duracion: number, margen: number): string {
+  const desde = new Date(2000, 0, 1, 12, 0, 0);
+  const total = (Number(duracion) || 0) + (Number(margen) || 0);
+  const libre = new Date(desde.getTime() + total * 60_000);
+  return libre.toLocaleTimeString("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
 
 function AdminServices() {
   const queryClient = useQueryClient();
@@ -131,6 +154,7 @@ function AdminServices() {
     category: string;
     description: string | null;
     duration_minutes: number;
+    buffer_minutes: number;
     price: number;
     service_media: { id: string; url: string; kind: "image" | "video"; position: number }[];
   }) {
@@ -147,6 +171,7 @@ function AdminServices() {
       category: s.category,
       description: s.description ?? "",
       duration_minutes: s.duration_minutes,
+      buffer_minutes: s.buffer_minutes,
       price: Number(s.price),
       media,
     });
@@ -222,6 +247,7 @@ function AdminServices() {
         category: form.category.trim() || "Sin categoría",
         description: form.description.trim() || null,
         duration_minutes: Number(form.duration_minutes),
+        buffer_minutes: Number(form.buffer_minutes),
         price: Number(form.price),
         // La galería tal como quedó. Las nuevas no tienen id todavía.
         media: form.media.map((m) => ({ ...(m.id ? { id: m.id } : {}), url: m.url, kind: m.kind })),
@@ -463,6 +489,27 @@ function AdminServices() {
                     onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
                   />
                 </div>
+              </div>
+              {/*
+                Va en su propia fila y no al lado de la duración a propósito: son
+                dos minutos distintos y pegados se confunden. Con la ayuda debajo,
+                queda claro que este rato no se le cobra a nadie.
+              */}
+              <div className="space-y-2">
+                <Label htmlFor="buffer">Tiempo entre turnos (min)</Label>
+                <Input
+                  id="buffer"
+                  type="number"
+                  min={0}
+                  value={form.buffer_minutes}
+                  onChange={(e) => setForm({ ...form, buffer_minutes: Number(e.target.value) })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  El rato para limpiar y preparar la cabina después de este tratamiento. La clienta
+                  siguiente no puede reservar antes de que pase. Un turno de {form.duration_minutes}{" "}
+                  minutos a las 12:00 deja libre las{" "}
+                  {horaSiguiente(form.duration_minutes, form.buffer_minutes)}.
+                </p>
               </div>
               <Button
                 className="w-full"

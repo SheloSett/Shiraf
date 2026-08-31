@@ -213,7 +213,11 @@ export async function miHistorial(userId: string, dias = 180): Promise<TurnoDeMi
  * Era `professional_busy_slots`. No lleva chequeo de permiso y es correcto: la
  * usa el formulario público de /reservar, donde una clienta sin cuenta tiene
  * que poder ver qué horarios quedan. Lo único que devuelve es "ocupado de tal a
- * tal hora" — ni quién, ni de qué.
+ * tal hora, y con tanto margen detrás" — ni quién, ni de qué.
+ *
+ * El margen es el del turno, congelado: entre dos turnos manda el del que
+ * termina, y el que termina es éste. Sin él la pantalla no puede saber dónde
+ * empieza el hueco siguiente. Ver `buildSlots`.
  */
 export async function horariosOcupados(
   profesionalId: string,
@@ -232,7 +236,7 @@ export async function horariosOcupados(
    * ofreciera lo que el servidor ya aceptaba.
    */
   excluirId?: string,
-): Promise<{ empiezaEn: Date; minutos: number }[]> {
+): Promise<{ empiezaEn: Date; minutos: number; margen: number }[]> {
   const turnos = await prisma.appointments.findMany({
     where: {
       professional_id: profesionalId,
@@ -240,11 +244,47 @@ export async function horariosOcupados(
       starts_at: { gte: desde, lt: hasta },
       ...(excluirId ? { id: { not: excluirId } } : {}),
     },
-    select: { starts_at: true, duration_minutes: true },
+    select: { starts_at: true, duration_minutes: true, buffer_minutes: true },
     orderBy: { starts_at: "asc" },
   });
 
-  return turnos.map((t) => ({ empiezaEn: t.starts_at, minutos: t.duration_minutes }));
+  return turnos.map((t) => ({
+    empiezaEn: t.starts_at,
+    minutos: t.duration_minutes,
+    margen: t.buffer_minutes,
+  }));
+}
+
+/**
+ * Los tramos en que una profesional no atiende, dentro de una ventana.
+ *
+ * Sin chequeo de permiso, por lo mismo que `horariosOcupados`: la pantalla de
+ * reserva es pública y tiene que poder saber qué días no ofrecer. Lo que
+ * devuelve es "de tal día a tal día", sin el motivo — ése es interno y no sale
+ * de `equipo.controller`.
+ *
+ * La consulta es la de dos rangos que se pisan, la misma forma que
+ * `check_appointment_overlap`: cada uno empieza antes de que termine el otro.
+ * Escrita al revés —`starts_on >= desde AND ends_on <= hasta`— se perdería
+ * justo el caso que más importa, el de las vacaciones que ya empezaron y
+ * todavía no terminaron.
+ */
+export async function ausenciasDe(
+  profesionalId: string,
+  desde: Date,
+  hasta: Date,
+): Promise<{ empiezaEl: Date; terminaEl: Date }[]> {
+  const tramos = await prisma.professional_absences.findMany({
+    where: {
+      professional_id: profesionalId,
+      starts_on: { lte: hasta },
+      ends_on: { gte: desde },
+    },
+    select: { starts_on: true, ends_on: true },
+    orderBy: { starts_on: "asc" },
+  });
+
+  return tramos.map((a) => ({ empiezaEl: a.starts_on, terminaEl: a.ends_on }));
 }
 
 /**

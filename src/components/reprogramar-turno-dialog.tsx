@@ -108,7 +108,8 @@ export function ReprogramarTurnoDialog({
       fecha,
       disponibilidad.data.schedules,
       disponibilidad.data.busy,
-      turno.duration_minutes,
+      { minutos: turno.duration_minutes, margen: turno.buffer_minutes },
+      disponibilidad.data.ausencias,
     );
   }, [fecha, turno, disponibilidad.data]);
 

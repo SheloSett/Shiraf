@@ -28,6 +28,8 @@ export async function listar() {
       category: true,
       description: true,
       duration_minutes: true,
+      // Lo pide la agenda y lo edita el formulario de tratamientos.
+      buffer_minutes: true,
       price: true,
       is_published: true,
       // La portada la mantiene el trigger sync_service_cover. Viene para la
@@ -60,6 +62,7 @@ type Campos = {
   category: string;
   description: string | null;
   duration_minutes: number;
+  buffer_minutes: number;
   price: number;
 };
 
@@ -78,6 +81,19 @@ function camposDe(ctx: Ctx): Campos | string {
   const duracion = Number(b["duration_minutes"]);
   if (!Number.isFinite(duracion) || duracion <= 0) return "La duración tiene que ser un número.";
 
+  /*
+   * El margen SÍ puede ser 0, a diferencia de la duración: un tratamiento que
+   * no deja nada que limpiar es un caso legítimo, y era el comportamiento del
+   * sistema hasta el 18/8/2026. Lo que no puede es faltar ni ser negativo.
+   *
+   * Sin tope por arriba a propósito: un margen enorme no rompe nada, sólo
+   * deja huecos grandes, y el centro lo ve en la pantalla de reserva al toque.
+   */
+  const margen = Number(b["buffer_minutes"]);
+  if (!Number.isFinite(margen) || margen < 0) {
+    return "El tiempo entre turnos tiene que ser un número de 0 para arriba.";
+  }
+
   const precio = Number(b["price"]);
   if (!Number.isFinite(precio) || precio < 0) return "El precio tiene que ser un número.";
 
@@ -89,6 +105,7 @@ function camposDe(ctx: Ctx): Campos | string {
     category: categoria || "Sin categoría",
     description: descripcion || null,
     duration_minutes: Math.round(duracion),
+    buffer_minutes: Math.round(margen),
     price: precio,
   };
 }
