@@ -437,6 +437,7 @@ function MyAgenda() {
                             <EstadoTurno
                               status={row.appointment_state}
                               startsAt={row.appointment_start}
+                              minutos={row.appointment_minutes}
                               now={ahora}
                             />
                           ) : (

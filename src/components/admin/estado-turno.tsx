@@ -30,16 +30,19 @@ const TONO: Record<EstadoVisible, string> = {
 export function EstadoTurno({
   status,
   startsAt,
+  minutos,
   now,
   className,
 }: {
   status: string;
   startsAt: string;
+  /** Cuánto dura. Hace falta para saber cuándo TERMINA: ver `yaVencio`. */
+  minutos: number;
   /** El reloj. En null mientras no hidrató: ver `estadoVisible`. */
   now: number | null;
   className?: string;
 }) {
-  const estado = estadoVisible(status, startsAt, now);
+  const estado = estadoVisible({ status, startsAt, minutos }, now);
   return (
     <span
       className={cn(

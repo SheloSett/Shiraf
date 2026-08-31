@@ -187,6 +187,7 @@ function FichaDelTurno() {
         <EstadoTurno
           status={t.status}
           startsAt={t.starts_at}
+          minutos={t.duration_minutes}
           now={Date.now()}
           className="text-sm"
         />
@@ -275,8 +276,7 @@ function FichaDelTurno() {
               const q = quienAtiende(
                 t.professionals,
                 t.professional_name,
-                t.status,
-                t.starts_at,
+                { status: t.status, startsAt: t.starts_at, minutos: t.duration_minutes },
                 Date.now(),
               );
 
