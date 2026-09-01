@@ -336,7 +336,9 @@ function AdminServices() {
               <Plus className="mr-2 h-4 w-4" /> Nuevo servicio
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          {/* El formulario es largo (descripción, fotos, duración, precio, margen):
+              sin scroll propio los botones del final quedan abajo de la pantalla. */}
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle className="font-display text-2xl">
                 {editingId ? "Editar tratamiento" : "Nuevo tratamiento"}
@@ -556,7 +558,14 @@ function AdminServices() {
                     )}
                     <span className="min-w-0">
                       <span className="block text-foreground">{s.name}</span>
-                      <span className="text-xs text-muted-foreground">{s.description}</span>
+                      {/* `line-clamp-2`: una descripción larga estiraba la fila hasta
+                          tapar la lista entera. El texto completo queda en el título. */}
+                      <span
+                        className="line-clamp-2 text-xs text-muted-foreground"
+                        title={s.description ?? undefined}
+                      >
+                        {s.description}
+                      </span>
                     </span>
                   </div>
                 </TableCell>

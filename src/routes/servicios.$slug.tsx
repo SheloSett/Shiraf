@@ -50,6 +50,23 @@ const STEPS = [
   },
 ] as const;
 
+/**
+ * La descripción, partida en párrafos.
+ *
+ * En el panel se escribe en un textarea, así que los renglones y las líneas en
+ * blanco existen en el dato; el HTML los colapsa, y metida en un solo <p> la
+ * descripción salía como un ladrillo de veinte renglones sin respiro.
+ *
+ * Se corta por línea en blanco, que es como separa párrafos quien escribe. Si
+ * no hay ninguna —alguien escribió todo seguido apretando Enter una sola vez—
+ * se cae al salto suelto, que es lo único que queda para inferir el corte.
+ */
+function enParrafos(texto: string): string[] {
+  const limpiar = (partes: string[]) => partes.map((p) => p.trim()).filter(Boolean);
+  const porBloque = limpiar(texto.split(/\n\s*\n/));
+  return porBloque.length > 1 ? porBloque : limpiar(texto.split("\n"));
+}
+
 function ServiceDetail() {
   //   const { serviceId } = Route.useParams();
   const { slug } = Route.useParams();
@@ -131,6 +148,12 @@ function ServiceDetail() {
 
   const s = service.data;
 
+  // Una descripción de dos renglones entra entera en el hero; una de veinte
+  // no, y ahí hace falta la sección de abajo. El corte por largo es para el
+  // caso de un solo párrafo largísimo, que en párrafos no se puede detectar.
+  const parrafos = enParrafos(s.description ?? "");
+  const hayMas = parrafos.length > 1 || (parrafos[0]?.length ?? 0) > 320;
+
   return (
     // `clip` en vez de `hidden`: `hidden` crea contenedor de scroll y anula el
     // `sticky` del header.
@@ -173,9 +196,30 @@ function ServiceDetail() {
           </Reveal>
 
           <Reveal delay={160}>
-            <p className="mt-8 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-              {s.description}
-            </p>
+            {/* Sólo el arranque, y cortado a seis renglones.
+
+                Lo que sube el centro no es una bajada de dos líneas: son
+                descripciones de veinte renglones, con beneficios y frecuencia
+                recomendada adentro. Enteras acá, la columna de texto crecía muy
+                por debajo del flyer —que tiene su tope en 70vh— y quedaba media
+                pantalla de crema vacía al lado, con el precio y el botón de
+                reservar empujados fuera de la vista.
+
+                El texto no se pierde: completo y en párrafos, más abajo. */}
+            {parrafos[0] && (
+              <p className="mt-8 line-clamp-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+                {parrafos[0]}
+              </p>
+            )}
+
+            {hayMas && (
+              <a
+                href="#descripcion"
+                className="text-eyebrow mt-4 inline-block text-foreground underline-offset-8 hover:underline"
+              >
+                Seguir leyendo ↓
+              </a>
+            )}
 
             <div className="mt-10 flex items-baseline gap-10 border-t border-border pt-6">
               <div>
@@ -317,6 +361,31 @@ function ServiceDetail() {
           el hero ni lo que sigue. En mobile la foto está oculta, así que ahí sí
           hace falta aire entre el botón y el filete. */}
       <OrganicRule className="mt-20 lg:mt-0" />
+
+      {/* La descripción completa, en párrafos y en una medida de lectura.
+          Sólo aparece cuando no entró entera en el hero: con un tratamiento de
+          dos renglones sería repetir arriba y abajo lo mismo.
+
+          `scroll-mt-28` porque el header es sticky: sin eso el enlace «Seguir
+          leyendo» deja el título justo debajo de la barra. */}
+      {hayMas && (
+        <section id="descripcion" className="grid scroll-mt-28 lg:grid-cols-12">
+          <div className="px-5 py-20 lg:col-span-7 lg:col-start-2 lg:px-0 lg:py-24">
+            <Reveal>
+              <p className="text-eyebrow text-muted-foreground">En qué consiste</p>
+              <h2 className="display-section mt-5 text-foreground">El tratamiento</h2>
+            </Reveal>
+
+            <Reveal delay={80}>
+              <div className="mt-10 max-w-prose space-y-5 text-[15px] leading-relaxed text-muted-foreground">
+                {parrafos.map((p, i) => (
+                  <p key={i}>{p}</p>
+                ))}
+              </div>
+            </Reveal>
+          </div>
+        </section>
+      )}
 
       {/* Acá iba «La galería»: una sección aparte que listaba el resto de las
           fotos y los videos debajo del hero, con su propio título a media
