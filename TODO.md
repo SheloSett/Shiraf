@@ -80,6 +80,32 @@ la primera hace menos urgente a la segunda:
 
 ### 🟢 5. Sueltos
 
+- [ ] 🌙 **Reiniciar el VPS — esta noche (2/9/2026).** El servidor viene diciendo
+      `*** System restart required ***` al entrar por SSH, de una actualización
+      que instaló Ubuntu solo. Los parches ya están en el disco, pero **lo que
+      corre en memoria sigue siendo la versión vieja**: hasta que no se reinicie
+      están instalados y sin usar. No hay nada roto ni es urgente; es no dejarlo
+      meses. El sitio se cae 1 o 2 minutos, así que va a un horario tranquilo.
+
+      Se hace desde hPanel (VPS → Reiniciar) o con `reboot` en el terminal del
+      navegador — ahí la ventana se cuelga y se desconecta sola, que es el
+      servidor apagándose y no un error.
+
+      **No hay que levantar nada a mano.** Verificado el 2/9: los ocho
+      contenedores del VPS —los tres de Shiraf más los de `igwtstore` y
+      `manhattan`— están con `restart: unless-stopped`, así que vuelven solos al
+      arrancar. La base tampoco corre riesgo: vive en un volumen de Docker, que
+      es aparte del contenedor.
+
+      Después del reinicio, comprobar:
+
+          docker ps --format "{{.Names}}  {{.Status}}"
+          curl -sI https://shiraf.com.ar/ | head -1
+
+      Los tres `shiraf-*` en `Up` y la última línea en `HTTP/1.1 200`. Ojo que
+      `shiraf-app` tarda unos segundos en pasar de `(health: starting)` a
+      `(healthy)`: si mirás muy rápido, todavía no dice `healthy` y está bien.
+
 - [ ] **Destildarle «Ver datos de clientas» a `camila@gmail.com`** en la base
       LOCAL. Se lo puse el 27/8 para probar que a una empleada no le aparece la
       papelera de borrar clientas — la prueba pasó. Ojo que desde ese mismo día
