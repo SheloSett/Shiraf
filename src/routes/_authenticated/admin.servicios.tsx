@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -35,11 +35,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api, apiDelete, apiPost, apiPut } from "@/lib/api";
-import type { RtaCategorias, RtaMediaSacada, RtaServiciosAdmin } from "@/lib/api-tipos";
-import { formatMoney } from "@/lib/shiraf";
+import type {
+  RtaCategorias,
+  RtaMediaSacada,
+  RtaServiciosAdmin,
+  ServicioAdmin,
+  VarianteAdmin,
+} from "@/lib/api-tipos";
+import { aSlug, formatMoney, precioYDuracion } from "@/lib/shiraf";
 import { imageUrl } from "@/lib/cloudinary";
 import { removeServiceMedia, uploadServiceMedia } from "@/lib/storage";
 import { ServiceMediaEditor, type MediaItem } from "@/components/admin/service-media-editor";
+import {
+  ServiceVariantsEditor,
+  type VariantItem,
+} from "@/components/admin/service-variants-editor";
 
 export const Route = createFileRoute("/_authenticated/admin/servicios")({
   component: AdminServices,
@@ -53,6 +63,9 @@ type ServiceForm = {
   /** Los minutos de limpieza que van DESPUÉS de este tratamiento. */
   buffer_minutes: number;
   price: number;
+  /** Cuántas sesiones son y cada cuántos días. 1 y 0 = tratamiento de una sola visita. */
+  sessions_count: number;
+  session_interval_days: number;
   /**
    * La galería, en orden. La primera imagen es la portada.
    *
@@ -62,6 +75,15 @@ type ServiceForm = {
    * diciendo cosas distintas.
    */
   media: MediaItem[];
+  /**
+   * Las opciones del tratamiento, en orden. Vacía en el que no tiene.
+   *
+   * Cuando hay alguna, es de ella de donde salen el precio y la duración del
+   * turno — los de acá arriba quedan como el valor del tratamiento "a secas",
+   * que ya no se le cobra a nadie. La regla la aplica `validarTurno` en el
+   * servidor; la pantalla sólo lo dice.
+   */
+  variants: VariantItem[];
 };
 
 const EMPTY_FORM: ServiceForm = {
@@ -73,7 +95,10 @@ const EMPTY_FORM: ServiceForm = {
   // catálogo. Un tratamiento nuevo arranca con eso y se ajusta si hace falta.
   buffer_minutes: 10,
   price: 0,
+  sessions_count: 1,
+  session_interval_days: 0,
   media: [],
+  variants: [],
 };
 
 /**
@@ -94,6 +119,17 @@ function horaSiguiente(duracion: number, margen: number): string {
   });
 }
 
+/**
+ * Lo mismo que `precioYDuracion`, pero mirando sólo las opciones ACTIVAS.
+ *
+ * El panel recibe también las apagadas —es donde se vuelven a prender— y una
+ * opción apagada no se puede reservar: contarla en el "desde" haría que la tabla
+ * anuncie un precio que ya nadie puede pedir.
+ */
+function resumenDeVariantes(s: ServicioAdmin) {
+  return precioYDuracion({ ...s, variants: s.variants.filter((v) => v.is_active) });
+}
+
 function AdminServices() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -111,6 +147,18 @@ function AdminServices() {
   /** id del tratamiento en edición; null = alta nueva. */
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
+
+  /**
+   * Los filtros de la tabla: texto libre, categoría y si está publicado.
+   *
+   * La tabla se lee de arriba abajo y ya son más de veinte tratamientos: para
+   * corregirle el precio a uno había que recorrerla con el dedo. Los tres viven
+   * sólo en la pantalla —no en la URL ni en la consulta— porque son una lupa
+   * momentánea sobre una lista que ya está entera en memoria.
+   */
+  const [busca, setBusca] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroPublicado, setFiltroPublicado] = useState<"todos" | "si" | "no">("todos");
 
   function closeForm() {
     setOpen(false);
@@ -156,7 +204,10 @@ function AdminServices() {
     duration_minutes: number;
     buffer_minutes: number;
     price: number;
+    sessions_count: number;
+    session_interval_days: number;
     service_media: { id: string; url: string; kind: "image" | "video"; position: number }[];
+    variants: VarianteAdmin[];
   }) {
     // La consulta ya ordena por position, pero el orden de un embed de
     // PostgREST no está garantizado si alguien le agrega un select: ordenar acá
@@ -173,7 +224,20 @@ function AdminServices() {
       duration_minutes: s.duration_minutes,
       buffer_minutes: s.buffer_minutes,
       price: Number(s.price),
+      sessions_count: s.sessions_count,
+      session_interval_days: s.session_interval_days,
       media,
+      // Ya vienen ordenadas por `position` del servidor. Se copian a la forma
+      // del formulario —con `id`, que es lo que le dice al servidor cuáles ya
+      // existen— y el orden de esta lista es el que se va a guardar.
+      variants: s.variants.map((v) => ({
+        id: v.id,
+        name: v.name,
+        duration_minutes: v.duration_minutes,
+        buffer_minutes: v.buffer_minutes,
+        price: Number(v.price),
+        is_active: v.is_active,
+      })),
     });
     setOpen(true);
   }
@@ -237,6 +301,33 @@ function AdminServices() {
     queryFn: async () => (await api<RtaServiciosAdmin>("/api/catalogo/servicios")).servicios,
   });
 
+  /**
+   * Lo que se ve en la tabla: los tratamientos que pasan los tres filtros.
+   *
+   * La búsqueda compara por slug y no por texto crudo, así "depilacion"
+   * encuentra "Depilación" — quien busca en el panel escribe rápido y sin
+   * tildes. Mira nombre y categoría; la descripción no, porque son párrafos
+   * enteros y cualquier palabra común devolvía media tabla.
+   */
+  const visibles = useMemo(() => {
+    const texto = aSlug(busca);
+    return (services.data ?? []).filter((s) => {
+      if (texto && !aSlug(`${s.name} ${s.category}`).includes(texto)) return false;
+      if (filtroCategoria && s.category !== filtroCategoria) return false;
+      if (filtroPublicado === "si" && !s.is_published) return false;
+      if (filtroPublicado === "no" && s.is_published) return false;
+      return true;
+    });
+  }, [services.data, busca, filtroCategoria, filtroPublicado]);
+
+  const filtrando = busca !== "" || filtroCategoria !== "" || filtroPublicado !== "todos";
+
+  function limpiarFiltros() {
+    setBusca("");
+    setFiltroCategoria("");
+    setFiltroPublicado("todos");
+  }
+
   const save = useMutation({
     mutationFn: async () => {
       // Sin image_url: la portada la escribe trg_sync_service_cover a partir de
@@ -249,8 +340,21 @@ function AdminServices() {
         duration_minutes: Number(form.duration_minutes),
         buffer_minutes: Number(form.buffer_minutes),
         price: Number(form.price),
+        sessions_count: Number(form.sessions_count),
+        session_interval_days: Number(form.session_interval_days),
         // La galería tal como quedó. Las nuevas no tienen id todavía.
         media: form.media.map((m) => ({ ...(m.id ? { id: m.id } : {}), url: m.url, kind: m.kind })),
+        // Las opciones, en el orden de la pantalla: el servidor escribe
+        // `position` por el índice. Las que se agregaron y quedaron sin nombre
+        // las descarta él, así que no hace falta filtrarlas acá.
+        variants: form.variants.map((v) => ({
+          ...(v.id ? { id: v.id } : {}),
+          name: v.name.trim(),
+          duration_minutes: Number(v.duration_minutes),
+          buffer_minutes: Number(v.buffer_minutes),
+          price: Number(v.price),
+          is_active: v.is_active,
+        })),
       };
 
       // Un solo pedido. Antes esto eran hasta cuatro viajes sueltos desde el
@@ -513,6 +617,66 @@ function AdminServices() {
                   {horaSiguiente(form.duration_minutes, form.buffer_minutes)}.
                 </p>
               </div>
+
+              {/* Las sesiones. Van pegadas al precio a propósito: es ahí donde
+                  hay que entender que ese número es el del tratamiento COMPLETO
+                  y no el de cada visita. */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="sessions">Sesiones</Label>
+                  <Input
+                    id="sessions"
+                    type="number"
+                    min={1}
+                    value={form.sessions_count}
+                    onChange={(e) => setForm({ ...form, sessions_count: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="interval">Días entre sesiones</Label>
+                  <Input
+                    id="interval"
+                    type="number"
+                    min={0}
+                    // Un tratamiento de una sola sesión no tiene entre qué
+                    // esperar: el campo se apaga en vez de esconderse, así se ve
+                    // que existe y por qué no aplica.
+                    disabled={form.sessions_count <= 1}
+                    value={form.session_interval_days}
+                    onChange={(e) =>
+                      setForm({ ...form, session_interval_days: Number(e.target.value) })
+                    }
+                  />
+                </div>
+              </div>
+              {form.sessions_count > 1 && (
+                <p className="-mt-1 text-xs text-muted-foreground">
+                  Este tratamiento son {form.sessions_count} sesiones
+                  {form.session_interval_days > 0 ? ` cada ${form.session_interval_days} días` : ""}
+                  . El precio de arriba es el del{" "}
+                  <strong className="font-medium text-foreground">tratamiento completo</strong> y se
+                  cobra una sola vez. La clienta reserva la primera sesión; las siguientes las
+                  agendás vos desde Turnos.
+                </p>
+              )}
+
+              {/* Las opciones van DESPUÉS del precio y la duración, y no antes,
+                  porque una opción nueva nace copiando esos dos números: en el
+                  orden inverso habría que volver a subir a corregirlos. */}
+              <div className="space-y-3">
+                <Label>Opciones del tratamiento</Label>
+                <p className="text-xs text-muted-foreground">
+                  Para el tratamiento que se ofrece de más de una forma —“solo espalda” y “cuerpo
+                  completo”—, con su propio precio y su propia duración. Si no tiene, dejalo vacío.
+                </p>
+                <ServiceVariantsEditor
+                  items={form.variants}
+                  onChange={(variants) => setForm({ ...form, variants })}
+                  duracionBase={form.duration_minutes}
+                  margenBase={form.buffer_minutes}
+                />
+              </div>
+
               <Button
                 className="w-full"
                 disabled={!form.name.trim() || save.isPending}
@@ -525,7 +689,60 @@ function AdminServices() {
         </Dialog>
       </div>
 
-      <div className="mt-8 rounded-sm border border-border bg-card">
+      {/* Buscador y filtros de la tabla. Van acá arriba y no adentro de la
+          tarjeta para que se lean como controles de la pantalla y no como una
+          fila más de la grilla. */}
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <Input
+          className="w-full sm:max-w-xs"
+          placeholder="Buscar por nombre o categoría…"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          aria-label="Buscar tratamiento"
+        />
+
+        <select
+          value={filtroCategoria}
+          onChange={(e) => setFiltroCategoria(e.target.value)}
+          aria-label="Filtrar por categoría"
+          className="h-10 rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <option value="">Todas las categorías</option>
+          {categories.data?.map((c) => (
+            <option key={c.id} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+
+        {/* Despublicado es justamente lo que cuesta encontrar: no sale en el
+            sitio, así que la única forma de darse cuenta de que quedó apagado
+            es mirar esta columna tratamiento por tratamiento. */}
+        <select
+          value={filtroPublicado}
+          onChange={(e) => setFiltroPublicado(e.target.value as typeof filtroPublicado)}
+          aria-label="Filtrar por estado de publicación"
+          className="h-10 rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <option value="todos">Publicados y no publicados</option>
+          <option value="si">Sólo publicados</option>
+          <option value="no">Sólo no publicados</option>
+        </select>
+
+        {filtrando && (
+          <Button variant="ghost" onClick={limpiarFiltros}>
+            Limpiar
+          </Button>
+        )}
+
+        <p className="ml-auto text-sm text-muted-foreground">
+          {filtrando
+            ? `${visibles.length} de ${services.data?.length ?? 0} tratamientos`
+            : `${services.data?.length ?? 0} tratamientos`}
+        </p>
+      </div>
+
+      <div className="mt-4 rounded-sm border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
@@ -538,7 +755,7 @@ function AdminServices() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {services.data?.map((s) => (
+            {visibles.map((s) => (
               <TableRow key={s.id}>
                 <TableCell>
                   <div className="flex items-start gap-3">
@@ -574,8 +791,23 @@ function AdminServices() {
                     {s.category}
                   </Badge>
                 </TableCell>
-                <TableCell>{s.duration_minutes} min</TableCell>
-                <TableCell>{formatMoney(s.price)}</TableCell>
+                {/* Con opciones, la tabla muestra el rango y el precio más
+                    barato con "desde": el precio de la fila `services` en ese
+                    caso no se le cobra a nadie, y verlo acá haría dudar de si
+                    quedó bien cargado. Se cuentan sólo las ACTIVAS, que son las
+                    que se pueden reservar. */}
+                <TableCell>{resumenDeVariantes(s).duracion}</TableCell>
+                <TableCell>
+                  {resumenDeVariantes(s).desde && (
+                    <span className="text-xs text-muted-foreground">desde </span>
+                  )}
+                  {formatMoney(resumenDeVariantes(s).precio)}
+                  {s.variants.filter((v) => v.is_active).length > 0 && (
+                    <span className="block text-xs text-muted-foreground">
+                      {s.variants.filter((v) => v.is_active).length} opciones
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">
                   <Switch
                     checked={s.is_published}
@@ -608,10 +840,17 @@ function AdminServices() {
               </TableRow>
             ))}
 
-            {services.data?.length === 0 && (
+            {/* Dos vacíos distintos: no hay nada cargado, o lo que hay no
+                coincide con el filtro. Con un solo mensaje, filtrar por una
+                categoría sin tratamientos hacía pensar que se borró el catálogo. */}
+            {/* `services.data &&`: mientras carga, la lista todavía es vacía y
+                sin esto se veía por un instante "no hay tratamientos". */}
+            {services.data && visibles.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                  Todavía no hay tratamientos cargados.
+                  {services.data.length
+                    ? "Ningún tratamiento coincide con la búsqueda."
+                    : "Todavía no hay tratamientos cargados."}
                 </TableCell>
               </TableRow>
             )}

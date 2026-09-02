@@ -91,23 +91,25 @@ enum app_role {
    */
   professional
 
-  /** Tampoco autoriza por sí solo: lo que habilita es cada user_permissions. */
+  /**
+   * Tampoco autoriza por sí solo: lo que habilita es cada user_permissions.
+   */
   client
   staff
 }
 
 enum app_permission {
-  appointments    // gestionar turnos (ver todos, confirmar, cargar, cancelar)
+  appointments // gestionar turnos (ver todos, confirmar, cargar, cancelar)
   clients_contact // ver la ficha y el teléfono de las clientas
-  clients_notes   // RETIRADO el 27/8/2026: se absorbió en clients_contact. El
-                  // valor se deja porque sacarlo de un enum de Postgres es una
-                  // migración pesada que no gana nada, y las filas que lo
-                  // tenían ya se migraron. No lo pregunta nadie: ver PERMISSIONS.
-  catalog         // editar tratamientos, precios y categorías
-  stock           // mover stock y editar productos
-  stock_costs     // ver los costos de compra
-  team            // gestionar profesionales, sus horarios y tratamientos
-  metrics         // ver el Dashboard y las Métricas del negocio (28/8/2026)
+  clients_notes // RETIRADO el 27/8/2026: se absorbió en clients_contact. El
+  // valor se deja porque sacarlo de un enum de Postgres es una
+  // migración pesada que no gana nada, y las filas que lo
+  // tenían ya se migraron. No lo pregunta nadie: ver PERMISSIONS.
+  catalog // editar tratamientos, precios y categorías
+  stock // mover stock y editar productos
+  stock_costs // ver los costos de compra
+  team // gestionar profesionales, sus horarios y tratamientos
+  metrics // ver el Dashboard y las Métricas del negocio (28/8/2026)
 }
 
 enum appointment_status {
@@ -152,12 +154,10 @@ model users {
 
   /**
    * La cuenta puede entrar.
-   *
    * Es la baja SIN borrar: la empleada que se va de licencia, la que dejó de
    * trabajar pero cuyo historial se quiere conservar, la cuenta que hay que
    * cerrar de urgencia un domingo. Borrarla era lo único que había, y borrar es
    * definitivo.
-   *
    * Se mira en `authMiddleware`, en cada pedido con sesión, no sólo al entrar:
    * el token dura 7 días, así que si sólo se mirara en el login una cuenta
    * suspendida seguiría trabajando una semana. Es el mismo razonamiento por el
@@ -168,13 +168,13 @@ model users {
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  profile          profiles?
-  roles            user_roles[]
-  permissions      user_permissions[]
-  appointments     appointments[]
-  professional     professionals?
-  client_note      client_notes?
-  stock_movements  stock_movements[]
+  profile         profiles?
+  roles           user_roles[]
+  permissions     user_permissions[]
+  appointments    appointments[]
+  professional    professionals?
+  client_note     client_notes?
+  stock_movements stock_movements[]
 }
 
 // La ficha de la clienta. NO tiene el mail y es deliberado: vive en users, y
@@ -234,7 +234,7 @@ model client_notes {
 // traslado. El renombrado atómico de una categoría lo resuelve
 // rename_service_category (20260816000000), que actualiza las dos tablas juntas.
 model services {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name             String
   // La parte legible de la URL: /servicios/drenaje-linfatico en vez de
   // /servicios/11111111-1111-4111-8111-111111111104.
@@ -255,10 +255,10 @@ model services {
   // 2. Deja que una fila entre por fuera de la app —el seed, un INSERT a mano,
   //    un import— sin quedar rota. El código cae al UUID cuando el slug no
   //    está, así que una ficha sin slug se ve fea en la barra pero anda.
-  slug             String?  @unique
+  slug             String? @unique
   description      String?
-  category         String   @default("General")
-  duration_minutes Int      @default(60)
+  category         String  @default("General")
+  duration_minutes Int     @default(60)
   // Los minutos de limpieza que este tratamiento pide DESPUÉS, antes de que
   // entre la clienta siguiente.
   //
@@ -276,16 +276,41 @@ model services {
   // El default de 10 es el número que el centro había definido el 18/8/2026
   // para todo el catálogo, así que ningún tratamiento cambia de comportamiento
   // porque esta columna aparezca.
-  buffer_minutes   Int      @default(10)
-  price            Decimal  @default(0) @db.Decimal(12, 2)
+  buffer_minutes   Int     @default(10)
+  price            Decimal @default(0) @db.Decimal(12, 2)
+
+  /**
+   * Cuántas sesiones son, y cada cuántos días.
+   * Hay tratamientos que no se terminan en una visita: son tres sesiones cada
+   * veintiún días, y la clienta tiene que saberlo ANTES de reservar. Con 1 —el
+   * default, y el caso de casi todo el catálogo— nada de esto se muestra ni
+   * cambia nada.
+   * ── LA PLATA ES DEL PAQUETE, NO DE CADA SESIÓN ──────────────────────────
+   * `price` sigue siendo UN precio y es el del tratamiento completo. Se cobra
+   * una vez: `validarTurno` lo congela en la PRIMERA sesión y les pone 0 a las
+   * siguientes. Sin eso, las métricas contarían la misma venta tres veces —y
+   * ése es el error que no se nota, porque cada turno mirado de a uno se ve
+   * bien.
+   * ── EL INTERVALO NO ES UNA REJA ─────────────────────────────────────────
+   * La clienta reserva SÓLO la primera sesión; las que siguen las agenda el
+   * centro cuando ella viene. Así que estos días son con lo que el panel
+   * propone la fecha de la próxima, no un candado sobre el calendario: si la
+   * clienta se va de viaje, la sesión 2 va cuando se pueda y el turno se carga
+   * igual.
+   * 0 días es legítimo y quiere decir "sin espera sugerida".
+   */
+  sessions_count        Int @default(1)
+  session_interval_days Int @default(0)
+
   // La mantiene el trigger sync_service_cover, igualada a la primera foto de la
   // galería. No la escribas a mano ni la seedees. Ver Fase 3.
-  image_url        String?
-  is_published     Boolean  @default(false)
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  image_url    String?
+  is_published Boolean  @default(false)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   media                 service_media[]
+  variants              service_variants[]
   professional_services professional_services[]
   appointments          appointments[]
 }
@@ -294,6 +319,57 @@ model service_categories {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String   @unique
   created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/**
+ * Las opciones de un mismo tratamiento: "solo espalda" y "cuerpo completo".
+ * ── POR QUÉ UNA TABLA Y NO DOS TRATAMIENTOS ──────────────────────────────────
+ * Porque es UN tratamiento. Duplicar la ficha duplica la foto, la descripción,
+ * la categoría, el slug y la lista de profesionales que lo realizan, y las dos
+ * copias empiezan a separarse la primera vez que alguien edita una sola. Lo
+ * único que cambia entre las opciones es cuánto dura, cuánto sale y cuánto deja
+ * para limpiar.
+ * ── EL TRATAMIENTO SIGUE TENIENDO PRECIO Y DURACIÓN PROPIOS ──────────────────
+ * `services.price` y `services.duration_minutes` no se vacían ni se vuelven
+ * opcionales. Son los del tratamiento SIN variantes, que son la enorme mayoría
+ * del catálogo, y sacarlos obligaría a crear una variante boba para cada uno.
+ * Cuando hay variantes activas, mandan ellas: el catálogo muestra "desde $X" y
+ * la reserva exige elegir una. Lo decide `variantesDe()`, un solo lugar.
+ * `is_active` en vez de borrar: una opción que se deja de ofrecer tiene turnos
+ * viejos apuntando a ella. Apagarla la saca de la reserva y deja el historial
+ * en pie.
+ */
+model service_variants {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  service_id String @db.Uuid
+  // "Solo espalda", "Cuerpo completo". Sin el nombre del tratamiento adentro:
+  // se muestra siempre al lado de él.
+  name       String
+
+  duration_minutes Int
+  // Propio y no heredado del tratamiento: un "cuerpo completo" deja la cabina
+  // para limpiar de otra manera que un "solo espalda". El formulario lo
+  // arranca con el del tratamiento, así que no cargarlo tampoco es un problema.
+  buffer_minutes   Int     @default(10)
+  price            Decimal @default(0) @db.Decimal(12, 2)
+
+  // El orden en que se muestran. Lo elige el centro: casi siempre es de la
+  // opción más chica a la más grande, que no es ni alfabético ni por precio.
+  position   Int      @default(0)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  service      services       @relation(fields: [service_id], references: [id], onDelete: Cascade)
+  appointments appointments[]
+
+  // Cascade y no SetNull, al revés que en appointments: una variante sin
+  // tratamiento no es nada. El historial de turnos no se pierde igual, porque
+  // el turno se queda con `variant_name` congelado.
+
+  // Mismo criterio que service_media: sin @@unique([service_id, position]),
+  // porque reordenar de a una fila pasa por posiciones repetidas.
+  @@index([service_id, position])
 }
 
 // Sin @@unique([service_id, position]) a propósito: reordenar de a una fila pasa
@@ -418,45 +494,69 @@ model appointments {
 
   // NULL a propósito: son los turnos de invitada, que carga el centro por
   // teléfono para alguien sin cuenta. No es un dato faltante.
-  client_id       String?            @db.Uuid
+  client_id        String?  @db.Uuid
   // NULL cuando el tratamiento se borró del catálogo. El turno viejo sigue
   // existiendo con su nombre y su precio congelados; ver `service_name`.
-  service_id      String?            @db.Uuid
-  professional_id String?            @db.Uuid
-  starts_at       DateTime           @db.Timestamptz(6)
+  service_id       String?  @db.Uuid
+  /**
+   * Qué opción del tratamiento se reservó, cuando el tratamiento tiene.
+   * NULL en la enorme mayoría de los turnos: es un tratamiento sin variantes.
+   * También queda NULL si la opción se borra del catálogo — por eso al lado
+   * viaja `variant_name`, congelado igual que `service_name` y por el mismo
+   * motivo. Un turno de "Masaje" que costó $65.000 no dice lo mismo que uno de
+   * "Masaje — cuerpo completo", y el precio congelado solo no lo explica.
+   */
+  variant_id       String?  @db.Uuid
+  professional_id  String?  @db.Uuid
+  starts_at        DateTime @db.Timestamptz(6)
   // Lo pisa la base con el del tratamiento: no lo manda el cliente.
-  duration_minutes Int               @default(60)
+  duration_minutes Int      @default(60)
   // El margen de limpieza del tratamiento, congelado igual que el precio.
   //
   // No es prolijidad: `service_id` es nullable a propósito —el turno sobrevive
   // al borrado del tratamiento— y sin esta copia un turno huérfano no tendría
   // de dónde sacar su margen, así que la agenda calcularía mal los huecos que
   // lo rodean. Lo escribe `validarTurno`, nunca quien llama.
-  buffer_minutes  Int               @default(10)
-  status          appointment_status @default(pending)
-  client_notes    String?
-  admin_notes     String?
+  buffer_minutes   Int      @default(10)
+  /**
+   * Las sesiones de un mismo tratamiento, atadas entre sí.
+   * `series_id` es **el id de la PRIMERA sesión**, y por eso la primera lo
+   * tiene en NULL: sería apuntarse a sí misma. Se eligió así en vez de un uuid
+   * aparte porque no hay que inventar ninguna clave nueva ni generarla antes
+   * del INSERT — la serie entera se busca con
+   * where: { OR: [{ id: primera }, { series_id: primera }] }
+   * `session_number` y `sessions_total` van congelados en el turno, igual que
+   * el precio y el nombre: si mañana el tratamiento pasa de 3 sesiones a 4, el
+   * turno de la clienta que ya empezó tiene que seguir diciendo "2 de 3", que
+   * es lo que ella reservó.
+   * En un tratamiento de una sola sesión —casi todo el catálogo— esto es NULL,
+   * 1 y 1, y no se muestra en ninguna pantalla.
+   */
+  series_id        String?  @db.Uuid
+  session_number   Int      @default(1)
+  sessions_total   Int      @default(1)
+
+  status       appointment_status @default(pending)
+  client_notes String?
+  admin_notes  String?
 
   /**
    * Por qué se canceló, escrito por quien lo canceló.
-   *
    * ⚠️ **Este texto SE LE MANDA A LA CLIENTA** cuando el centro cancela, así que
    * la pantalla lo dice al pedirlo. No es una nota interna: para eso está
    * `admin_notes`, que no sale de la app.
-   *
    * Sirve para los dos lados. Si cancela el centro, es la explicación que la
    * clienta recibe en el mail —"se nos rompió el equipo", "la profesional está
    * enferma"— en vez de un "tuvimos que cancelar" a secas. Si cancela la
    * clienta, es lo que el centro lee en la ficha para saber si perdió una venta
    * por precio, por horario o porque se enfermó.
-   *
    * Es opcional a propósito: obligar a escribir algo para poder cancelar un
    * turno es la clase de traba que termina con todo el mundo escribiendo "x".
    */
-  cancel_reason   String?
+  cancel_reason     String?
   // Congelado a propósito: es el precio del día que se reservó, no el actual
   // del catálogo. No lo reemplaces por un join a services.price.
-  price           Decimal            @db.Decimal(12, 2)
+  price             Decimal   @db.Decimal(12, 2)
   // El nombre del tratamiento, congelado igual que el precio y por el mismo
   // motivo — y además por uno propio: es lo que deja BORRAR un tratamiento del
   // catálogo sin que el historial quede diciendo "turno de nada". Lo escribe
@@ -465,7 +565,14 @@ model appointments {
   // Opcional sólo por los turnos que existían antes de esta columna; el CHECK
   // `appointments_names_its_service` de reglas.sql exige que haya nombre o
   // service_id, así que un turno sin ninguno de los dos no se puede escribir.
-  service_name    String?
+  service_name      String?
+  /**
+   * La opción elegida, congelada: "Cuerpo completo".
+   * Sin CHECK que la ate a `variant_id`, a diferencia de `service_name`: acá
+   * NULL es el caso normal —el tratamiento no tiene variantes— y no un dato que
+   * falta. Lo escribe `validarTurno`, nunca quien llama.
+   */
+  variant_name      String?
   // El nombre de la profesional, congelado por el mismo motivo que el del
   // tratamiento: es lo que deja BORRAR una ficha del equipo sin que los turnos
   // que esa persona atendió queden diciendo "sin asignar".
@@ -480,14 +587,14 @@ model appointments {
   // un turno sin profesional y sin nombre es legítimo — es el que el centro
   // carga sin decidir todavía quién atiende.
   professional_name String?
-  guest_name      String?
-  guest_phone     String?
-  guest_email     String?
-  reminded_at     DateTime?          @db.Timestamptz(6)
-  created_at      DateTime           @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  guest_name        String?
+  guest_phone       String?
+  guest_email       String?
+  reminded_at       DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  client       users?         @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  client       users?            @relation(fields: [client_id], references: [id], onDelete: Cascade)
   // SetNull y no RESTRICT ni CASCADE.
   //
   // CASCADE nunca: borrar un tratamiento no puede llevarse puesto el historial
@@ -501,8 +608,12 @@ model appointments {
   // frenando — pero en el controlador, mirando el estado, que es donde se puede
   // explicar por qué. La base no distingue un turno de mañana de uno del año
   // pasado.
-  service      services?      @relation(fields: [service_id], references: [id], onDelete: SetNull)
-  professional professionals? @relation(fields: [professional_id], references: [id], onDelete: SetNull)
+  service      services?         @relation(fields: [service_id], references: [id], onDelete: SetNull)
+  // SetNull por lo mismo que `service`: sacar una opción del catálogo no puede
+  // llevarse puesto el turno que la usó. Lo que quedó dicho está en
+  // `variant_name` y en `price`.
+  variant      service_variants? @relation(fields: [variant_id], references: [id], onDelete: SetNull)
+  professional professionals?    @relation(fields: [professional_id], references: [id], onDelete: SetNull)
 
   // Los dos índices que appointments tenía desde la primera migración de
   // Supabase. Hay que declararlos: Prisma NO crea índices sobre las claves
@@ -516,6 +627,9 @@ model appointments {
   // escribir: viven en 20260820000002_indices_parciales.
   @@index([starts_at])
   @@index([client_id])
+  // Buscar las sesiones que siguen a una: se pregunta en cada turno de una
+  // serie, para saber si ya está agendada la próxima.
+  @@index([series_id])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

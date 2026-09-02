@@ -74,6 +74,16 @@ export type NotifiableAppointment = {
    * "tuvimos que cancelar tu turno. Motivo:" seguido de nada.
    */
   cancelReason?: string | null;
+  /**
+   * Qué sesión de la serie es este turno, y de cuántas.
+   *
+   * Ausentes o 1 de 1 en casi todos los turnos, y ahí los mensajes no dicen
+   * nada de sesiones. Con más de una, la clienta necesita leer en qué punto del
+   * tratamiento está: tres mails iguales del mismo tratamiento, con tres fechas
+   * distintas, se leen como un error del sistema.
+   */
+  sessionNumber?: number;
+  sessionsTotal?: number;
 };
 
 export type AppointmentMessage = {
@@ -134,6 +144,19 @@ function whenPhrase(startsAt: string): string {
   return `el ${day} a las ${time}`;
 }
 
+/**
+ * "Es la sesión 2 de 3 de tu tratamiento." — o null si es de una sola.
+ *
+ * Sale como renglón propio y no pegado al nombre del tratamiento porque es
+ * información de otro orden: el nombre dice QUÉ se hace, esto dice DÓNDE está
+ * parada la clienta en un tratamiento que empezó hace tres semanas.
+ */
+function sessionPhrase(appointment: NotifiableAppointment): string | null {
+  const { sessionNumber, sessionsTotal } = appointment;
+  if (!sessionsTotal || sessionsTotal <= 1 || !sessionNumber) return null;
+  return `Es la sesión ${sessionNumber} de ${sessionsTotal} de tu tratamiento.`;
+}
+
 /** "Peeling químico, con Micaela" — y se banca que falte cualquiera de los dos. */
 function whatPhrase(appointment: NotifiableAppointment): string | null {
   const { serviceName, professionalName } = appointment;
@@ -155,7 +178,19 @@ export function buildAppointmentMessage(
   const who = firstName(appointment.clientName);
   const when = whenPhrase(appointment.startsAt);
   const what = whatPhrase(appointment);
+  const sesion = sessionPhrase(appointment);
   const place = `${CONTACT.address}, ${CONTACT.city}`;
+
+  /*
+   * Lo que hay que aclarar la PRIMERA vez de un tratamiento de varias sesiones,
+   * y sólo la primera: que esto no termina hoy y que las fechas que siguen se
+   * acuerdan en el centro. Repetirlo en la sesión 2 sería explicarle a alguien
+   * algo que ya está viviendo.
+   */
+  const avisoDeSerie =
+    sesion && appointment.sessionNumber === 1
+      ? "Las próximas sesiones las coordinamos con vos cuando vengas."
+      : null;
 
   switch (event) {
     // Lo primero que la clienta recibe, y el único mail que llega sin que nadie
@@ -169,6 +204,8 @@ export function buildAppointmentMessage(
           "",
           `Recibimos tu pedido de turno ${when}.`,
           ...(what ? [what] : []),
+          ...(sesion ? [sesion] : []),
+          ...(avisoDeSerie ? [avisoDeSerie] : []),
           "",
           "Todavía no está confirmado: lo revisamos y te avisamos por este mismo medio.",
           "",
@@ -185,6 +222,8 @@ export function buildAppointmentMessage(
           "",
           `Tu turno ${when} quedó confirmado.`,
           ...(what ? [what] : []),
+          ...(sesion ? [sesion] : []),
+          ...(avisoDeSerie ? [avisoDeSerie] : []),
           "",
           `Te esperamos en ${place}.`,
           tolerancia,
@@ -278,6 +317,11 @@ export function buildAppointmentMessage(
           "",
           `Te recordamos tu turno ${when}.`,
           ...(what ? [what] : []),
+          // En el recordatorio la sesión importa más que en ningún otro
+          // mensaje: pasaron semanas desde la anterior y es lo que ubica a la
+          // clienta en qué viene mañana. El aviso de "las próximas las
+          // coordinamos" no va acá, que ya lo leyó al reservar.
+          ...(sesion ? [sesion] : []),
           "",
           `Te esperamos en ${place}.`,
           "Si no podés venir, avisanos así liberamos el horario.",

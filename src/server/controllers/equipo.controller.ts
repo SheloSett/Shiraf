@@ -651,6 +651,7 @@ async function turnosDentroDe(
       starts_at: true,
       guest_name: true,
       service_name: true,
+      variant_name: true,
       service: { select: { name: true } },
       client: { select: { profile: { select: { full_name: true } } } },
     },

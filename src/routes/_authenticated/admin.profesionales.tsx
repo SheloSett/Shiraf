@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -40,6 +40,7 @@ import { useAccess } from "@/hooks/useAccess";
 import type { Permission } from "@/lib/permissions";
 import {
   agruparPorDia,
+  aSlug,
   diaConTramosSuperpuestos,
   formatDateTime,
   soloHoraYMinutos,
@@ -193,6 +194,15 @@ function AdminProfessionals() {
   const [draftServices, setDraftServices] = useState<Set<string>>(new Set());
   const [draftSchedules, setDraftSchedules] = useState<DraftSchedule[]>([]);
 
+  /**
+   * Lo tipeado en el buscador de tratamientos del formulario.
+   *
+   * El catálogo pasó de un puñado a más de veinte, y tildar seis en una lista
+   * alfabética de veintidós dentro de una cajita con scroll propio —adentro de
+   * un diálogo que también scrollea— era buscar con el dedo en la pantalla.
+   */
+  const [buscaServicio, setBuscaServicio] = useState("");
+
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
   /** Baja temporal a confirmar. Sólo se pide confirmación si tiene turnos futuros. */
   const [deactivating, setDeactivating] = useState<{
@@ -224,6 +234,54 @@ function AdminProfessionals() {
     // catálogo — igual que hacía la policy.
     queryFn: async () => (await api<RtaServiciosParaElegir>("/api/equipo/servicios")).servicios,
   });
+
+  /**
+   * Los tratamientos del formulario, filtrados por lo que se buscó y agrupados
+   * por categoría.
+   *
+   * Agrupados porque así es como se piensa el trabajo de una profesional: hace
+   * los faciales, o hace corporal — no una selección arbitraria de veintidós
+   * nombres sueltos. Con los grupos aparece además el «Elegir todos» de la
+   * categoría, que es el gesto real en la mayoría de las altas.
+   *
+   * El filtro compara por slug (`aSlug`) y no por texto crudo: así "pestanas"
+   * encuentra "Cejas y pestañas" y no hace falta acordarse de la tilde ni de la
+   * eñe para dar con un tratamiento.
+   */
+  const gruposDeServicios = useMemo(() => {
+    const busca = aSlug(buscaServicio);
+    const lista = (services.data ?? []).filter(
+      (s) => !busca || aSlug(`${s.name} ${s.category}`).includes(busca),
+    );
+
+    const porCategoria = new Map<string, typeof lista>();
+    for (const s of lista) {
+      const bucket = porCategoria.get(s.category);
+      if (bucket) bucket.push(s);
+      else porCategoria.set(s.category, [s]);
+    }
+
+    return [...porCategoria.entries()].sort(([a], [b]) => a.localeCompare(b, "es"));
+  }, [services.data, buscaServicio]);
+
+  /**
+   * Marca o desmarca de una toda una categoría.
+   *
+   * Desmarca sólo si ya estaban TODOS los de esa categoría tildados; si había
+   * algunos, completa. Es lo que espera quien lo toca: el botón dice lo que va
+   * a pasar, no invierte tratamiento por tratamiento.
+   */
+  function alternarCategoria(items: { id: string }[]) {
+    const estabanTodos = items.every((s) => draftServices.has(s.id));
+    setDraftServices((prev) => {
+      const next = new Set(prev);
+      for (const s of items) {
+        if (estabanTodos) next.delete(s.id);
+        else next.add(s.id);
+      }
+      return next;
+    });
+  }
 
   /**
    * Turnos futuros sin realizar, por profesional.
@@ -546,6 +604,9 @@ function AdminProfessionals() {
     setForm(EMPTY_FORM);
     setDraftServices(new Set());
     setDraftSchedules([]);
+    // Lo buscado tampoco sobrevive al cierre: al abrir la ficha siguiente, la
+    // lista tiene que estar entera y no filtrada por lo que se tipeó recién.
+    setBuscaServicio("");
     // La contraseña sobre todo: queda en pantalla en texto plano y no tiene por
     // qué seguir ahí cuando se vuelve a abrir el formulario para otra persona.
     setAltaEmail("");
@@ -989,36 +1050,75 @@ function AdminProfessionals() {
             </div>
 
             <div>
-              <p className="text-eyebrow border-b border-border pb-3 text-gold">
-                Tratamientos que realiza
-              </p>
-              <div className="mt-4 grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2">
-                {services.data?.map((s) => (
-                  <label
-                    key={s.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-sm border border-border p-3"
-                  >
-                    <Checkbox
-                      className="mt-0.5"
-                      checked={draftServices.has(s.id)}
-                      onCheckedChange={(checked) =>
-                        setDraftServices((prev) => {
-                          const next = new Set(prev);
-                          if (checked) next.add(s.id);
-                          else next.delete(s.id);
-                          return next;
-                        })
-                      }
-                    />
-                    <span>
-                      <span className="block text-sm text-foreground">{s.name}</span>
-                      <span className="text-xs text-muted-foreground">{s.category}</span>
-                    </span>
-                  </label>
-                ))}
-                {services.data?.length === 0 && (
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border pb-3">
+                <p className="text-eyebrow text-gold">Tratamientos que realiza</p>
+                {/* Cuántos van elegidos, siempre a la vista: con la lista
+                    filtrada o scrolleada, los tildados quedan fuera de pantalla
+                    y no había forma de saber si se marcó algo. */}
+                <p className="text-xs text-muted-foreground">
+                  {draftServices.size} de {services.data?.length ?? 0} elegidos
+                </p>
+              </div>
+
+              <Input
+                className="mt-4"
+                placeholder="Buscar tratamiento…"
+                value={buscaServicio}
+                onChange={(e) => setBuscaServicio(e.target.value)}
+                aria-label="Buscar tratamiento"
+              />
+
+              <div className="mt-4 max-h-72 space-y-5 overflow-y-auto pr-1">
+                {gruposDeServicios.map(([category, items]) => {
+                  const todos = items.every((s) => draftServices.has(s.id));
+                  return (
+                    <div key={category}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="text-xs font-semibold tracking-wide text-foreground uppercase">
+                          {category}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => alternarCategoria(items)}
+                          className="cursor-pointer text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                        >
+                          {todos ? "Quitar todos" : "Elegir todos"}
+                        </button>
+                      </div>
+
+                      {/* La categoría ya no se repite en cada ficha: está en el
+                          encabezado del grupo, y sin ese segundo renglón entran
+                          casi el doble de tratamientos sin scrollear. */}
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {items.map((s) => (
+                          <label
+                            key={s.id}
+                            className="flex cursor-pointer items-center gap-3 rounded-sm border border-border p-3"
+                          >
+                            <Checkbox
+                              checked={draftServices.has(s.id)}
+                              onCheckedChange={(checked) =>
+                                setDraftServices((prev) => {
+                                  const next = new Set(prev);
+                                  if (checked) next.add(s.id);
+                                  else next.delete(s.id);
+                                  return next;
+                                })
+                              }
+                            />
+                            <span className="text-sm text-foreground">{s.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {gruposDeServicios.length === 0 && (
                   <p className="text-sm text-muted-foreground">
-                    Todavía no hay tratamientos cargados.
+                    {services.data?.length
+                      ? `Ningún tratamiento coincide con “${buscaServicio}”.`
+                      : "Todavía no hay tratamientos cargados."}
                   </p>
                 )}
               </div>

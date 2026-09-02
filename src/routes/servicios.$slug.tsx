@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { RtaProfesionalesConHorarios, RtaServicio } from "@/lib/api-tipos";
 import { imageUrl, videoPosterUrl, videoUrl } from "@/lib/cloudinary";
-import { agruparPorDia, formatMoney, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
+import { agruparPorDia, aSlug, formatMoney, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
 
 // El archivo se llamaba `servicios.$serviceId.tsx` y la ruta era
 // "/servicios/$serviceId". Cambió junto con lo que viaja en la URL: antes era
@@ -163,8 +163,14 @@ function ServiceDetail() {
       <section className="grid items-stretch gap-y-10 lg:grid-cols-12">
         <div className="px-5 pt-14 lg:col-span-5 lg:col-start-2 lg:flex lg:flex-col lg:justify-center lg:px-0 lg:py-24">
           <Reveal>
+            {/* Vuelve al catálogo FILTRADO por la categoría de este
+                tratamiento. El «atrás» del navegador ya conserva el filtro
+                —ahora vive en la URL— pero este enlace es la otra forma de
+                volver, y llevaba siempre al catálogo entero: se perdía el grupo
+                que se estaba mirando. */}
             <Link
               to="/servicios"
+              search={s.category ? { categoria: aSlug(s.category) } : {}}
               className="text-eyebrow text-muted-foreground underline-offset-8 hover:text-foreground hover:underline"
             >
               ← Tratamientos
@@ -205,10 +211,22 @@ function ServiceDetail() {
                 pantalla de crema vacía al lado, con el precio y el botón de
                 reservar empujados fuera de la vista.
 
-                El texto no se pierde: completo y en párrafos, más abajo. */}
-            {parrafos[0] && (
+                El texto no se pierde: completo y en párrafos, más abajo.
+
+                ── POR QUÉ VA LA DESCRIPCIÓN ENTERA Y NO EL PRIMER PÁRRAFO ──
+
+                Porque el primer párrafo puede no ser una bajada. "Pulidos
+                corporales" arranca con "Categoría recomendada:" —una nota que
+                quedó pegada del texto que sube el centro— y con eso solo, el
+                hero mostraba un renglón suelto, sin sentido, y media pantalla
+                vacía debajo del título.
+
+                Unida y cortada a seis renglones, el corte cae donde tenga que
+                caer y siempre se lee texto de verdad. Los párrafos siguen
+                existiendo abajo, que es donde se leen como párrafos. */}
+            {parrafos.length > 0 && (
               <p className="mt-8 line-clamp-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-                {parrafos[0]}
+                {parrafos.join(" ")}
               </p>
             )}
 
@@ -221,20 +239,77 @@ function ServiceDetail() {
               </a>
             )}
 
-            <div className="mt-10 flex items-baseline gap-10 border-t border-border pt-6">
-              <div>
-                <p className="text-eyebrow text-muted-foreground/70">Duración</p>
-                <p className="mt-2 font-display text-3xl text-foreground">
-                  {s.duration_minutes} min
-                </p>
+            {/* Con opciones, la tabla de abajo dice el precio de cada una y
+                este bloque sería un tercer número compitiendo con esos dos. Sin
+                opciones, es lo de siempre. */}
+            {s.variants.length === 0 ? (
+              <div className="mt-10 flex items-baseline gap-10 border-t border-border pt-6">
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">Duración</p>
+                  <p className="mt-2 font-display text-3xl text-foreground">
+                    {s.duration_minutes} min
+                  </p>
+                </div>
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">Valor</p>
+                  <p className="mt-2 font-display text-3xl tabular-nums text-foreground">
+                    {formatMoney(s.price)}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-eyebrow text-muted-foreground/70">Valor</p>
-                <p className="mt-2 font-display text-3xl tabular-nums text-foreground">
-                  {formatMoney(s.price)}
-                </p>
+            ) : (
+              /* `max-w-md`, el mismo ancho que la bajada de arriba: sin eso la
+                 lista se estiraba hasta el borde de la columna y el precio
+                 quedaba pegado al canto de la foto, sin aire — se leía como si
+                 estuviera cortado. Con el tope queda una franja de crema entre
+                 el texto y el flyer, y la lista respeta la misma medida que el
+                 resto de la columna. */
+              <div className="mt-10 max-w-md border-t border-border pt-6">
+                <p className="text-eyebrow text-muted-foreground/70">Opciones</p>
+                {/* Cada opción con su duración y su precio, una debajo de la
+                    otra. La elección se hace al reservar, no acá: este es el
+                    lugar donde se compara, y meter botones sería empezar la
+                    reserva en la mitad de la ficha. */}
+                <ul className="mt-4">
+                  {s.variants.map((v) => (
+                    <li
+                      key={v.id}
+                      className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-0.5 border-b border-border/60 py-2.5 last:border-0 last:pb-0"
+                    >
+                      <span className="text-[15px] text-foreground">{v.name}</span>
+                      <span className="flex items-baseline gap-3">
+                        <span className="text-xs text-muted-foreground/70">
+                          {v.duration_minutes} min
+                        </span>
+                        {/* Un escalón más chico que el precio único de un
+                            tratamiento sin opciones: son dos o tres números
+                            repetidos, y en el cuerpo grande competían con el
+                            título en vez de leerse como una lista. */}
+                        <span className="font-display text-xl tabular-nums text-foreground">
+                          {formatMoney(v.price)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
+            )}
+
+            {/* Que son varias sesiones se dice ACÁ, arriba del botón, y no en
+                la letra chica de más abajo: es parte de lo que la clienta está
+                comprando —tres visitas, no una— y enterarse después de reservar
+                es enterarse tarde. Con una sola sesión no aparece nada. */}
+            {s.sessions_count > 1 && (
+              <p className="mt-8 max-w-md rounded-sm border border-gold/40 bg-gold/5 px-4 py-3 text-sm leading-relaxed text-foreground">
+                Este tratamiento son{" "}
+                <strong className="font-medium">{s.sessions_count} sesiones</strong>
+                {s.session_interval_days > 0
+                  ? ` con ${s.session_interval_days} días entre una y otra`
+                  : ""}
+                . El valor es por el tratamiento completo. Reservás la primera y las siguientes las
+                coordinamos con vos en el centro.
+              </p>
+            )}
 
             <Button asChild size="lg" className="mt-10 w-fit">
               <Link to="/reservar" search={{ service: s.id }}>

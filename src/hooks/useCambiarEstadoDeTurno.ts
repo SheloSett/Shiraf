@@ -42,6 +42,15 @@ export function toNotifiable(a: {
   services: { name: string } | null;
   professionals: { full_name: string } | null;
   person: { name: string; phone: string | null };
+  /**
+   * Qué sesión es, cuando la pantalla lo sabe.
+   *
+   * Opcionales porque no todas las pantallas que arman un aviso los tienen a
+   * mano, y un tratamiento de una sola sesión no los necesita: sin ellos el
+   * mensaje sale igual que siempre.
+   */
+  session_number?: number;
+  sessions_total?: number;
 }): NotifiableAppointment {
   return {
     startsAt: a.starts_at,
@@ -49,6 +58,11 @@ export function toNotifiable(a: {
     clientPhone: a.person.phone,
     serviceName: a.services?.name ?? null,
     professionalName: a.professionals?.full_name ?? null,
+    // Sólo si son varias: con `exactOptionalPropertyTypes` no da lo mismo
+    // mandar la clave en `undefined` que no mandarla.
+    ...(a.sessions_total && a.sessions_total > 1
+      ? { sessionNumber: a.session_number ?? 1, sessionsTotal: a.sessions_total }
+      : {}),
   };
 }
 

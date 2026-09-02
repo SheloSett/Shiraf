@@ -85,6 +85,7 @@ const SELECT_DE_AGENDA = {
   service: { select: { name: true } },
   // El nombre congelado, por si el tratamiento ya no está en el catálogo.
   service_name: true,
+  variant_name: true,
   client: {
     select: {
       profile: { select: { full_name: true, phone: true } },

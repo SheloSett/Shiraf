@@ -1,6 +1,7 @@
 import { createRouter } from "@/server/http";
 import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middleware";
 import {
+  agendarSiguienteSesion,
   alcanceDeInvitada,
   avisosDeManana,
   borrar,
@@ -52,6 +53,11 @@ turnosRouter.put("/:id/horario", ...gestionarTurnos, reprogramar);
 turnosRouter.get("/:id/profesionales", ...gestionarTurnos, profesionalesParaElTurno);
 turnosRouter.put("/:id/profesional", ...gestionarTurnos, cambiarProfesional);
 turnosRouter.post("/", ...gestionarTurnos, crear);
+
+// La sesion siguiente de un tratamiento de varias. Va como POST sobre el turno
+// anterior y no como un alta suelta porque de ahi sale todo: la clienta, el
+// tratamiento, la opcion y de que serie es. Ver agendarSiguienteSesion.
+turnosRouter.post("/:id/siguiente-sesion", ...gestionarTurnos, agendarSiguienteSesion);
 
 // El formulario de «Nuevo turno».
 turnosRouter.get("/clientas", ...gestionarTurnos, clientasParaElegir);

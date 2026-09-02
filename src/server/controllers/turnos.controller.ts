@@ -152,11 +152,18 @@ export async function listar(ctx: Ctx) {
       starts_at: true,
       status: true,
       duration_minutes: true,
+      // Los usa el buscador de horarios al agendar la sesión siguiente.
+      buffer_minutes: true,
+      professional_id: true,
       client_notes: true,
       ...DATOS_DE_LA_PERSONA,
-      service: { select: { name: true, price: true } },
+      // `session_interval_days` sale del catálogo y no del turno: es con lo
+      // que se propone la fecha de la próxima sesión, y si el centro cambia el
+      // intervalo, la propuesta tiene que seguir al catálogo.
+      service: { select: { name: true, price: true, session_interval_days: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
+      variant_name: true,
       price: true,
       // `is_active` viaja a la pantalla: es lo que le permite marcar en rojo al
       // turno de una profesional que ya no atiende.
@@ -164,8 +171,15 @@ export async function listar(ctx: Ctx) {
       // El nombre congelado: es lo único que queda cuando la ficha del equipo se
       // borró, y sin esto el turno viejo se vería igual que uno sin asignar.
       professional_name: true,
+      // De qué serie es y qué sesión: con eso la fila dice "sesión 2 de 3" y el
+      // panel sabe si todavía falta agendar la siguiente.
+      series_id: true,
+      session_number: true,
+      sessions_total: true,
     },
   });
+
+  const yaAgendadas = await sesionesYaAgendadas(turnos);
 
   return json({
     turnos: turnos.map((t) => ({
@@ -184,13 +198,86 @@ export async function listar(ctx: Ctx) {
       // nombre sale congelado de la fila y el precio se cae al que se cobró.
       services: {
         name: nombreDelTratamiento(t),
-        price: comoNumero(t.service ? t.service.price : t.price),
+        // EL PRECIO DEL TURNO, congelado, y no el del catálogo.
+        //
+        // Decía `t.service ? t.service.price : t.price`: el del catálogo
+        // mientras el tratamiento existiera, y el congelado sólo si se había
+        // borrado. Eso ya contradecía al esquema —«no lo reemplaces por un
+        // join a services.price»— y con lo de esta semana pasó a mostrar
+        // números directamente falsos:
+        //
+        //   · con OPCIONES, `services.price` es el del tratamiento «a secas»,
+        //     que no se le cobra a nadie: un «cuerpo completo» de 85.000
+        //     figuraba en 0;
+        //   · con VARIAS SESIONES, el precio del paquete quedó en la primera
+        //     y las siguientes valen 0, pero el join les devolvía el paquete
+        //     entero — la misma plata, tres veces, en pantalla.
+        //
+        // El congelado es el que se acordó con la clienta ese día, que es lo
+        // único que esta lista tiene que decir.
+        price: comoNumero(t.price),
       },
       professionals: t.professional,
       professional_name: t.professional_name,
+      professional_id: t.professional_id,
+      buffer_minutes: t.buffer_minutes,
       person: personaDe(t),
+      session_number: t.session_number,
+      sessions_total: t.sessions_total,
+      next_session_booked: yaAgendadas.has(
+        claveDeSesion(t.series_id ?? t.id, t.session_number + 1),
+      ),
+      next_session_suggested_at: fechaSugerida(t.starts_at, t.service?.session_interval_days),
     })),
   } satisfies RtaTurnos);
+}
+
+/**
+ * Cuándo tocaría la sesión siguiente: esta fecha más los días del tratamiento.
+ *
+ * A la MISMA hora que la sesión anterior, que es lo que la clienta ya sabe que
+ * le funciona. Null cuando no hay intervalo cargado o el tratamiento se borró:
+ * ahí no hay nada que proponer y el diálogo abre en blanco.
+ */
+function fechaSugerida(desde: Date, dias: number | undefined): string | null {
+  if (!dias || dias <= 0) return null;
+  const cuando = new Date(desde);
+  cuando.setDate(cuando.getDate() + dias);
+  return cuando.toISOString();
+}
+
+/** "<id de la serie>#<numero de sesion>", la clave con que se cruzan las series. */
+function claveDeSesion(serie: string, numero: number): string {
+  return `${serie}#${numero}`;
+}
+
+/**
+ * De qué series ya está cargada la sesión que sigue.
+ *
+ * ── POR QUÉ UNA CONSULTA APARTE Y NO UNA POR FILA ─────────────────────────
+ *
+ * La tabla puede traer doscientos turnos y preguntar "¿ya está la próxima?"
+ * por cada uno serían doscientas consultas. Acá se juntan los ids de todas las
+ * series que aparecen en la página y se pregunta UNA vez por todas.
+ *
+ * Devuelve un Set de "serie#numero" — o sea, qué sesiones existen — y la fila
+ * pregunta por la suya siguiente. Los turnos de una sola sesión no entran en la
+ * consulta: no tienen serie ni próxima que agendar.
+ */
+async function sesionesYaAgendadas(
+  turnos: { id: string; series_id: string | null; sessions_total: number }[],
+): Promise<Set<string>> {
+  const series = [
+    ...new Set(turnos.filter((t) => t.sessions_total > 1).map((t) => t.series_id ?? t.id)),
+  ];
+  if (series.length === 0) return new Set();
+
+  const hermanos = await prisma.appointments.findMany({
+    where: { OR: [{ id: { in: series } }, { series_id: { in: series } }] },
+    select: { id: true, series_id: true, session_number: true },
+  });
+
+  return new Set(hermanos.map((h) => claveDeSesion(h.series_id ?? h.id, h.session_number)));
 }
 
 /**
@@ -263,6 +350,8 @@ export async function detalle(ctx: Ctx) {
       starts_at: true,
       status: true,
       duration_minutes: true,
+      // Lo pide el buscador de horarios de «Reprogramar».
+      buffer_minutes: true,
       price: true,
       client_notes: true,
       admin_notes: true,
@@ -275,6 +364,7 @@ export async function detalle(ctx: Ctx) {
       service: { select: { id: true, name: true, price: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
+      variant_name: true,
       professional: { select: { id: true, full_name: true, is_active: true } },
       // Ver el comentario en el select de la lista.
       professional_name: true,
@@ -289,6 +379,7 @@ export async function detalle(ctx: Ctx) {
       starts_at: t.starts_at.toISOString(),
       status: t.status,
       duration_minutes: t.duration_minutes,
+      buffer_minutes: t.buffer_minutes,
       price: comoNumero(t.price),
       client_notes: t.client_notes,
       admin_notes: t.admin_notes,
@@ -337,6 +428,7 @@ export async function calendario(ctx: Ctx) {
       service: { select: { name: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
+      variant_name: true,
       // `is_active` va también acá: un turno de alguien que ya no atiende tiene
       // que verse en el calendario, no sólo en la tabla.
       professional: { select: { full_name: true, is_active: true } },
@@ -657,12 +749,33 @@ export async function serviciosParaTurno() {
       // /reservar: sin esto, buildSlots no sabría cada cuánto ofrecerlos.
       buffer_minutes: true,
       price: true,
+      // Para que el panel sepa que el turno que esta cargando es la sesion 1 de
+      // N y con que intervalo proponer la siguiente.
+      sessions_count: true,
+      session_interval_days: true,
       is_published: true,
+      // Sólo las activas: una opción apagada no se ofrece mas, tampoco desde el
+      // mostrador. Los turnos que ya la usaron conservan su nombre congelado.
+      variants: {
+        where: { is_active: true },
+        select: {
+          id: true,
+          name: true,
+          duration_minutes: true,
+          buffer_minutes: true,
+          price: true,
+        },
+        orderBy: [{ position: "asc" as const }, { created_at: "asc" as const }],
+      },
     },
     orderBy: [{ category: "asc" }, { name: "asc" }],
   });
   return json({
-    servicios: servicios.map((s) => ({ ...s, price: comoNumero(s.price) })),
+    servicios: servicios.map((s) => ({
+      ...s,
+      price: comoNumero(s.price),
+      variants: s.variants.map((v) => ({ ...v, price: comoNumero(v.price) })),
+    })),
   } satisfies RtaServiciosParaTurno);
 }
 
@@ -697,8 +810,13 @@ export async function crear(ctx: Ctx) {
   // mensaje de Postgres no le dice nada a nadie.
   if (esInvitada && !nombre) return json({ error: "Poné al menos el nombre." }, 400);
 
+  // La opcion del tratamiento, si tiene. Igual que en la reserva de la
+  // clienta: viaja el id y el precio lo pone validarTurno.
+  const variantId = typeof ctx.body["variant_id"] === "string" ? ctx.body["variant_id"] : null;
+
   const validado = await validarTurno(await accesoDe(ctx.user!.id), {
     service_id: serviceId,
+    variant_id: variantId,
     professional_id: typeof profesionalId === "string" ? profesionalId : null,
     starts_at,
   });
@@ -717,6 +835,7 @@ export async function crear(ctx: Ctx) {
           }
         : { client_id: clienteId as string }),
       service_id: serviceId,
+      variant_id: variantId,
       professional_id: typeof profesionalId === "string" ? profesionalId : null,
       starts_at,
       status: "confirmed",
@@ -727,6 +846,138 @@ export async function crear(ctx: Ctx) {
   });
 
   return json({ id: creado.id });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Las sesiones que siguen
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Agenda la sesion siguiente de un tratamiento de varias.
+ *
+ * ── POR QUE ESTO LO HACE EL CENTRO Y NO LA CLIENTA ────────────────────────
+ *
+ * Porque asi se decidio que funcione: la clienta reserva la PRIMERA sesion y
+ * las que siguen se acuerdan cuando viene. Pedirle en el sitio tres fechas de
+ * una —dos de ellas a veintiun dias vista, sin saber todavia como le va a
+ * quedar la piel— es la forma mas rapida de que abandone el formulario.
+ *
+ * ── QUE SE COPIA Y QUE NO ─────────────────────────────────────────────────
+ *
+ * Se copia todo lo que identifica el tratamiento y a la persona: el
+ * tratamiento, la opcion, la clienta (o los datos de la invitada) y, por
+ * defecto, la misma profesional. Lo que NO se copia es la plata: el precio del
+ * paquete ya quedo congelado en la primera sesion, asi que esta va en 0 — lo
+ * pone `validarTurno` mirando `session_number`. Ver el comentario de alla.
+ *
+ * `series_id` es el id de la PRIMERA sesion. Esta funcion lo resuelve sola: si
+ * el turno del que se parte ya tiene serie, se usa esa; si no, el turno mismo
+ * es la primera y su id es la serie.
+ */
+export async function agendarSiguienteSesion(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta el turno." }, 400);
+
+  const cuando = ctx.body["starts_at"];
+  if (typeof cuando !== "string") return json({ error: "Falta el horario." }, 400);
+  const starts_at = new Date(cuando);
+  if (Number.isNaN(starts_at.getTime())) return json({ error: "Ese horario no se entiende." }, 400);
+
+  const anterior = await prisma.appointments.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      starts_at: true,
+      series_id: true,
+      session_number: true,
+      sessions_total: true,
+      service_id: true,
+      variant_id: true,
+      client_id: true,
+      professional_id: true,
+      guest_name: true,
+      guest_phone: true,
+      guest_email: true,
+    },
+  });
+  if (!anterior) return json({ error: "Ese turno no existe." }, 404);
+
+  // Sin tratamiento no hay nada que agendar: se borro del catalogo y el turno
+  // viejo conserva solo el nombre congelado. Mismo criterio que reprogramar.
+  if (!anterior.service_id) {
+    return json({ error: "El tratamiento de ese turno ya no esta en el catalogo." }, 422);
+  }
+  if (anterior.session_number >= anterior.sessions_total) {
+    return json({ error: "Ese turno ya es la ultima sesion del tratamiento." }, 422);
+  }
+
+  /*
+   * La sesion que sigue va DESPUES de la anterior. No es una preferencia: una
+   * serie con la sesion 2 antes que la 1 no la sabe leer ninguna pantalla, y el
+   * orden es lo unico que le da sentido al numero.
+   *
+   * El INTERVALO, en cambio, no se exige aca: el panel lo respeta por defecto y
+   * deja adelantarlo a mano —la clienta que se va de viaje—, igual que con el
+   * horario fuera de agenda. Lo que el centro decide, el servidor lo acepta;
+   * lo que no tiene sentido, lo frena.
+   */
+  if (starts_at <= anterior.starts_at) {
+    return json({ error: "La sesion siguiente tiene que ser despues de esta." }, 422);
+  }
+
+  const serie = anterior.series_id ?? anterior.id;
+  const numero = anterior.session_number + 1;
+
+  // Que no se cargue dos veces la misma sesion: es el error facil de cometer
+  // desde dos pestañas o tocando el boton dos veces, y deja a la clienta con
+  // dos turnos para la misma sesion.
+  const yaEsta = await prisma.appointments.findFirst({
+    where: { OR: [{ id: serie }, { series_id: serie }], session_number: numero },
+    select: { id: true },
+  });
+  if (yaEsta) return json({ error: `La sesion ${numero} ya esta agendada.` }, 409);
+
+  // La profesional se puede cambiar para esta sesion; si no viene, sigue la
+  // misma que atendio la anterior.
+  const profesionalId =
+    typeof ctx.body["professional_id"] === "string"
+      ? ctx.body["professional_id"]
+      : anterior.professional_id;
+
+  const validado = await validarTurno(await accesoDe(ctx.user!.id), {
+    service_id: anterior.service_id,
+    variant_id: anterior.variant_id,
+    professional_id: profesionalId,
+    starts_at,
+    session_number: numero,
+  });
+
+  const creado = await prisma.appointments.create({
+    data: {
+      // Los datos de quien viene se copian tal cual: es la misma persona y la
+      // misma serie. Si es invitada, viajan los tres campos.
+      ...(anterior.client_id
+        ? { client_id: anterior.client_id }
+        : {
+            guest_name: anterior.guest_name,
+            guest_phone: anterior.guest_phone,
+            guest_email: anterior.guest_email,
+          }),
+      service_id: anterior.service_id,
+      variant_id: anterior.variant_id,
+      professional_id: profesionalId,
+      starts_at,
+      // Confirmado, igual que cualquier turno que carga el centro: lo esta
+      // acordando con la clienta en el mostrador.
+      status: "confirmed",
+      series_id: serie,
+      client_notes: textoODefault(ctx.body["client_notes"]),
+      ...validado,
+    },
+    select: { id: true },
+  });
+
+  return json({ id: creado.id, session_number: numero });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1006,6 +1257,7 @@ export async function avisosDeManana(ctx: Ctx) {
       ...DATOS_DE_LA_PERSONA,
       service: { select: { name: true } },
       service_name: true,
+      variant_name: true,
       professional: { select: { full_name: true } },
       professional_name: true,
     },

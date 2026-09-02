@@ -181,6 +181,10 @@ export async function misTurnos(ctx: Ctx) {
       service: { select: { name: true, price: true, category: true } },
       // El nombre congelado, por si el tratamiento ya no está en el catálogo.
       service_name: true,
+      variant_name: true,
+      // Qué sesión es: la pantalla lo muestra y con eso explica el precio 0.
+      session_number: true,
+      sessions_total: true,
       price: true,
       professional: { select: { full_name: true } },
       // Los dos ids los necesita «Reprogramar»: con el del tratamiento busca
@@ -207,12 +211,31 @@ export async function misTurnos(ctx: Ctx) {
       // el precio se cae al que se cobró ese día, que es el único que queda.
       services: {
         name: nombreDelTratamiento(t),
-        price: comoNumero(t.service ? t.service.price : t.price),
+        // EL PRECIO DEL TURNO, congelado, y no el del catálogo.
+        //
+        // Decía `t.service ? t.service.price : t.price`: el del catálogo
+        // mientras el tratamiento existiera, y el congelado sólo si se había
+        // borrado. Eso ya contradecía al esquema —«no lo reemplaces por un
+        // join a services.price»— y con lo de esta semana pasó a mostrar
+        // números directamente falsos:
+        //
+        //   · con OPCIONES, `services.price` es el del tratamiento «a secas»,
+        //     que no se le cobra a nadie: un «cuerpo completo» de 85.000
+        //     figuraba en 0;
+        //   · con VARIAS SESIONES, el precio del paquete quedó en la primera
+        //     y las siguientes valen 0, pero el join les devolvía el paquete
+        //     entero — la misma plata, tres veces, en pantalla.
+        //
+        // El congelado es el que se acordó con la clienta ese día, que es lo
+        // único que esta lista tiene que decir.
+        price: comoNumero(t.price),
         category: t.service?.category ?? null,
       },
       professionals: t.professional,
       service_id: t.service_id,
       professional_id: t.professional_id,
+      session_number: t.session_number,
+      sessions_total: t.sessions_total,
     })),
   } satisfies RtaMisTurnos);
 }
@@ -316,7 +339,7 @@ export async function reprogramarMiTurno(ctx: Ctx) {
   const userId = ctx.user!.id;
   const turno = await prisma.appointments.findFirst({
     where: { id, client_id: userId },
-    select: { id: true, status: true, starts_at: true, service_id: true },
+    select: { id: true, status: true, starts_at: true, service_id: true, variant_id: true },
   });
   if (!turno) return json({ error: "Ese turno no existe." }, 404);
 
@@ -352,8 +375,12 @@ export async function reprogramarMiTurno(ctx: Ctx) {
     return json({ error: "Hay que elegir una profesional." }, 400);
   }
 
+  // La opción es la MISMA que se reservó: mover la hora no es volver a elegir
+  // qué se hace. Sin mandarla, un tratamiento con opciones haría rebotar la
+  // reprogramación con "hay que elegir una opción", que acá no tendría sentido.
   const validado = await validarTurno(await accesoDe(userId), {
     service_id: turno.service_id,
+    variant_id: turno.variant_id,
     professional_id: profesionalId,
     starts_at,
   });
@@ -452,6 +479,7 @@ export async function verClienta(ctx: Ctx) {
           // El nombre congelado, por si el tratamiento ya no está en el catálogo:
           // el historial tiene que seguir diciendo qué se le hizo.
           service_name: true,
+          variant_name: true,
           professional: { select: { full_name: true } },
         },
       })

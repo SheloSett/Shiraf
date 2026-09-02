@@ -2,7 +2,12 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
 import { slugLibre } from "@/server/services/catalogo.service";
-import type { MediaAGuardar, RtaMediaSacada, RtaServiciosAdmin } from "@/lib/api-tipos";
+import type {
+  MediaAGuardar,
+  RtaMediaSacada,
+  RtaServiciosAdmin,
+  VarianteAGuardar,
+} from "@/lib/api-tipos";
 
 /**
  * El catálogo de tratamientos, desde el panel. Permiso `catalog`.
@@ -31,6 +36,9 @@ export async function listar() {
       // Lo pide la agenda y lo edita el formulario de tratamientos.
       buffer_minutes: true,
       price: true,
+      // Las sesiones del tratamiento: las edita el mismo formulario.
+      sessions_count: true,
+      session_interval_days: true,
       is_published: true,
       // La portada la mantiene el trigger sync_service_cover. Viene para la
       // miniatura de la tabla, que así no tiene que buscarla en la galería.
@@ -39,15 +47,29 @@ export async function listar() {
         select: { id: true, url: true, kind: true, position: true },
         orderBy: [{ position: "asc" }, { created_at: "asc" }],
       },
+      // TODAS, también las apagadas: acá es donde se vuelven a prender. En el
+      // catálogo público, en cambio, sólo salen las activas.
+      variants: {
+        select: {
+          id: true,
+          name: true,
+          duration_minutes: true,
+          buffer_minutes: true,
+          price: true,
+          is_active: true,
+        },
+        orderBy: [{ position: "asc" }, { created_at: "asc" }],
+      },
     },
     orderBy: [{ category: "asc" }, { name: "asc" }],
   });
 
   const salida: RtaServiciosAdmin = {
-    servicios: servicios.map(({ media, price, ...s }) => ({
+    servicios: servicios.map(({ media, variants, price, ...s }) => ({
       ...s,
       price: price.toNumber(),
       service_media: media,
+      variants: variants.map((v) => ({ ...v, price: v.price.toNumber() })),
     })),
   };
   return json(salida);
@@ -64,6 +86,8 @@ type Campos = {
   duration_minutes: number;
   buffer_minutes: number;
   price: number;
+  sessions_count: number;
+  session_interval_days: number;
 };
 
 /**
@@ -97,6 +121,23 @@ function camposDe(ctx: Ctx): Campos | string {
   const precio = Number(b["price"]);
   if (!Number.isFinite(precio) || precio < 0) return "El precio tiene que ser un número.";
 
+  /*
+   * Las sesiones. Mínimo 1 —un tratamiento de cero sesiones no es nada— y el
+   * intervalo desde 0, que quiere decir "sin espera sugerida".
+   *
+   * Sin tope por arriba: si alguien carga 12 sesiones cada 7 días es un
+   * tratamiento largo, no un error, y el panel lo muestra igual.
+   */
+  const sesiones = Number(b["sessions_count"] ?? 1);
+  if (!Number.isFinite(sesiones) || sesiones < 1) {
+    return "Las sesiones tienen que ser un número de 1 para arriba.";
+  }
+
+  const intervalo = Number(b["session_interval_days"] ?? 0);
+  if (!Number.isFinite(intervalo) || intervalo < 0) {
+    return "Los días entre sesiones tienen que ser un número de 0 para arriba.";
+  }
+
   const categoria = typeof b["category"] === "string" ? b["category"].trim() : "";
   const descripcion = typeof b["description"] === "string" ? b["description"].trim() : "";
 
@@ -107,7 +148,59 @@ function camposDe(ctx: Ctx): Campos | string {
     duration_minutes: Math.round(duracion),
     buffer_minutes: Math.round(margen),
     price: precio,
+    sessions_count: Math.round(sesiones),
+    // El intervalo de un tratamiento de UNA sesión no significa nada, y
+    // guardarlo dejaría un número que reaparece si mañana se le suben las
+    // sesiones. Se normaliza acá para que la base no guarde combinaciones que
+    // no quieren decir nada.
+    session_interval_days: sesiones > 1 ? Math.round(intervalo) : 0,
   };
+}
+
+/**
+ * Las opciones tal como quedaron en el formulario. Las nuevas no traen `id`.
+ *
+ * Se descarta en silencio la que venga sin nombre —una fila que se agregó y no
+ * se llenó— porque una opción sin nombre no se puede ni mostrar ni elegir, y
+ * hacerla fallar obligaría a la dueña a buscar cuál de las cinco filas está
+ * vacía. Los números sí se validan: un precio en blanco entra como 0, pero
+ * "abc" tiene que rebotar en vez de guardarse como 0 sin avisar.
+ */
+function variantesDe(ctx: Ctx): VarianteAGuardar[] | string {
+  const crudo = ctx.body["variants"];
+  if (!Array.isArray(crudo)) return [];
+
+  const salida: VarianteAGuardar[] = [];
+  for (const item of crudo) {
+    const v = item as Record<string, unknown>;
+    const name = typeof v["name"] === "string" ? v["name"].trim() : "";
+    if (!name) continue;
+
+    const duracion = Number(v["duration_minutes"]);
+    if (!Number.isFinite(duracion) || duracion <= 0) {
+      return `La duración de "${name}" tiene que ser un número mayor a 0.`;
+    }
+    const margen = Number(v["buffer_minutes"]);
+    if (!Number.isFinite(margen) || margen < 0) {
+      return `El tiempo entre turnos de "${name}" tiene que ser un número de 0 para arriba.`;
+    }
+    const precio = Number(v["price"]);
+    if (!Number.isFinite(precio) || precio < 0) {
+      return `El precio de "${name}" tiene que ser un número.`;
+    }
+
+    salida.push({
+      ...(typeof v["id"] === "string" ? { id: v["id"] } : {}),
+      name,
+      duration_minutes: Math.round(duracion),
+      buffer_minutes: Math.round(margen),
+      price: precio,
+      // Sólo `false` apaga: lo que no venga se toma por activa, que es lo que
+      // quiere decir una opción recién cargada.
+      is_active: v["is_active"] !== false,
+    });
+  }
+  return salida;
 }
 
 /** La galería tal como quedó en el formulario. Las nuevas no traen `id`. */
@@ -121,9 +214,66 @@ function mediaDe(ctx: Ctx): MediaAGuardar[] {
   });
 }
 
+/**
+ * Deja las opciones del tratamiento tal como vinieron del formulario.
+ *
+ * Reconcilia en vez de borrar todo e insertar de nuevo, por el mismo motivo que
+ * la galería y por uno más grave: el id de una variante lo tienen guardado los
+ * turnos que la reservaron (`appointments.variant_id`). Borrar y reinsertar les
+ * cortaría el vínculo a todos —quedarían en NULL, apoyados sólo en el nombre
+ * congelado— sin que nadie haya tocado esa opción.
+ *
+ * `position` sale del índice en la lista: el orden de la pantalla ES el orden.
+ */
+async function guardarVariantes(
+  tx: Prisma.TransactionClient,
+  serviceId: string,
+  variantes: VarianteAGuardar[],
+): Promise<void> {
+  const antes = await tx.service_variants.findMany({
+    where: { service_id: serviceId },
+    select: { id: true },
+  });
+
+  const quedan = new Set(variantes.map((v) => v.id).filter(Boolean));
+  const seFueron = antes.filter((v) => !quedan.has(v.id));
+  if (seFueron.length > 0) {
+    await tx.service_variants.deleteMany({ where: { id: { in: seFueron.map((v) => v.id) } } });
+  }
+
+  const nuevas: {
+    service_id: string;
+    name: string;
+    duration_minutes: number;
+    buffer_minutes: number;
+    price: number;
+    is_active: boolean;
+    position: number;
+  }[] = [];
+
+  for (const [position, v] of variantes.entries()) {
+    const datos = {
+      name: v.name,
+      duration_minutes: v.duration_minutes,
+      buffer_minutes: v.buffer_minutes,
+      price: v.price,
+      is_active: v.is_active,
+      position,
+    };
+    // Se actualiza siempre, sin comparar contra lo que había: son cinco campos
+    // y no vale un SELECT extra por fila para ahorrar un UPDATE que no cuesta.
+    if (v.id) await tx.service_variants.update({ where: { id: v.id }, data: datos });
+    else nuevas.push({ service_id: serviceId, ...datos });
+  }
+
+  if (nuevas.length > 0) await tx.service_variants.createMany({ data: nuevas });
+}
+
 export async function crear(ctx: Ctx) {
   const campos = camposDe(ctx);
   if (typeof campos === "string") return json({ error: campos }, 400);
+  const variantes = variantesDe(ctx);
+  if (typeof variantes === "string") return json({ error: variantes }, 400);
   const media = mediaDe(ctx);
 
   const id = await prisma.$transaction(async (tx) => {
@@ -150,6 +300,7 @@ export async function crear(ctx: Ctx) {
         })),
       });
     }
+    if (variantes.length > 0) await guardarVariantes(tx, servicio.id, variantes);
     return servicio.id;
   });
 
@@ -180,6 +331,8 @@ export async function editar(ctx: Ctx) {
 
   const campos = camposDe(ctx);
   if (typeof campos === "string") return json({ error: campos }, 400);
+  const variantes = variantesDe(ctx);
+  if (typeof variantes === "string") return json({ error: variantes }, 400);
   const media = mediaDe(ctx);
 
   const sacadas = await prisma.$transaction(async (tx) => {
@@ -195,6 +348,8 @@ export async function editar(ctx: Ctx) {
       where: { id },
       data: { ...campos, slug: await slugLibre(tx, campos.name, id) },
     });
+
+    await guardarVariantes(tx, id, variantes);
 
     const antes = await tx.service_media.findMany({
       where: { service_id: id },

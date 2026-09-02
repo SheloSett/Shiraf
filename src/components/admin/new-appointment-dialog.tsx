@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, ChevronsUpDown, Clock, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,15 +23,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TeamTag } from "@/components/admin/team-tag";
+import { SelectorDeHorario } from "@/components/admin/selector-de-horario";
+import { instanteDe } from "@/lib/horarios";
 import { api, apiPost } from "@/lib/api";
 import type {
   RtaClientasParaElegir,
-  RtaDisponibilidad,
   RtaProfesionalesConHorarios,
   RtaServiciosParaTurno,
 } from "@/lib/api-tipos";
 import { useTeamMemberIds } from "@/hooks/useTeamMemberIds";
-import { buildSlots, formatMoney, toDateKey, WEEKDAYS } from "@/lib/shiraf";
+import { formatMoney, toDateKey } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
 /**
@@ -79,6 +80,8 @@ export function NewAppointmentDialog({
   const [guestPhone, setGuestPhone] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [serviceId, setServiceId] = useState<string | undefined>();
+  /** La opcion del tratamiento, cuando el tratamiento tiene. Ver service_variants. */
+  const [variantId, setVariantId] = useState<string | undefined>();
   const [professionalId, setProfessionalId] = useState<string | undefined>();
   const [dateKey, setDateKey] = useState<string>(() => toDateKey(new Date()));
   const [time, setTime] = useState<string>("");
@@ -107,6 +110,7 @@ export function NewAppointmentDialog({
     setGuestPhone("");
     setGuestEmail("");
     setServiceId(undefined);
+    setVariantId(undefined);
     setProfessionalId(undefined);
     setDateKey(toDateKey(new Date()));
     setTime("");
@@ -159,60 +163,33 @@ export function NewAppointmentDialog({
   }, [clients.data, teamIds]);
 
   const service = services.data?.find((s) => s.id === serviceId);
+  const variant = service?.variants.find((v) => v.id === variantId);
+
+  /**
+   * Lo que dura y lo que sale este turno.
+   *
+   * De la opcion cuando el tratamiento tiene opciones, del tratamiento cuando
+   * no. Con opciones cargadas hay que elegir una: el servidor rechaza el alta
+   * que no la traiga, porque el precio del tratamiento en ese caso no es el
+   * de nadie.
+   */
+  const duracion = variant?.duration_minutes ?? service?.duration_minutes ?? 0;
+  const margen = variant?.buffer_minutes ?? service?.buffer_minutes ?? 0;
+  const precio = variant?.price ?? service?.price ?? 0;
+  const faltaOpcion = !!service && service.variants.length > 0 && !variant;
+
   const client = clients.data?.find((c) => c.id === clientId);
-  const date = useMemo(() => parseDateKey(dateKey), [dateKey]);
 
-  const availability = useQuery({
-    queryKey: ["appointment-form", "availability", professionalId, dateKey],
-    enabled: open && !!professionalId && !!date,
-    // El mismo endpoint que usa la clienta al reservar: los horarios de la
-    // profesional y los ratos ocupados, sin decir de quién es cada turno.
-    queryFn: async () => {
-      const day = new Date(date!);
-      day.setHours(0, 0, 0, 0);
-      return api<RtaDisponibilidad>(
-        `/api/reservar/disponibilidad?profesional=${professionalId}&fecha=${day.toISOString()}`,
-      );
-    },
-  });
-
-  const suggested = useMemo(() => {
-    if (!date || !service || !availability.data) return [];
-    return buildSlots(
-      date,
-      availability.data.schedules,
-      availability.data.busy,
-      { minutos: service.duration_minutes, margen: service.buffer_minutes },
-      availability.data.ausencias,
-    );
-  }, [date, service, availability.data]);
-
-  /** Franjas de atención de ese día, para avisar cuándo se está saliendo de la agenda. */
-  const daySchedules = useMemo(() => {
-    if (!date || !availability.data) return [];
-    return availability.data.schedules.filter((s) => s.weekday === date.getDay());
-  }, [date, availability.data]);
-
-  const startsAt = useMemo(() => {
-    if (!date || !time) return null;
-    const [hh, mm] = time.split(":").map(Number);
-    if (hh === undefined || mm === undefined || Number.isNaN(hh) || Number.isNaN(mm)) return null;
-    const value = new Date(date);
-    value.setHours(hh, mm, 0, 0);
-    return value;
-  }, [date, time]);
-
-  /** Fuera de la franja de atención: se permite igual, pero se avisa. */
-  const outsideSchedule = useMemo(() => {
-    if (!startsAt || !service || daySchedules.length === 0) return daySchedules.length === 0;
-    const minutes = startsAt.getHours() * 60 + startsAt.getMinutes();
-    const end = minutes + service.duration_minutes;
-    return !daySchedules.some((s) => {
-      const [sh = 0, sm = 0] = s.start_time.split(":").map(Number);
-      const [eh = 0, em = 0] = s.end_time.split(":").map(Number);
-      return minutes >= sh * 60 + sm && end <= eh * 60 + em;
-    });
-  }, [startsAt, service, daySchedules]);
+  /**
+   * El instante elegido, o null mientras falte el día o la hora.
+   *
+   * La consulta de disponibilidad, los horarios libres y el aviso de "fuera de
+   * horario" se mudaron a `SelectorDeHorario`: los tres lugares del panel donde
+   * se elige un horario —cargar, mover y agendar la sesión siguiente— tienen que
+   * ofrecer lo mismo, y con el código copiado en cada uno eso duraba hasta el
+   * primer arreglo.
+   */
+  const startsAt = instanteDe(dateKey, time);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -229,6 +206,8 @@ export function NewAppointmentDialog({
               guest_email: guestEmail.trim() || null,
             }),
         service_id: serviceId,
+        // El id de la opcion, nunca su precio: lo lee validarTurno del catalogo.
+        variant_id: variantId ?? null,
         professional_id: professionalId,
         starts_at: startsAt!.toISOString(),
         client_notes: notes.trim() || null,
@@ -258,7 +237,9 @@ export function NewAppointmentDialog({
   });
 
   const whoReady = who === "registrada" ? !!clientId : guestName.trim().length > 0;
-  const ready = whoReady && !!serviceId && !!professionalId && !!startsAt;
+  // `!faltaOpcion`: con opciones cargadas, sin elegir una no hay precio ni
+  // duracion, y el alta la rechazaria el servidor.
+  const ready = whoReady && !!serviceId && !faltaOpcion && !!professionalId && !!startsAt;
 
   return (
     <Dialog
@@ -422,6 +403,8 @@ export function NewAppointmentDialog({
               value={serviceId ?? ""}
               onChange={(e) => {
                 setServiceId(e.target.value || undefined);
+                // La opcion es de ESTE tratamiento: al cambiarlo deja de valer.
+                setVariantId(undefined);
                 setProfessionalId(undefined);
                 setTime("");
               }}
@@ -430,12 +413,46 @@ export function NewAppointmentDialog({
               <option value="">Elegir…</option>
               {services.data?.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.category} · {s.name} — {s.duration_minutes} min · {formatMoney(s.price)}
+                  {s.category} · {s.name} —{" "}
+                  {s.variants.length > 0
+                    ? `${s.variants.length} opciones`
+                    : `${s.duration_minutes} min · ${formatMoney(s.price)}`}
                   {s.is_published ? "" : " (despublicado)"}
                 </option>
               ))}
             </select>
           </div>
+
+          {/* ── Opción del tratamiento ─────────────────────────────────── */}
+          {service && service.variants.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="na-variant">Opción</Label>
+              <select
+                id="na-variant"
+                value={variantId ?? ""}
+                onChange={(e) => {
+                  setVariantId(e.target.value || undefined);
+                  // Los horarios sugeridos dependen de cuánto dura: una opción
+                  // del doble de duración no entra en los mismos huecos.
+                  setTime("");
+                }}
+                className="h-10 w-full rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <option value="">Elegir…</option>
+                {service.variants.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} — {v.duration_minutes} min · {formatMoney(v.price)}
+                  </option>
+                ))}
+              </select>
+              {faltaOpcion && (
+                <p className="text-xs text-muted-foreground">
+                  Este tratamiento se hace de más de una forma: de la opción salen el precio y la
+                  duración del turno.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* ── Profesional ────────────────────────────────────────────── */}
           {serviceId && (
@@ -468,138 +485,18 @@ export function NewAppointmentDialog({
 
           {/* ── Día y hora ─────────────────────────────────────────────── */}
           {professionalId && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="na-date">Día</Label>
-                <Input
-                  id="na-date"
-                  type="date"
-                  value={dateKey}
-                  onChange={(e) => {
-                    setDateKey(e.target.value);
-                    setTime("");
-                  }}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Hora</Label>
-                {/* Los tres estados se dicen distinto a propósito. Antes esto
-                    era `daySchedules.length > 0 ? horarios : "no atiende ese
-                    día"`, y como daySchedules queda vacío también cuando la
-                    consulta falla, un error de la base se leía como una
-                    respuesta tranquila sobre la agenda. Fue justo lo que pasó:
-                    faltaba professional_busy_slots en la base, la consulta
-                    reventaba, y la pantalla decía que la profesional no
-                    trabajaba los lunes. */}
-                {availability.isError ? (
-                  <p className="rounded-sm border border-destructive/50 bg-destructive/10 p-2.5 text-xs leading-relaxed text-foreground">
-                    No se pudieron consultar los horarios. No es que la profesional no atienda: la
-                    base devolvió un error.
-                    <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
-                      {(availability.error as Error).message}
-                    </span>
-                  </p>
-                ) : availability.isPending ? (
-                  <p className="text-xs text-muted-foreground">Buscando horarios…</p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {daySchedules.length > 0 ? (
-                      <>
-                        {WEEKDAYS[date?.getDay() ?? 0]}:{" "}
-                        {daySchedules
-                          .map((s) => `${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`)
-                          .join(", ")}
-                      </>
-                    ) : (
-                      <>Esta profesional no atiende ese día.</>
-                    )}
-                  </p>
-                )}
-
-                {/* Los horarios que quedan libres, y nada más. Antes esto era un
-                    adorno al lado de un <input type="time"> libre; ahora es la
-                    forma normal de elegir. Cada uno arranca donde termina el
-                    anterior, así que la lista ya viene sin huecos muertos. */}
-                {availability.isError || availability.isPending ? null : suggested.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {suggested.map((iso) => {
-                      const label = toTimeInput(iso);
-                      return (
-                        <Button
-                          key={iso}
-                          type="button"
-                          size="sm"
-                          variant={time === label ? "default" : "outline"}
-                          className="h-8"
-                          onClick={() => {
-                            setTime(label);
-                            setManualTime(false);
-                          }}
-                        >
-                          {label}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  /* Sin horarios no alcanza con no mostrar nada: hay que decir
-                     por qué, porque la salida es distinta en cada caso. Si no
-                     atiende ese día se cambia el día; si está lleno, se carga
-                     fuera de horario o se busca otra profesional. */
-                  <p className="rounded-sm border border-border bg-secondary/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
-                    {daySchedules.length === 0
-                      ? "No hay horarios para ofrecer: esta profesional no atiende ese día. Probá otro día, otra profesional, o cargalo fuera de horario."
-                      : "No queda lugar ese día: los horarios están tomados o ya pasaron."}
-                  </p>
-                )}
-
-                {/* La puerta de atrás, explícita y con nombre. El campo libre no
-                    desaparece —es lo que permite registrar el turno de la
-                    clienta a la que la profesional le hace un lugar— pero deja
-                    de estar a un dedazo de distancia. */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !manualTime;
-                    setManualTime(next);
-                    // Al cerrarlo se borra la hora escrita a mano, salvo que
-                    // coincida con una de la lista. Si no, quedaba un 22:00
-                    // invisible y el botón de cargar seguía habilitado.
-                    if (!next && !suggested.some((iso) => toTimeInput(iso) === time)) setTime("");
-                  }}
-                  className="text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
-                >
-                  {manualTime ? "Volver a los horarios de la lista" : "Cargar fuera de horario"}
-                </button>
-
-                {manualTime && (
-                  <div className="space-y-2 rounded-sm border border-border bg-secondary/30 p-3">
-                    <Label htmlFor="na-time">Hora a mano</Label>
-                    <Input
-                      id="na-time"
-                      type="time"
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
-                    />
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Para cuando la profesional le hace un lugar a alguien fuera de su horario. Dos
-                      turnos encimados los sigue rechazando la base.
-                    </p>
-
-                    {/* Aviso, no bloqueo: el trigger exime al admin del control
-                        de agenda a propósito. */}
-                    {startsAt && outsideSchedule && (
-                      <p className="flex items-start gap-2 rounded-sm border border-gold/50 bg-gold/10 p-2.5 text-xs text-foreground">
-                        <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
-                        Ese horario queda fuera de la agenda habitual de la profesional. Se puede
-                        cargar igual.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
+            <SelectorDeHorario
+              idPrefijo="na"
+              profesionalId={professionalId}
+              duracion={duracion}
+              margen={margen}
+              dateKey={dateKey}
+              onDateKey={setDateKey}
+              time={time}
+              onTime={setTime}
+              manual={manualTime}
+              onManual={setManualTime}
+            />
           )}
 
           {/* ── Nota ───────────────────────────────────────────────────── */}
@@ -618,7 +515,7 @@ export function NewAppointmentDialog({
             <div className="rounded-sm border border-border bg-secondary/40 p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-muted-foreground">Total</span>
-                <span className="font-semibold text-foreground">{formatMoney(service.price)}</span>
+                <span className="font-semibold text-foreground">{formatMoney(precio)}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 El precio queda congelado en el turno, aunque después cambie el del catálogo.
@@ -639,37 +536,4 @@ export function NewAppointmentDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-/**
- * "2026-08-13" → Date local a medianoche.
- *
- * `new Date("2026-08-13")` lo interpretaría como UTC y, al oeste de Greenwich,
- * devolvería el día anterior. Por eso se arma por partes.
- */
-function parseDateKey(key: string): Date | undefined {
-  const [y, m, d] = key.split("-").map(Number);
-  if (!y || !m || !d) return undefined;
-  const date = new Date(y, m - 1, d);
-  return Number.isNaN(date.getTime()) ? undefined : date;
-}
-
-/**
- * Date → "HH:MM", el formato que espera <input type="time">.
- *
- * A mano y no con formatTime(), que usa toLocaleTimeString: el valor se compara
- * contra el del input para marcar el horario elegido, y alcanza con que el
- * locale devuelva algo distinto de "HH:MM" para que la comparación no case
- * nunca.
- *
- * 26/8/2026 — desde que formatTime() lleva `hourCycle: "h23"` devuelve "10:00"
- * y la comparación casaría. Igual se deja a mano, y a propósito: esto no es un
- * texto para leer sino el valor que espera <input type="time">, y atarlo a un
- * formateador de presentación significa que el día que alguien le cambie el
- * locale o el formato — como se acaba de hacer — se rompe el marcado del
- * horario elegido, en silencio y lejos de donde se tocó.
- */
-function toTimeInput(iso: string): string {
-  const d = new Date(iso);
-  return `${`${d.getHours()}`.padStart(2, "0")}:${`${d.getMinutes()}`.padStart(2, "0")}`;
 }

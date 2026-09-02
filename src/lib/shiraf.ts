@@ -262,6 +262,42 @@ export function diaConTramosSuperpuestos(tramos: Tramo[]): number | null {
   return null;
 }
 
+/**
+ * Qué precio y qué duración mostrar de un tratamiento que puede tener opciones.
+ *
+ * Sin opciones, los del tratamiento y listo. Con opciones, el tratamiento no se
+ * cobra a su precio —ese número no se le cobra a nadie— así que se muestra el de
+ * la opción más barata con un "desde" adelante, y la duración como rango.
+ *
+ * Va acá y no en cada pantalla porque son cuatro las que lo muestran —el
+ * catálogo, la ficha, el paso 1 de la reserva y el buscador del panel— y la
+ * primera versión de esto ya había quedado escrita distinto en dos de ellas: en
+ * una decía "desde" y en la otra el precio pelado, que es exactamente la clase
+ * de diferencia que hace dudar del precio.
+ */
+export function precioYDuracion(servicio: {
+  price: number;
+  duration_minutes: number;
+  variants: { price: number; duration_minutes: number }[];
+}): { desde: boolean; precio: number; duracion: string } {
+  if (servicio.variants.length === 0) {
+    return { desde: false, precio: servicio.price, duracion: `${servicio.duration_minutes} min` };
+  }
+
+  const precios = servicio.variants.map((v) => v.price);
+  const duraciones = servicio.variants.map((v) => v.duration_minutes);
+  const min = Math.min(...duraciones);
+  const max = Math.max(...duraciones);
+
+  return {
+    desde: true,
+    precio: Math.min(...precios),
+    // Una sola opción, o varias que duran lo mismo, no arman rango: "40 a 40
+    // min" se lee como un error.
+    duracion: min === max ? `${min} min` : `${min} a ${max} min`,
+  };
+}
+
 export function formatMoney(value: number | string | null | undefined) {
   const n = Number(value ?? 0);
   return n.toLocaleString("es-AR", {

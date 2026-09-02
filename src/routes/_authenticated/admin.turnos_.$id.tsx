@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
+import { SelectorDeHorario } from "@/components/admin/selector-de-horario";
+import { instanteDe } from "@/lib/horarios";
 import { api, apiPut } from "@/lib/api";
 import type { RtaProfesionalesParaElTurno, RtaTurnoEnDetalle } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, toStatus } from "@/lib/shiraf";
@@ -102,8 +104,21 @@ function FichaDelTurno() {
 
   const setStatus = useCambiarEstadoDeTurno();
   const reprogramar = useReprogramarTurno();
-  // El valor del <input type="datetime-local">, que es hora LOCAL sin zona.
-  const [nuevoHorario, setNuevoHorario] = useState("");
+  /**
+   * El horario nuevo, en dos piezas: el día y la hora.
+   *
+   * Era un solo `<input type="datetime-local">`, y ese es justamente el
+   * problema que resuelve `SelectorDeHorario`: el calendario del navegador no
+   * sabe nada de la agenda del centro, así que ofrecía domingos, las 3 de la
+   * mañana y horarios ya tomados con la misma cara que uno libre. Ahora las
+   * horas que se ofrecen son los huecos reales de esa profesional ese día.
+   */
+  const [dia, setDia] = useState("");
+  const [hora, setHora] = useState("");
+  /** La puerta de atrás: escribir la hora a mano para cargar fuera de horario. */
+  const [horaAMano, setHoraAMano] = useState(false);
+  /** Las dos piezas juntas, o null mientras falte alguna. */
+  const nuevoHorario = instanteDe(dia, hora);
   const borrar = useBorrarTurno();
 
   if (turno.isPending) {
@@ -439,14 +454,24 @@ function FichaDelTurno() {
                 Se le avisa a la clienta con el horario nuevo. Si ese horario ya está tomado con la
                 misma profesional, la base lo frena y no se guarda nada.
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <input
-                  type="datetime-local"
-                  aria-label="Nuevo día y hora del turno"
-                  value={nuevoHorario}
-                  onChange={(e) => setNuevoHorario(e.target.value)}
-                  className="h-10 rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              <div className="mt-4 max-w-md space-y-4">
+                {/* `excluirTurnoId`: sin esto el turno se contaría a sí mismo
+                    como ocupado y su propio horario aparecería tomado, así que
+                    no se podría, por ejemplo, correrlo media hora. */}
+                <SelectorDeHorario
+                  idPrefijo="rp"
+                  profesionalId={t.professionals?.id}
+                  duracion={t.duration_minutes}
+                  margen={t.buffer_minutes}
+                  dateKey={dia}
+                  onDateKey={setDia}
+                  time={hora}
+                  onTime={setHora}
+                  manual={horaAMano}
+                  onManual={setHoraAMano}
+                  excluirTurnoId={t.id}
                 />
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -455,19 +480,23 @@ function FichaDelTurno() {
                     reprogramar.mutate(
                       {
                         id: t.id,
-                        // `datetime-local` da "2026-08-25T14:30" sin zona, que
-                        // `new Date` interpreta como hora local — la del centro,
-                        // que es la que se acaba de tipear. De ahí sale el
-                        // instante absoluto que guarda la base.
-                        startsAt: new Date(nuevoHorario).toISOString(),
+                        // El día y la hora son de pared —el reloj del centro—;
+                        // de ahí sale el instante absoluto que guarda la base.
+                        startsAt: nuevoHorario!.toISOString(),
                         // El aviso lleva el horario NUEVO, no el que el turno
                         // todavía tiene en pantalla.
                         notify: {
                           ...toNotifiable(t),
-                          startsAt: new Date(nuevoHorario).toISOString(),
+                          startsAt: nuevoHorario!.toISOString(),
                         },
                       },
-                      { onSuccess: () => setNuevoHorario("") },
+                      {
+                        onSuccess: () => {
+                          setDia("");
+                          setHora("");
+                          setHoraAMano(false);
+                        },
+                      },
                     )
                   }
                 >
