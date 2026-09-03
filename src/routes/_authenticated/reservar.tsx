@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -127,6 +127,23 @@ function BookingPage() {
    */
   const variant = service?.variants.find((v) => v.id === variantId);
   const elegido = !!service && (service.variants.length === 0 || !!variant);
+
+  /**
+   * Apenas queda elegido el tratamiento, la pantalla baja sola hasta
+   * "Elegí la profesional" — sea porque se acaba de tocar una tarjeta, o
+   * porque se llegó con `?service=` ya puesto (el botón "Reservar" de la
+   * ficha del tratamiento) y el paso 1 nace resuelto.
+   *
+   * Depende de `elegido` y no de `serviceId`: con opciones, tocar la tarjeta
+   * no alcanza —falta elegir cuál— así que recién ahí tiene sentido bajar.
+   */
+  useEffect(() => {
+    if (elegido) {
+      document
+        .getElementById("paso-profesional")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [elegido]);
 
   /** Lo que dura y lo que sale este turno: de la opción si hay, del tratamiento si no. */
   const duracion = variant?.duration_minutes ?? service?.duration_minutes ?? 0;
@@ -390,7 +407,7 @@ function BookingPage() {
         </Step>
 
         {elegido && (
-          <Step n={2} title="Elegí la profesional" className="mt-12">
+          <Step n={2} id="paso-profesional" title="Elegí la profesional" className="mt-12">
             <div className="grid gap-3 sm:grid-cols-3">
               {professionals.data?.map((p) => {
                 const active = p.id === professionalId;
@@ -615,15 +632,20 @@ function Step({
   n,
   title,
   className = "",
+  id,
   children,
 }: {
   n: number;
   title: string;
   className?: string;
+  /** Para poder bajar hasta acá con `scrollIntoView`, ver el efecto de arriba. */
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className={className}>
+    // `scroll-mt-28`: el header es sticky, y sin este margen el scroll
+    // automático deja el título tapado justo debajo de la barra.
+    <div id={id} className={`scroll-mt-28 ${className}`}>
       <div className="mb-5 flex items-center gap-3">
         <span className="flex h-7 w-7 items-center justify-center rounded-full border border-gold text-xs text-gold">
           {n}
