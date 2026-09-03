@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SiteHeader } from "@/components/site-header";
@@ -144,6 +144,19 @@ function ServicesPage() {
     queryKey: ["services", "published"],
     queryFn: async () => (await api<RtaServicios>("/api/publico/servicios")).servicios,
   });
+
+  /**
+   * Tratamientos cuya foto tiene `image_url` pero el archivo ya no está en
+   * Cloudinary (borrado a mano, o la URL quedó mal cargada).
+   *
+   * Sin esto, esa card mostraba el ícono de imagen rota del navegador: se ve
+   * peor que no tener foto, porque el placeholder de la inicial —pensado
+   * justamente para "no hay foto"— nunca se activaba (`s.image_url` es
+   * verdadero, aunque el archivo detrás ya no exista). El `onError` de abajo
+   * la suma acá la primera vez que falla, y desde ese momento la card cae al
+   * mismo placeholder que un tratamiento sin foto.
+   */
+  const [fotosRotas, setFotosRotas] = useState<Set<string>>(new Set());
 
   const grouped = useMemo(() => {
     const groups = new Map<string, NonNullable<typeof services.data>>();
@@ -302,29 +315,50 @@ function ServicesPage() {
                           tiene para decir. Se leía como si la foto estuviera
                           ampliada de más.
 
-                          Ahora la caja es vertical (4/5, cerca de la proporción
-                          en que vienen los flyers) y la imagen va `contain`: se
-                          ve completa siempre. Lo que sobre a los costados queda
-                          del oliva con grano, igual que en la ficha del
-                          tratamiento, así una foto apaisada tampoco se corta.
+                          Ahora la caja es `aspect-square` —de los flyers reales
+                          cargados hasta ahora, 3 de 4 son exactamente
+                          cuadrados (800×800)— y la imagen va `contain`: se ve
+                          completa siempre. Con un flyer cuadrado no sobra nada;
+                          con una foto de otra proporción (la de "Masaje
+                          descontracturante" es 800×670) sigue sobrando un poco
+                          arriba y abajo, pero mucho menos que con la caja
+                          vertical de antes.
 
                           Sin el `group-hover:scale-105`: con `contain` ese zoom
                           empujaba los bordes fuera de la caja, o sea recortaba
                           al pasar el mouse justo lo que se acaba de arreglar.
-                          El hover ya se nota en la sombra de la tarjeta. */}
-                      <div className="surface-olive grain relative aspect-[4/5] overflow-hidden">
-                        {s.image_url ? (
+                          El hover ya se nota en la sombra de la tarjeta.
+
+                          El oliva con grano va SÓLO sin foto —es el fondo de la
+                          inicial de abajo—. Con foto, la caja queda sin fondo
+                          propio: lo que sobra (por la proporción, o porque
+                          `fotosRotas` todavía no la sacó de este camino) muestra
+                          el `bg-card` de la tarjeta, el mismo blanco crema de
+                          todo el resto de la tarjeta. Antes ese sobrante se
+                          rellenaba con oliva, un verde parecido pero no igual al
+                          que el flyer ya trae dibujado: se notaba la costura,
+                          igual que pasaba en la ficha del tratamiento
+                          (`servicios.$slug.tsx`). */}
+                      <div
+                        className={`relative aspect-square overflow-hidden ${
+                          s.image_url && !fotosRotas.has(s.id) ? "" : "surface-olive grain"
+                        }`}
+                      >
+                        {s.image_url && !fotosRotas.has(s.id) ? (
                           <img
                             src={imageUrl(s.image_url, "card") ?? undefined}
                             alt=""
                             loading="lazy"
+                            onError={() => setFotosRotas((prev) => new Set(prev).add(s.id))}
                             className="h-full w-full object-contain"
                           />
                         ) : (
-                          /* Sin foto cargada: inicial del tratamiento sobre el
-                             oliva con grano, para que el hueco se lea como
-                             decisión y no como imagen rota. El grano ya lo pone
-                             la caja de afuera; acá sólo va el centrado. */
+                          /* Sin foto cargada —o con `image_url` pero el archivo
+                             ya no existe en Cloudinary, ver `fotosRotas`—:
+                             inicial del tratamiento sobre el oliva con grano,
+                             para que el hueco se lea como decisión y no como
+                             imagen rota. El grano ya lo pone la caja de afuera;
+                             acá sólo va el centrado. */
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="font-display text-7xl text-primary-foreground/25">
                               {s.name.charAt(0)}

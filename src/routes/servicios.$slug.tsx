@@ -344,10 +344,22 @@ function ServiceDetail() {
         <div className="mt-12 px-5 lg:col-span-5 lg:col-start-7 lg:mt-0 lg:px-0">
           {activo ? (
             <>
-              {/* `justify-center` + el tope de alto de adentro: el contenedor
-                  se adapta a la imagen en vez de estirarla, y lo que sobre a los
-                  costados queda del campo oliva con grano. */}
-              <div className="surface-olive grain flex justify-center overflow-hidden rounded-sm">
+              {/* Este div sigue ocupando el ancho entero de la columna —eso no
+                  cambia con `flex`—, pero ya no tiene `surface-olive`: lo que
+                  sobra a los costados de la imagen (`max-h-[70vh]` la achica
+                  sin estirarla, así que rara vez llena el ancho) queda
+                  TRANSPARENTE en vez de pintado. Se ve la crema de la página
+                  de fondo, que es el mismo color de todo alrededor, así que no
+                  se nota que hay un sobrante.
+
+                  Antes ese sobrante se rellenaba con `surface-olive` —el
+                  oliva del header y el footer— y con un flyer cuadrado se
+                  notaba: era un verde parecido pero no igual al del fondo que
+                  el flyer ya trae dibujado, y esa costura entre los dos
+                  verdes se veía como un marco de más. Sacando el color de
+                  relleno en vez de intentar igualarlo, no hay costura que
+                  pueda desentonar con ningún flyer futuro. */}
+              <div className="flex justify-center">
                 {activo.kind === "video" ? (
                   /* `controls` y nada de autoplay: un video que arranca solo con
                      sonido es molesto, y en celular se come los datos de alguien
@@ -364,7 +376,7 @@ function ServiceDetail() {
                        Antes decía `h-auto w-full`, que la estiraba al ancho de
                        la columna — y con un flyer vertical eso la volvía
                        enorme: había que scrollear dos pantallas para verla. */
-                    className="block max-h-[70vh] w-auto max-w-full"
+                    className="block max-h-[70vh] w-auto max-w-full rounded-sm"
                   />
                 ) : (
                   <img
@@ -375,7 +387,7 @@ function ServiceDetail() {
                        Antes decía `h-auto w-full`, que la estiraba al ancho de
                        la columna — y con un flyer vertical eso la volvía
                        enorme: había que scrollear dos pantallas para verla. */
-                    className="block max-h-[70vh] w-auto max-w-full"
+                    className="block max-h-[70vh] w-auto max-w-full rounded-sm"
                   />
                 )}
               </div>
