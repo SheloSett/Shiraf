@@ -71,6 +71,87 @@ function Dato({
   );
 }
 
+/**
+ * Todas las sesiones de un tratamiento de varias, una debajo de la otra.
+ *
+ * Cada sesión sigue siendo un turno completo con su propio id y sus propias
+ * acciones (cancelar, reprogramar, marcar realizada): la línea de tiempo no
+ * reemplaza esa pantalla, es la forma de saltar de una sesión a otra sin
+ * volver primero a la tabla. Por eso cada fila que no es la actual es un link
+ * a `/admin/turnos/$id` — el mismo detalle que se está viendo ahora, pero de
+ * otra sesión.
+ *
+ * La actual no es un link: ya se está en ella, y convertirla en un botón que
+ * no lleva a ningún lado es la clase de affordance que invita al clic en vano.
+ */
+function LineaDeTiempo({
+  sesiones,
+  actual,
+}: {
+  sesiones: {
+    id: string;
+    session_number: number;
+    starts_at: string;
+    duration_minutes: number;
+    status: string;
+  }[];
+  actual: string;
+}) {
+  return (
+    <section className="rounded-sm border border-border bg-card p-6">
+      <h2 className="font-display text-xl text-foreground">Línea de tiempo</h2>
+      <ul className="mt-5 space-y-2">
+        {sesiones.map((s) => {
+          const esLaActual = s.id === actual;
+          const fila = (
+            <div
+              className={`flex flex-wrap items-center gap-3 rounded-sm border p-3 ${
+                esLaActual
+                  ? "border-l-4 border-l-primary border-y-primary/40 border-r-primary/40 bg-primary/5"
+                  : "border-border bg-background transition-colors hover:border-primary/30"
+              }`}
+            >
+              {/* "Viendo" como badge propio y no pegado al texto de la fecha:
+                  ahí quedaba tan junto a la hora que costaba distinguirlo en
+                  una fecha larga ("miércoles, 02 de septiembre, 12:29viendo"). */}
+              {esLaActual && (
+                <span className="text-eyebrow shrink-0 rounded-sm bg-primary px-1.5 py-0.5 text-primary-foreground">
+                  Viendo
+                </span>
+              )}
+              <span className="min-w-0 flex-1 text-sm text-foreground">
+                <span className="text-muted-foreground">
+                  Sesión {s.session_number} de {sesiones.length} ·{" "}
+                </span>
+                {formatDateTime(s.starts_at)}
+              </span>
+              <EstadoTurno
+                status={s.status}
+                startsAt={s.starts_at}
+                minutos={s.duration_minutes}
+                now={Date.now()}
+                className="shrink-0 text-xs"
+              />
+            </div>
+          );
+
+          return (
+            <li key={s.id}>
+              {esLaActual ? (
+                fila
+              ) : (
+                <Link to="/admin/turnos/$id" params={{ id: s.id }} className="block">
+                  {fila}
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function Tarjeta({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="rounded-sm border border-border bg-card p-6">
@@ -207,6 +288,18 @@ function FichaDelTurno() {
           className="text-sm"
         />
       </div>
+
+      {/* La línea de tiempo va ANTES de "La clienta": es lo primero que hay que
+          ver en un tratamiento de varias sesiones — en qué punto está la serie
+          —, y sólo existe cuando lo es. Antes cada sesión vivía como una fila
+          suelta en la tabla ("Exosomas · sesión 1 de 2" al lado de "Exosomas ·
+          sesión 2 de 2"), que se leía como dos turnos de dos clientas
+          distintas en vez de un mismo tratamiento con dos visitas. */}
+      {t.sesiones.length > 1 && (
+        <div className="mt-8">
+          <LineaDeTiempo sesiones={t.sesiones} actual={t.id} />
+        </div>
+      )}
 
       <div className="mt-8 space-y-6">
         <Tarjeta titulo="La clienta">
@@ -470,6 +563,11 @@ function FichaDelTurno() {
                   manual={horaAMano}
                   onManual={setHoraAMano}
                   excluirTurnoId={t.id}
+                  // Colapsado: reprogramar es una acción más de esta pantalla,
+                  // no el motivo por el que se entró a ella. Con el calendario
+                  // siempre abierto era, con diferencia, el bloque más grande
+                  // de toda la ficha del turno.
+                  colapsable
                 />
 
                 <Button

@@ -99,6 +99,26 @@ const sinQuienLoAtienda = (): Prisma.appointmentsWhereInput => ({
 });
 
 /**
+ * La misma regla que `sinQuienLoAtienda()`, pero para evaluar en JS sobre una
+ * fila que ya está en memoria.
+ *
+ * Hace falta una segunda versión porque `listar()` resuelve las SERIES en dos
+ * pasos —trae todas las sesiones y recién en JS elige cuál mostrar— y para ese
+ * paso el filtro `sinProfesional` no puede seguir viviendo en el `where` de
+ * Prisma: ya no hay una sola consulta a la que ponérselo. Las DOS versiones
+ * tienen que decir lo mismo o el filtro daría una cosa en un turno suelto y
+ * otra en una serie.
+ */
+function cumpleSinProfesional(t: {
+  professional_id: string | null;
+  professional: { is_active: boolean } | null;
+  starts_at: Date;
+}): boolean {
+  const sinQuien = t.professional_id === null || t.professional?.is_active === false;
+  return sinQuien && t.starts_at >= new Date();
+}
+
+/**
  * La tabla de Turnos.
  *
  * ── LOS DOS FILTROS ───────────────────────────────────────────────────────
@@ -131,54 +151,7 @@ export async function listar(ctx: Ctx) {
 
   const soloSinProfesional = ctx.url.searchParams.get("sinProfesional") === "1";
 
-  const turnos = await prisma.appointments.findMany({
-    where: {
-      ...(estado ? { status: estado } : {}),
-      ...(soloSinProfesional ? sinQuienLoAtienda() : {}),
-    },
-    // Los últimos que salieron, arriba.
-    //
-    // Era `starts_at: "asc"`, o sea el turno más viejo primero — y con eso la
-    // tabla arrancaba mostrando turnos que ya pasaron y había que bajar hasta el
-    // final para ver lo último que entró. En una pantalla que se abre para ver
-    // "qué hay de nuevo", lo nuevo tiene que estar arriba.
-    //
-    // El desempate por `starts_at` es para los turnos que el centro carga de a
-    // varios: se dan de alta en el mismo segundo, y sin segundo criterio el
-    // orden entre ellos queda a lo que devuelva la base.
-    orderBy: [{ created_at: "desc" }, { starts_at: "desc" }],
-    select: {
-      id: true,
-      starts_at: true,
-      status: true,
-      duration_minutes: true,
-      // Los usa el buscador de horarios al agendar la sesión siguiente.
-      buffer_minutes: true,
-      professional_id: true,
-      client_notes: true,
-      ...DATOS_DE_LA_PERSONA,
-      // `session_interval_days` sale del catálogo y no del turno: es con lo
-      // que se propone la fecha de la próxima sesión, y si el centro cambia el
-      // intervalo, la propuesta tiene que seguir al catálogo.
-      service: { select: { name: true, price: true, session_interval_days: true } },
-      // El nombre congelado, por si el tratamiento ya no está en el catálogo.
-      service_name: true,
-      variant_name: true,
-      price: true,
-      // `is_active` viaja a la pantalla: es lo que le permite marcar en rojo al
-      // turno de una profesional que ya no atiende.
-      professional: { select: { full_name: true, is_active: true } },
-      // El nombre congelado: es lo único que queda cuando la ficha del equipo se
-      // borró, y sin esto el turno viejo se vería igual que uno sin asignar.
-      professional_name: true,
-      // De qué serie es y qué sesión: con eso la fila dice "sesión 2 de 3" y el
-      // panel sabe si todavía falta agendar la siguiente.
-      series_id: true,
-      session_number: true,
-      sessions_total: true,
-    },
-  });
-
+  const turnos = await turnosVisibles(estado, soloSinProfesional);
   const yaAgendadas = await sesionesYaAgendadas(turnos);
 
   return json({
@@ -230,6 +203,147 @@ export async function listar(ctx: Ctx) {
       next_session_suggested_at: fechaSugerida(t.starts_at, t.service?.session_interval_days),
     })),
   } satisfies RtaTurnos);
+}
+
+/** La forma completa de fila que necesita el listado, compartida por las dos consultas de abajo. */
+const SELECT_FILA_DEL_LISTADO = {
+  id: true,
+  starts_at: true,
+  status: true,
+  duration_minutes: true,
+  // Los usa el buscador de horarios al agendar la sesión siguiente.
+  buffer_minutes: true,
+  professional_id: true,
+  client_notes: true,
+  created_at: true,
+  ...DATOS_DE_LA_PERSONA,
+  // `session_interval_days` sale del catálogo y no del turno: es con lo
+  // que se propone la fecha de la próxima sesión, y si el centro cambia el
+  // intervalo, la propuesta tiene que seguir al catálogo.
+  service: { select: { name: true, price: true, session_interval_days: true } },
+  // El nombre congelado, por si el tratamiento ya no está en el catálogo.
+  service_name: true,
+  variant_name: true,
+  price: true,
+  // `is_active` viaja a la pantalla: es lo que le permite marcar en rojo al
+  // turno de una profesional que ya no atiende.
+  professional: { select: { full_name: true, is_active: true } },
+  // El nombre congelado: es lo único que queda cuando la ficha del equipo se
+  // borró, y sin esto el turno viejo se vería igual que uno sin asignar.
+  professional_name: true,
+  // De qué serie es y qué sesión: con eso la fila dice "sesión 2 de 3" y el
+  // panel sabe si todavía falta agendar la siguiente.
+  series_id: true,
+  session_number: true,
+  sessions_total: true,
+} as const;
+
+type FilaDelListado = Prisma.appointmentsGetPayload<{ select: typeof SELECT_FILA_DEL_LISTADO }>;
+
+/**
+ * Las filas que va a ver la tabla, con las series ya colapsadas a UNA fila.
+ *
+ * ── EL PROBLEMA QUE ESTO RESUELVE ──────────────────────────────────────────
+ *
+ * Un tratamiento de 3 sesiones son 3 filas de `appointments`. Listadas tal
+ * cual, la tabla mostraba "Exosomas · sesión 1 de 2" y "Exosomas · sesión 2 de
+ * 2" como si fueran dos turnos de dos clientas distintas, cuando para el
+ * centro es UN tratamiento con dos visitas.
+ *
+ * ── POR QUÉ DOS CONSULTAS Y NO UNA CON UN `where` MÁS VIVO ─────────────────
+ *
+ * Porque para saber CUÁL fila representa a una serie hay que mirar la serie
+ * ENTERA primero — no se puede filtrar por estado antes de eso. Si alguien
+ * pide "Realizado" y una serie tiene la sesión 1 realizada y la sesión 2
+ * pendiente, la serie tiene que aparecer en "Pendiente" (es lo que hay que
+ * hacer hoy) y no en "Realizado" (que ya pasó): la pregunta "¿esta serie
+ * cumple el filtro?" sólo se puede contestar después de elegir qué fila la
+ * representa, y esa elección necesita ver todas las sesiones a la vez.
+ *
+ * Los turnos SUELTOS (`sessions_total <= 1`, la enorme mayoría) siguen
+ * exactamente la consulta de siempre, con el filtro en el `where` de Prisma.
+ *
+ * ── QUÉ FILA REPRESENTA A UNA SERIE ─────────────────────────────────────────
+ *
+ * La más avanzada (mayor `session_number`) entre las que están `pending` o
+ * `confirmed`, si hay alguna. Si no hay ninguna abierta (la serie terminó, o
+ * se cortó en una `cancelled`), la más avanzada de todas — el último estado
+ * que la serie tuvo.
+ *
+ * "La más avanzada ENTRE LAS ABIERTAS" y no "la única abierta" a propósito:
+ * de acá en más, \`agendarSiguienteSesion\` exige que la sesión anterior esté
+ * \`completed\` antes de agendar la próxima, así que nunca debería haber dos
+ * abiertas a la vez — pero esa regla no es retroactiva, y una serie cargada
+ * antes de que existiera puede tenerlas igual. Sin el desempate por número, la
+ * fila mostrada dependía del orden —no garantizado— en que Postgres devuelve
+ * las filas, y podía "saltar" de la sesión 1 a la 2 de un pedido a otro sin
+ * que nadie tocara nada.
+ */
+async function turnosVisibles(
+  estado: appointment_status | null,
+  soloSinProfesional: boolean,
+): Promise<FilaDelListado[]> {
+  const orderBy = [{ created_at: "desc" as const }, { starts_at: "desc" as const }];
+
+  const [sueltos, sesionesDeSeries] = await Promise.all([
+    prisma.appointments.findMany({
+      where: {
+        sessions_total: { lte: 1 },
+        ...(estado ? { status: estado } : {}),
+        ...(soloSinProfesional ? sinQuienLoAtienda() : {}),
+      },
+      orderBy,
+      select: SELECT_FILA_DEL_LISTADO,
+    }),
+    // Sin filtro de estado ni de profesional todavía: hace falta la serie
+    // completa para decidir qué fila la representa. Es un subconjunto chico
+    // de la agenda —los tratamientos de varias sesiones no son la mayoría—,
+    // así que traerla entera acá no pesa como para paginarla aparte.
+    prisma.appointments.findMany({
+      where: { sessions_total: { gt: 1 } },
+      select: SELECT_FILA_DEL_LISTADO,
+    }),
+  ]);
+
+  const porSerie = new Map<string, FilaDelListado[]>();
+  for (const t of sesionesDeSeries) {
+    const clave = t.series_id ?? t.id;
+    const grupo = porSerie.get(clave);
+    if (grupo) grupo.push(t);
+    else porSerie.set(clave, [t]);
+  }
+
+  const masAvanzada = (lista: FilaDelListado[]) =>
+    lista.reduce((mas, s) => (s.session_number > mas.session_number ? s : mas));
+
+  const representativas: FilaDelListado[] = [];
+  for (const sesiones of porSerie.values()) {
+    const abiertas = sesiones.filter((s) => s.status === "pending" || s.status === "confirmed");
+    /*
+     * De las abiertas, la más avanzada — y no la primera que aparezca.
+     *
+     * `agendarSiguienteSesion` garantiza que de acá en más una serie tenga
+     * como mucho una sesión abierta a la vez, pero esa regla no es retroactiva:
+     * una serie cargada ANTES de que existiera puede tener más de una todavía
+     * (una "Exosomas" real del centro tenía las dos sesiones en `confirmed`
+     * al escribir esto). Sin un desempate, \`sesiones\` no trae ningún \`orderBy\`
+     * —no hace falta para nada más— y el orden en que Postgres las devuelve no
+     * está garantizado, así que la fila mostrada podía "saltar" entre la
+     * sesión 1 y la 2 de un pedido a otro sin que nadie tocara nada.
+     */
+    const elegida = abiertas.length > 0 ? masAvanzada(abiertas) : masAvanzada(sesiones);
+
+    if (estado && elegida.status !== estado) continue;
+    if (soloSinProfesional && !cumpleSinProfesional(elegida)) continue;
+    representativas.push(elegida);
+  }
+
+  // Se combinan y se ordenan en JS: vienen de dos consultas separadas, así que
+  // el `orderBy` de cada una no alcanza para el resultado conjunto.
+  return [...sueltos, ...representativas].sort((a, b) => {
+    const porAlta = b.created_at.getTime() - a.created_at.getTime();
+    return porAlta !== 0 ? porAlta : b.starts_at.getTime() - a.starts_at.getTime();
+  });
 }
 
 /**
@@ -368,10 +482,17 @@ export async function detalle(ctx: Ctx) {
       professional: { select: { id: true, full_name: true, is_active: true } },
       // Ver el comentario en el select de la lista.
       professional_name: true,
+      // Para saber si hay una serie que mostrar como línea de tiempo, y con
+      // qué id buscarla.
+      series_id: true,
+      session_number: true,
+      sessions_total: true,
     },
   });
 
   if (!t) return json({ error: "Ese turno no existe." }, 404);
+
+  const sesiones = await sesionesDeLaSerie(t);
 
   return json({
     turno: {
@@ -401,8 +522,59 @@ export async function detalle(ctx: Ctx) {
       professionals: t.professional,
       professional_name: t.professional_name,
       person: personaDe(t),
+      sesiones,
     },
   } satisfies RtaTurnoEnDetalle);
+}
+
+/**
+ * Todas las sesiones de la serie de `turno`, para la línea de tiempo del
+ * detalle. Vacío en un tratamiento de una sola sesión — mismo patrón que
+ * `variants: []` en el catálogo: así el frontend nunca pregunta "¿existe la
+ * clave?", sólo mira si la lista tiene algo.
+ *
+ * Misma forma de buscar la serie que `agendarSiguienteSesion`: el id de la
+ * PRIMERA sesión es el `series_id` de las demás, así que la serie entera es
+ * "ese id, o cualquiera que lo tenga como series_id".
+ */
+async function sesionesDeLaSerie(turno: {
+  id: string;
+  series_id: string | null;
+  sessions_total: number;
+}): Promise<
+  {
+    id: string;
+    session_number: number;
+    starts_at: string;
+    duration_minutes: number;
+    status: string;
+  }[]
+> {
+  if (turno.sessions_total <= 1) return [];
+
+  const serie = turno.series_id ?? turno.id;
+  const filas = await prisma.appointments.findMany({
+    where: { OR: [{ id: serie }, { series_id: serie }] },
+    orderBy: { session_number: "asc" },
+    // `duration_minutes` viaja para que la línea de tiempo pueda calcular
+    // "Vencido" con \`EstadoTurno\`, que necesita saber cuándo TERMINA cada
+    // sesión — no sólo cuándo empieza.
+    select: {
+      id: true,
+      session_number: true,
+      starts_at: true,
+      duration_minutes: true,
+      status: true,
+    },
+  });
+
+  return filas.map((f) => ({
+    id: f.id,
+    session_number: f.session_number,
+    starts_at: f.starts_at.toISOString(),
+    duration_minutes: f.duration_minutes,
+    status: f.status,
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -898,6 +1070,7 @@ export async function agendarSiguienteSesion(ctx: Ctx) {
       guest_name: true,
       guest_phone: true,
       guest_email: true,
+      status: true,
     },
   });
   if (!anterior) return json({ error: "Ese turno no existe." }, 404);
@@ -909,6 +1082,31 @@ export async function agendarSiguienteSesion(ctx: Ctx) {
   }
   if (anterior.session_number >= anterior.sessions_total) {
     return json({ error: "Ese turno ya es la ultima sesion del tratamiento." }, 422);
+  }
+
+  /*
+   * No se agenda la sesion que sigue hasta que la anterior se REALIZO.
+   *
+   * Antes esto no se pedia, y dejaba encimar dos cosas que no van juntas: una
+   * sesion 1 vencida —la clienta no vino, o vino y nadie lo registro— con una
+   * sesion 2 ya agendada como si la 1 hubiera pasado. La serie avanzaba sola,
+   * sin que nadie hubiera confirmado que hubo algo que avanzar.
+   *
+   * Lo que corresponde cuando la sesion anterior quedo pendiente o vencida NO
+   * es agendar la siguiente: es reprogramar ESA MISMA, con \`PUT
+   * /:id/horario\`, que es la accion que ya existe para "la clienta no vino,
+   * hay que recorrerla". Recien cuando se marca "Realizado" tiene sentido
+   * preguntar por la proxima.
+   *
+   * Cancelada entra en la misma regla y por el mismo motivo: una sesion 1
+   * cancelada no es una sesion 1 hecha, y la serie no tiene por que seguir.
+   */
+  if (anterior.status !== "completed") {
+    const motivo =
+      anterior.status === "cancelled"
+        ? "Esa sesión está cancelada: la serie no puede seguir desde ahí."
+        : "Todavía no se marcó esta sesión como realizada. Confirmala como realizada, o si la clienta no vino, reprogramala — recién ahí se puede agendar la siguiente.";
+    return json({ error: motivo }, 422);
   }
 
   /*

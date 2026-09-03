@@ -155,7 +155,13 @@ export function CalendarioDeLaProfesional({
           // día elegido, que es el único con fondo lleno.
           atiende: "bg-gold/15 font-semibold text-foreground rounded-sm",
         }}
-        className="w-full rounded-sm border border-border"
+        // `--cell-size` achicado (el default de shadcn es 2rem) y menos
+        // padding: este calendario vive adentro de diálogos y de una pantalla
+        // de detalle con más secciones alrededor —turnos vencidos, reasignar
+        // profesional, cancelar—, no en una página dedicada. Con el tamaño de
+        // fábrica terminaba siendo el elemento más grande de toda la pantalla
+        // por un margen enorme.
+        className="w-full rounded-sm border border-border p-2 [--cell-size:1.65rem]"
       />
 
       {motivoDelPiso && noAntesDe && noAntesDe > new Date() && (

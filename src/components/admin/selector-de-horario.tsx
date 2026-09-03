@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock } from "lucide-react";
+import { CalendarDays, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +54,7 @@ export function SelectorDeHorario({
   noAntesDe,
   motivoDelPiso,
   idPrefijo = "sel",
+  colapsable = false,
 }: {
   /** De quién es la agenda. Sin esto no hay nada que consultar. */
   profesionalId: string | undefined;
@@ -91,8 +92,26 @@ export function SelectorDeHorario({
   motivoDelPiso?: string;
   /** Para que los `id` de los campos no choquen si hay dos en la misma página. */
   idPrefijo?: string;
+  /**
+   * Arranca oculto detrás de un botón, con la elección actual como resumen.
+   *
+   * Pensado para donde el horario es UNA sección más de una pantalla que ya
+   * tiene otras —reprogramar un turno, agendar la sesión siguiente— y no el
+   * motivo por el que se abrió esa pantalla: ahí el calendario entero, más los
+   * horarios, era con diferencia el bloque más grande de toda la vista. En
+   * «Nuevo turno» y en el paso 3 de /reservar, en cambio, elegir el horario ES
+   * la tarea del paso, así que se dejan expandidos siempre (no pasan esta
+   * prop).
+   */
+  colapsable?: boolean;
 }) {
   const date = useMemo(() => parseDateKey(dateKey), [dateKey]);
+
+  // Cerrado de entrada cuando es colapsable. No se repliega solo al elegir
+  // día u hora —eso escondería justo lo que la persona acaba de tocar—, pero
+  // sí tiene que poder cerrarlo a mano cuando ya terminó: el botón "Ocultar"
+  // de abajo hace eso.
+  const [abierto, setAbierto] = useState(!colapsable);
 
   const disponibilidad = useQuery({
     queryKey: ["disponibilidad", profesionalId, dateKey, excluirTurnoId ?? null],
@@ -154,10 +173,44 @@ export function SelectorDeHorario({
     );
   }
 
+  if (!abierto) {
+    const fechaElegida = date
+      ? date.toLocaleDateString("es-AR", { weekday: "long", day: "2-digit", month: "long" })
+      : null;
+    return (
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        className="flex w-full items-center gap-3 rounded-sm border border-border bg-secondary/30 p-3 text-left text-sm transition-colors hover:border-primary/40"
+      >
+        <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
+        {fechaElegida && time ? (
+          <span className="text-foreground">
+            {fechaElegida} · {time}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Elegir día y horario</span>
+        )}
+        <span className="text-eyebrow ml-auto shrink-0 text-gold">Cambiar</span>
+      </button>
+    );
+  }
+
   return (
     <>
       <div className="space-y-2">
-        <Label>Día</Label>
+        <div className="flex items-center justify-between">
+          <Label>Día</Label>
+          {colapsable && (
+            <button
+              type="button"
+              onClick={() => setAbierto(false)}
+              className="text-eyebrow text-gold transition-opacity hover:opacity-70"
+            >
+              Ocultar
+            </button>
+          )}
+        </div>
         <CalendarioDeLaProfesional
           profesionalId={profesionalId}
           dateKey={dateKey}

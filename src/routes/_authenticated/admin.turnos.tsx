@@ -790,14 +790,25 @@ function AdminAppointments() {
                       {/* Agendar la sesión que sigue.
                         Aparece sólo cuando hay una que agendar: tratamiento de
                         varias sesiones, ésta no es la última, la próxima
-                        todavía no está cargada y el turno no está cancelado
-                        —de una serie cancelada no se sigue a la sesión 2—.
-                        Con esas cuatro condiciones el botón no aparece nunca en
+                        todavía no está cargada, y ÉSTA se realizó.
+
+                        Ese último es el que no estaba y hacía falta: sin él se
+                        podía agendar la sesión 2 con la 1 todavía pendiente o
+                        vencida —la clienta nunca vino, o vino y nadie lo
+                        registró— y la serie avanzaba sola sin que nadie hubiera
+                        confirmado que había algo que avanzar. Mientras la
+                        sesión sigue abierta, lo que corresponde es "Marcar
+                        realizado" (si vino) o reprogramarla (si no vino) — no
+                        agendar la siguiente. El servidor exige lo mismo en
+                        \`agendarSiguienteSesion\`; acá se oculta el botón para
+                        no ofrecer una acción que ya sabemos que va a rebotar.
+
+                        Con estas cuatro condiciones el botón no aparece nunca en
                         el 99% de los turnos, que son de una sola sesión. */}
                       {a.sessions_total > 1 &&
                         a.session_number < a.sessions_total &&
                         !a.next_session_booked &&
-                        a.status !== "cancelled" && (
+                        a.status === "completed" && (
                           <Button
                             size="sm"
                             variant="outline"

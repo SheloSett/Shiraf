@@ -589,6 +589,23 @@ export type TurnoEnDetalle = {
   /** Ver `professional_name` en TurnoDelPanel: quién atendió, congelado. */
   professional_name: string | null;
   person: PersonaDelTurno;
+  /**
+   * Todas las sesiones de la serie, para la línea de tiempo — este turno
+   * incluido. Vacía en un tratamiento de una sola sesión, que es la enorme
+   * mayoría: mismo patrón que `variants: []` en el catálogo, para no tener que
+   * preguntar si la clave vino.
+   */
+  sesiones: SesionDeLaSerie[];
+};
+
+/** Una sesión dentro de la línea de tiempo de un turno de varias. */
+export type SesionDeLaSerie = {
+  id: string;
+  session_number: number;
+  starts_at: string;
+  /** La necesita `EstadoTurno` para calcular "Vencido": hace falta saber cuándo TERMINA. */
+  duration_minutes: number;
+  status: string;
 };
 
 export type RtaTurnoEnDetalle = { turno: TurnoEnDetalle };
