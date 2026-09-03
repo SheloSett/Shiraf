@@ -76,6 +76,12 @@ function BookingPage() {
   const queryClient = useQueryClient();
 
   const [serviceId, setServiceId] = useState<string | undefined>(search.service);
+
+  /** Igual que en /servicios: si la foto tiene `image_url` pero el archivo ya
+   * no existe en Cloudinary, cae al mismo placeholder que "sin foto" en vez
+   * de mostrar el ícono de imagen rota. Ver el comentario de `fotosRotas` en
+   * `servicios.index.tsx`. */
+  const [fotosRotas, setFotosRotas] = useState<Set<string>>(new Set());
   /**
    * Qué opción del tratamiento se eligió, cuando el tratamiento tiene.
    *
@@ -260,14 +266,25 @@ function BookingPage() {
                   }`}
                 >
                   {/*
-                    Misma foto y MISMO recorte que las tarjetas de /servicios
-                    (`aspect-[4/3]` con el preset "card"). Es a propósito: casi
-                    todas las que llegan acá vienen de mirar el catálogo, y lo que
-                    tiene que pasar es que reconozcan la que ya eligieron. Con
-                    otro encuadre la misma foto se ve como otra foto.
+                    Misma foto y MISMO encuadre que las tarjetas de /servicios
+                    (`aspect-square` con el preset "card", sin recortar). Es a
+                    propósito: casi todas las que llegan acá vienen de mirar el
+                    catálogo, y lo que tiene que pasar es que reconozcan la que
+                    ya eligieron. Con otro encuadre la misma foto se ve como
+                    otra foto.
+
+                    Esto era `aspect-[4/3]` con `object-cover`: la esquina de
+                    abajo del flyer —el precio, la duración— quedaba recortada
+                    igual que en /servicios antes de arreglarlo ahí, sólo que acá
+                    nadie lo había tocado todavía. Ver el comentario largo en
+                    `servicios.index.tsx` para el porqué de cada clase.
                   */}
-                  <div className="relative aspect-[4/3] overflow-hidden bg-primary">
-                    {s.image_url ? (
+                  <div
+                    className={`relative aspect-square overflow-hidden ${
+                      s.image_url && !fotosRotas.has(s.id) ? "" : "surface-olive"
+                    }`}
+                  >
+                    {s.image_url && !fotosRotas.has(s.id) ? (
                       <img
                         src={imageUrl(s.image_url, "card") ?? undefined}
                         // Decorativa: el nombre del tratamiento está escrito justo
@@ -275,12 +292,19 @@ function BookingPage() {
                         // a quien escucha la página.
                         alt=""
                         loading="lazy"
-                        className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                        onError={() => setFotosRotas((prev) => new Set(prev).add(s.id))}
+                        // Sin `group-hover:scale-105`: con `contain` ese zoom
+                        // empujaba los bordes fuera de la caja, o sea recortaba
+                        // al pasar el mouse justo lo que se acaba de sacar. El
+                        // hover ya se nota en el borde del botón (`hover:border-primary/40`).
+                        className="h-full w-full object-contain"
                       />
                     ) : (
-                      /* Sin foto cargada: inicial del tratamiento sobre el oliva
-                         con grano. El mismo relleno que el catálogo, para que el
-                         hueco se lea como decisión y no como imagen rota. */
+                      /* Sin foto cargada —o con `image_url` pero el archivo ya
+                         no existe en Cloudinary, ver `fotosRotas`—: inicial del
+                         tratamiento sobre el oliva con grano. El mismo relleno
+                         que el catálogo, para que el hueco se lea como decisión
+                         y no como imagen rota. */
                       <div className="grain absolute inset-0 flex items-center justify-center">
                         <span className="font-display text-6xl text-primary-foreground/25">
                           {s.name.charAt(0)}
