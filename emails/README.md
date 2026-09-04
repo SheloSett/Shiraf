@@ -1,72 +1,56 @@
 # Mails de Shiraf
 
-Plantillas de los mails que manda Supabase. Van pegadas a mano en el panel:
-Supabase no las lee de este repo, así que si se editan acá hay que volver a
-copiarlas allá.
+Las plantillas de los dos mails de cuenta. **Las manda la app**, leyéndolas de
+esta carpeta en cada envío:
+[`email.service.ts`](../src/server/services/email.service.ts) las abre con
+`readFile` y reemplaza `{{ .ConfirmationURL }}` por el enlace.
 
-| Archivo | Dónde va (Supabase → Authentication → Emails) |
+| Archivo | Cuándo se manda |
 | --- | --- |
-| `confirmar-cuenta.html` | **Confirm signup** |
-| `recuperar-contrasena.html` | **Reset Password** |
+| `confirmar-cuenta.html` | Al registrarse, y cada vez que se pide reenviarlo |
+| `recuperar-contrasena.html` | Al pedir "olvidé mi contraseña" |
 
-Asuntos sugeridos, en el campo *Subject* de cada una:
+Los asuntos están en el código, en `ASUNTOS` del mismo archivo.
 
-- Confirm signup → `Confirmá tu cuenta en Shiraf`
-- Reset Password → `Recuperá tu contraseña de Shiraf`
+Que se lean del disco y no del bundle es a propósito: son dos mails por semana
+en el peor de los casos, así que releer un archivo no le cuesta nada a nadie, y
+a cambio se pueden corregir sin reconstruir la imagen.
 
----
+⚠️ Pero tienen que estar **adentro de la imagen**. La etapa `runtime` del
+Dockerfile se arma copiando archivo por archivo, y ya pasó una vez que `emails/`
+no estuviera en esa lista: el síntoma fue
+`[cuenta] No salió el mail: No se encontró la plantilla del mail.`, y en
+desarrollo era invisible.
 
-## Lo que estas plantillas NO arreglan
+El `{{ .ConfirmationURL }}` es sintaxis de Go y quedó de la época de Supabase.
+Se reemplaza igual, para no tener que tocar los 509 renglones de HTML de cada
+plantilla.
 
-Cambian **cómo se ve** el mail. No cambian **de quién llega**.
+### Se pueden mirar sin mandar nada
 
-Con el SMTP que Supabase trae de fábrica, el remitente es una dirección suya
-(`noreply@mail.app.supabase.io`) y no se puede tocar. La clienta ve un mail
-lindo de Shiraf mandado desde un dominio que nunca escuchó nombrar, que es
-justo lo que enseñan a mirar para detectar una estafa. Y como el dominio no es
-nuestro, tampoco hay SPF ni DKIM propios: hay chances concretas de que caiga en
-correo no deseado.
+Con el dev server levantado:
+`http://localhost:8081/preview-mails/recuperar-contrasena.html`
 
-Para que el mail salga de una dirección de Shiraf hace falta **SMTP propio**:
-Authentication → Emails → SMTP Settings. Cualquier proveedor sirve — Resend,
-Brevo, SendGrid, Amazon SES.
+### Antes las mandaba Supabase
 
-Hay además una razón que no es de imagen: **el SMTP de fábrica está limitado a
-unos pocos mails por hora** y la propia documentación de Supabase dice que no
-es para producción. Con eso, un sábado a la mañana con varias clientas
-registrándose, los mails simplemente dejan de salir. Antes de abrir el centro
-esto hay que resolverlo igual, así que conviene hacerlo de una vez.
-
-Al configurarlo hay que verificar el dominio en el proveedor (agregar unos
-registros DNS de SPF y DKIM donde esté comprado `shiraf.com.ar`). Es lo que hace
-que Gmail confíe.
-
-Ojo con el remitente: la casilla del centro es `shirafbeautyandspa@gmail.com`,
-que **no** sirve como remitente verificado en Resend o Brevo — Gmail no deja que
-otro proveedor firme por sus dominios. Hay que crear una dirección sobre
-`shiraf.com.ar` (por ejemplo `hola@shiraf.com.ar`) y usar el Gmail como
-`reply-to`, o mandar directamente por el SMTP de Google con una contraseña de
-aplicación (`smtp.gmail.com:465`), que evita comprar mail pero tiene un tope de
-unos 500 envíos por día y muestra un "vía gmail.com".
+Había que pegarlas a mano en su panel, y hasta que no hubiera SMTP propio ni
+siquiera dejaba editarlas: a la clienta le llegaba un mail en inglés desde
+`noreply@mail.app.supabase.io`. Con backend propio, esa carpeta del panel dejó
+de existir y estos archivos pasaron a ser los que se mandan de verdad.
 
 ---
 
-## Además
+## Probar de verdad
 
-**Redirect URLs.** En Authentication → URL Configuration tienen que estar las
-direcciones a las que vuelven los enlaces, o rebotan:
+Los clientes de correo renderizan muy distinto entre sí. Conviene mandarse el
+mail a una cuenta de Gmail y a una de Outlook antes de darlo por bueno: Outlook
+usa el motor de Word y es el que más rompe.
 
-- `http://localhost:8081/recuperar` (desarrollo)
-- `https://shiraf.com.ar/recuperar` (producción, cuando el dominio esté apuntando)
-
-**Probar de verdad.** Los clientes de correo renderizan muy distinto entre sí.
-Conviene mandarse el mail a una cuenta de Gmail y a una de Outlook antes de
-darlo por bueno: Outlook usa el motor de Word y es el que más rompe.
-
-**Por qué el HTML está escrito "mal" a propósito** (tablas, estilos inline,
-Georgia en vez de Bodoni, colores en hex): está explicado en el comentario de
-arriba de `recuperar-contrasena.html`. En resumen, es lo único que se ve igual
-en todos los clientes de correo.
+**Por qué el HTML está escrito "mal" a propósito** —tablas en vez de flex,
+estilos inline en vez de clases, Georgia en vez de Bodoni, colores en hex en vez
+de oklch— está explicado en el comentario de arriba de
+`recuperar-contrasena.html`. En resumen: es lo único que se ve igual en todos
+los clientes de correo.
 
 ---
 
@@ -106,58 +90,109 @@ olvida y sin él el enlace abre un chat con un número que no existe.
 
 ## Mail: configurar el SMTP
 
-Se manda con **nodemailer por el SMTP de Gmail**, igual que `Ecommerce_mm`. No
-hay cuenta de ningún servicio que crear ni dominio que verificar: alcanza con la
-casilla que el centro ya usa. Son dos variables:
-
-1. Activar la **verificación en dos pasos** en la cuenta de Google del centro
-   (`shirafbeautyandspa@gmail.com`). Sin eso, el paso siguiente no existe.
-2. Generar una **contraseña de aplicación** en
-   [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
-   Son 16 letras. Se pegan en `SMTP_PASS` **sin espacios**.
-3. `SMTP_USER` es la dirección de esa misma casilla.
+Se manda con **nodemailer por el SMTP de Brevo**, con el remitente
+`avisos@shiraf.com.ar` firmado por el dominio del centro. Son seis variables:
 
 ```
-SMTP_USER="shirafbeautyandspa@gmail.com"
-SMTP_PASS="las16letras"
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_USER=<el login de Brevo, con forma de xxxxxxxx@smtp-brevo.com>
+SMTP_PASS=<la clave SMTP>
+MAIL_FROM="Shiraf <avisos@shiraf.com.ar>"
+MAIL_REPLY_TO=shirafbeautyandspa@gmail.com
 ```
 
-`SMTP_HOST` y `SMTP_PORT` tienen default (`smtp.gmail.com` y `587`) y no hace
-falta ponerlas.
+`MAIL_FROM` ahora **sí** se define. Con Gmail iba sin definir a propósito —su
+SMTP no dejaba mandar como otra dirección—; con Brevo es al revés, y el
+remitente propio es justamente el punto. `MAIL_REPLY_TO` sigue apuntando al
+Gmail para que la respuesta de la clienta caiga en la casilla que alguien lee.
 
-### El remitente, con Gmail, no es libre
+En el panel de Brevo esto vive en dos lugares: **Remitentes, dominio, IP** —el
+dominio autenticado y el remitente— y **SMTP y API** —el login y la clave—.
 
-Su SMTP sólo deja mandar como la casilla autenticada o como un alias que esa
-casilla tenga confirmado en «Enviar como»; cualquier otra dirección la reescribe
-o la rechaza. Por eso **`MAIL_FROM` se deja sin definir** mientras se mande por
-Gmail: el remitente sale de `SMTP_USER`, que es lo único que Google va a
-respetar. Ponerle `turnos@shiraf.com.ar` sin tener ese dominio andando es la
-forma de que los mails dejen de salir sin que el código se entere.
+⚠️ **La clave SMTP vence el 4/9/2027**, y también a los 90 días sin usarla. El
+día que venza, los mails dejan de salir de golpe y el log dice `Invalid login`.
 
-El día que `shiraf.com.ar` tenga su propio servidor de correo, esto se resuelve
-cambiando las tres variables de `SMTP_*` y definiendo `MAIL_FROM`. El código no
-se toca.
+### Por qué se dejó de mandar por Gmail — 4/9/2026
+
+Una clienta con casilla de **Hotmail** no recibió ni el mail de confirmación de
+su cuenta ni el aviso de su turno. El envío andaba perfecto: Gmail aceptaba cada
+mensaje con un `250 OK`, y las mismas pruebas llegaban sin problema a Gmail.
+
+Microsoft descarta en silencio lo que llega de un `@gmail.com` diciendo ser un
+negocio: no lo rechaza —no hay rebote que mirar— y tampoco lo deja en correo no
+deseado. Se probó con un mail de texto plano, sin HTML ni enlaces, y tampoco
+llegó: no era el contenido, era el remitente.
+
+Y no había forma de arreglarlo desde Gmail. Google no deja que otro proveedor
+firme por `gmail.com`, así que el mail nunca iba a estar autenticado a nombre de
+Shiraf. Firmado por `shiraf.com.ar` con DKIM y DMARC, y saliendo de una IP con
+reputación, la misma prueba a la misma casilla llegó.
+
+> Vale la pena quedarse con la forma del problema, porque se repite: **el
+> sistema puede estar funcionando perfecto y el mail no llegar igual.** Que el
+> envío salga sin error no dice nada sobre si alguien lo recibió. Eso lo sabe el
+> panel de entregas del proveedor —en Brevo, `Estadísticas` → `Registros`— o la
+> persona a la que le tenía que llegar, y nadie más.
+
+### El DNS está en Cloudflare, no en Hostinger
+
+`shiraf.com.ar` resuelve por Cloudflare. Los registros de Brevo —SPF, DKIM, el
+`brevo-code` y el CNAME del subdominio `mail`— los cargó Brevo solo, conectando
+con esa cuenta. Si alguna vez hay que tocarlos a mano, en Cloudflare van con la
+**nube gris (DNS only)**, nunca proxied.
+
+Esto además cierra el cabo suelto más viejo del proyecto, el que había bloqueado
+a Resend en agosto: no se sabía dónde se administraba el dominio. Se administra
+desde Cloudflare.
+
+El subdominio `mail.shiraf.com.ar` existe para que los enlaces que Brevo
+reescribe para medir clics queden en el dominio del centro. Sin él apuntarían a
+un dominio de Brevo, que es exactamente la clase de cosa que a Outlook le
+desagrada.
+
+### Mudarse de VPS no toca nada de esto
+
+Los registros son del dominio, no del servidor. En una mudanza cambia el `A` y
+nada más; al VPS nuevo se le copia el `.env` con las mismas seis variables.
+
+Es una de las razones para no haber montado un servidor de correo propio adentro
+del VPS: además de arrancar sin reputación de IP —lo peor posible contra
+Outlook—, cada mudanza sería empezar de cero.
 
 ### Límites y qué esperar
 
-Gmail permite unos 500 destinatarios por día en una cuenta común. Para un centro
-de estética —los avisos de turno de una agenda— sobra de lejos.
+El plan gratuito de Brevo son **300 mails por día**. Para los avisos de una
+agenda sobra de lejos; el día que no alcance, el panel lo va a decir antes.
 
 Sin `SMTP_USER` o sin `SMTP_PASS` no se rompe nada: el turno cambia de estado
 igual y el panel avisa "Por mail no salió: …". Es para poder trabajar sin el
 correo resuelto, no para dejarlo así.
 
-### Antes esto era Resend
+Y desde el 4/9/2026, un mail que no sale **siempre deja una línea en el log**,
+aunque no haya nadie mirando la pantalla:
 
-Pedía un dominio propio verificado, con SPF y DKIM cargados en el registrador, y
-ese trámite tuvo los mails frenados semanas: falta saber dónde está registrado
-`shiraf.com.ar`. Con backend propio no hacía falta pagar ese peaje — el
-ecommerce nunca lo pagó. El transporte quedó en un solo lugar,
-[`src/server/services/email.service.ts`](../src/server/services/email.service.ts),
-y los avisos de turno y los de cuenta salen los dos por ahí.
+    docker logs shiraf-app 2>&1 | grep -iE "\[cuenta\]|\[aviso\]"
 
 Las clientas sin cuenta pueden no tener mail (`guest_email` es opcional). Para
 esas, WhatsApp es el único canal, y el panel lo dice cuando pasa.
+
+### Antes esto fue Resend, y después Gmail
+
+**Resend** se descartó en agosto porque pedía un dominio verificado y no se
+sabía dónde estaba registrado `shiraf.com.ar`. Ese trámite tuvo los mails
+frenados semanas.
+
+**Gmail con contraseña de aplicación** los destrabó el 26/8: alcanzaba con la
+casilla que el centro ya tenía, sin cuenta nueva ni dominio que verificar. Fue
+la decisión correcta en ese momento y funcionó bien —para Gmail—. Lo que no
+cubría era el resto del mundo, y eso no se vio hasta que se registró una clienta
+de Hotmail.
+
+El transporte, mientras tanto, no se movió de lugar:
+[`src/server/services/email.service.ts`](../src/server/services/email.service.ts).
+Los tres cambios de proveedor fueron variables de entorno; el código de envío no
+se tocó ni una vez.
 
 ## Recordatorios: no hay nada que programar
 

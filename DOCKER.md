@@ -36,6 +36,17 @@ Con el `.env` presente en la raíz. Las que no pueden faltar son
 `POSTGRES_PASSWORD`, `JWT_SECRET`, `APP_URL` y las cuatro de Cloudinary — el
 compose corta el arranque si alguna no está. Ver `.env.example`.
 
+> **En el VPS, el proyecto vive en `/home/shelo/shiraf`.** Si no te acordás,
+> sale de acá sin buscar a mano:
+>
+> ```sh
+> cd $(docker inspect shiraf-app --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}')
+> ```
+>
+> Los contenedores tienen nombre fijo (`shiraf-app`, `shiraf-db`,
+> `shiraf-backup`), así que un `docker exec shiraf-app …` anda desde cualquier
+> carpeta; el `cd` sólo hace falta para `docker compose` y para el `.env`.
+
 **Para desarrollo** hay un compose aparte, con el código montado en vivo:
 
 ```sh
@@ -228,8 +239,15 @@ que algo funcione acá y falle allá, es probable que sea uno de estos dos.
 pasaba, y sin él cada uno era una tarde:
 
 ```sh
-docker compose logs app | grep -i mail
+docker compose logs app | grep -iE "mail|\[cuenta\]|\[aviso\]"
 ```
+
+> **Hay un tercer caso, y no lo agarra ningún log: el mail sale bien y no llega
+> igual.** Pasó el 4/9/2026 con las casillas de Hotmail — el envío contestaba
+> `250 OK` en cada intento y Microsoft descartaba el mensaje en silencio. El
+> `250` sólo dice que el proveedor lo aceptó, nunca que alguien lo recibió; eso
+> se mira en el panel de entregas de Brevo. Está contado entero en
+> [`emails/README.md`](emails/README.md).
 
 ### 1. Un archivo que el repo tiene y la imagen no
 

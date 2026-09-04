@@ -142,9 +142,11 @@ no podía entrar.
 
 - [x] `docker compose up -d` en el VPS. Levanta `db → migrate → app` más el
       contenedor de backups.
-- [x] Completar el `.env` de allá. Sumadas el 27/8 las tres del correo:
-      `SMTP_USER`, `SMTP_PASS` y `MAIL_REPLY_TO`. `REMINDERS_SECRET` dejó de
-      usarse — el endpoint que la pedía ya no existe.
+- [x] Completar el `.env` de allá. El correo son **seis** desde el 4/9/2026, con
+      el paso a Brevo: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+      `MAIL_FROM` y `MAIL_REPLY_TO` — antes bastaba con tres porque las otras
+      caían al default de Gmail. `REMINDERS_SECRET` dejó de usarse: el endpoint
+      que la pedía ya no existe.
 - [x] Los datos están cargados y el esquema al día. Verificado el 27/8 contra el
       servidor: `db push` en sync, post-push 3/3 triggers · 2/2 CHECK · 4/4
       índices · 1/1, las columnas `cancel_reason` y `professional_name` puestas,
@@ -178,10 +180,10 @@ páginas— pero **nadie hizo clic en nada**. Es lo primero que conviene hacer:
 
 - **Las plantillas de mail en castellano.** Supabase no las dejaba editar sin
   SMTP propio y a la clienta le llegaba un mail en inglés. Ahora las manda la
-  app desde [`emails/`](emails/), por SMTP de Gmail con nodemailer, igual que el
-  ecommerce. Ya no hace falta la cuenta de Resend ni verificar `shiraf.com.ar`:
-  sólo una **contraseña de aplicación** de Google en `SMTP_PASS`. Ver
-  [`emails/README.md`](emails/README.md).
+  app desde [`emails/`](emails/), con nodemailer. El proveedor cambió dos veces
+  desde entonces —Gmail primero, **Brevo** desde el 4/9/2026— y las plantillas no
+  se tocaron ni una vez: el transporte vive en un solo archivo y se configura por
+  variables de entorno. Ver [`emails/README.md`](emails/README.md).
 - **Las migraciones a mano.** Se acabó copiar SQL en el editor web: el esquema
   se sincroniza con `npm run db:sync`.
 - **El cron de los recordatorios.** Ya no hay nada que programar en el VPS ni
@@ -279,44 +281,87 @@ Pendiente de esto, nada. Queda anotado para producción:
 
 ---
 
-## ✅ Mails: andando desde el 26/8/2026 — se descartó Resend
+## ✅ Mails: por Brevo desde el 4/9/2026, con el dominio propio
 
-**Los mails salen.** Probado de punta a punta: el de recuperar contraseña llegó.
+**Los mails salen y llegan, también a Hotmail.** Salen por **Brevo**, desde
+`avisos@shiraf.com.ar`, firmados con el DKIM de `shiraf.com.ar` y con DMARC
+configurado. Las seis variables están en el `.env` del VPS; el detalle completo,
+en [`emails/README.md`](emails/README.md).
 
-Se descartó Resend, que era el bloqueo más viejo del proyecto y no era técnico:
-exige un dominio propio verificado con SPF y DKIM, y **todavía no se sabe dónde
-está registrado `shiraf.com.ar`**. Ese trámite tenía los mails frenados semanas.
+### Qué pasó, en corto
 
-Ahora se manda con **nodemailer por el SMTP de Gmail**, igual que
-`Ecommerce_mm`. Sin cuenta de ningún servicio ni dominio que verificar: alcanza
-con la casilla que el centro ya usa, con una **contraseña de aplicación** de
-Google (`SMTP_USER` + `SMTP_PASS` en el `.env`; ver
-[`emails/README.md`](emails/README.md)).
+Del 26/8 al 4/9 se mandó por el SMTP de Gmail del centro, con una contraseña de
+aplicación. Andaba —para Gmail—. El 4/9 apareció que una clienta con casilla de
+**Hotmail no había recibido nada**: ni el mail de confirmación de su cuenta ni el
+aviso de su turno, cuatro días antes.
 
-Las plantillas siguen igual, en [`emails/`](emails/), y el transporte quedó en un
-solo lugar: `src/server/services/email.service.ts`. Antes había dos clientes de
-Resend escritos por separado.
+El envío estaba perfecto. Microsoft descarta en silencio lo que viene de un
+`@gmail.com` diciendo ser un negocio: no rebota, no cae en correo no deseado,
+desaparece. Se comprobó mandando texto plano sin enlaces a esa misma casilla —
+tampoco llegó—, así que no era el contenido sino el remitente. Y no tenía
+arreglo del lado de Gmail: Google no deja que otro proveedor firme por
+`gmail.com`.
 
-> ⚠️ **`MAIL_FROM` va sin definir mientras se mande por Gmail.** Su SMTP sólo
-> deja mandar como la casilla autenticada; poner `turnos@shiraf.com.ar` sin tener
-> ese dominio andando hace que los mails dejen de salir sin que el código se
-> entere.
+Con Brevo y el dominio propio, la misma prueba a la misma casilla llegó.
+
+> **La forma de este problema se repite y conviene tenerla presente: el sistema
+> puede estar funcionando perfecto y el mail no llegar igual.** Un `250 OK` no
+> dice nada sobre si alguien lo recibió. Eso lo sabe el panel de entregas de
+> Brevo (`Estadísticas` → `Registros`) o la persona a la que le tenía que llegar.
+
+### De paso se cerró el cabo suelto más viejo
+
+**El DNS de `shiraf.com.ar` está en Cloudflare.** Era lo que había bloqueado a
+Resend en agosto y lo que este documento venía arrastrando como pendiente desde
+entonces. Brevo cargó ahí sus registros solo.
+
+### Y el fallo dejó de ser mudo
+
+Hasta el 4/9, un mail que no salía no dejaba rastro en ningún lado: el registro
+descartaba el motivo en la pantalla, la reserva se lo tragaba, y sólo el panel
+—al confirmar o cancelar— lo mostraba en un toast de cinco segundos. Por eso
+esto se supo por WhatsApp y no por el sistema. Ahora queda una línea siempre:
+
+    docker logs shiraf-app 2>&1 | grep -iE "\[cuenta\]|\[aviso\]"
 
 ### Lo que queda pendiente del correo
 
+- [ ] ⏰ **La clave SMTP de Brevo vence el 4/9/2027.** También caduca a los 90
+      días sin usarse. El día que pase, los mails dejan de salir de golpe y el
+      log dice `Invalid login`. Se regenera en Brevo → SMTP y API y se cambia
+      `SMTP_PASS` en el `.env` del VPS.
+- [ ] Avisarle a la clienta de Hotmail (`crazysmile2@hotmail.com`) que su cuenta
+      quedó sin confirmar: los mails que no le llegaron incluían el enlace. Entra
+      y reserva igual —`login` no exige el mail verificado—, pero sin confirmar
+      no se le vinculan turnos que hubiera sacado como invitada.
 - [ ] Probar en **Outlook** además de Gmail: usa el motor de Word y es el que más
-      rompe las plantillas.
+      rompe las plantillas. Ahora que los mails llegan a Hotmail, se puede.
 - [ ] Los mails nuevos del 26/8 —pedido de turno, cancelación con motivo,
       resumen de vencidos— **no se enviaron ni una vez**. Ver
       [`PARA-PROBAR.md`](PARA-PROBAR.md).
-- [ ] **Dónde está registrado `shiraf.com.ar`.** Ya no bloquea nada, pero el día
-      que se quiera mandar desde `turnos@shiraf.com.ar` en vez del Gmail, hace
-      falta el panel de DNS.
+- [ ] Mirar el panel de Brevo la primera semana. Un dominio recién estrenado no
+      tiene reputación todavía; si algo se marca como spam, aparece ahí.
 
 Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
 `http://localhost:8081/preview-mails/recuperar-contrasena.html`
 
 ## Lo próximo, por orden de dolor real
+
+- [x] ~~**A las profesionales no les llega ningún aviso.**~~ Hecho (4/9/2026).
+      Hasta ese día los avisos salían a **una sola casilla** —`CONTACT.email`— y
+      la profesional que atendía el turno no se enteraba por el sistema, aunque
+      el dato estuviera. Ahora recibe **seis de los ocho** avisos, **además** del
+      centro: los tres internos y los tres que el centro le manda a la clienta
+      (confirmado, cancelado, movido). Los textos son propios, en tono de
+      trabajo, y apuntan a `/admin/mi-agenda`; ver `buildProfessionalMessage()`.
+      Quedan afuera a propósito `requested` —duplicaría `new-request`, que se
+      dispara junto— y `reminder`, que serían seis mails cada mañana. Tampoco se
+      le avisa de lo que hizo ella misma desde el panel.
+      **Sin probar el envío real todavía**: los textos sí, el mail no.
+- [ ] **Un resumen del día para cada profesional.** Salió de lo anterior: el
+      recordatorio no se le manda porque serían seis mails sueltos, pero un solo
+      mail a la mañana con los turnos del día sí serviría. Nadie lo pidió; ver si
+      hace falta antes de escribirlo.
 
 - [x] ~~**Recordatorio de turno 24h antes.**~~ Hecho (26/8/2026). Va **por
       mail**, y el cron **vive adentro de la app** con `node-cron`: ni `pg_cron`
@@ -325,7 +370,9 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       idempotente. Ver `src/server/services/reminders.service.ts`.
       **Falta la versión por WhatsApp**, que en este rubro es el canal que la
       gente mira de verdad — hoy el botón «Avisar» abre el chat con el mensaje
-      escrito, pero lo aprieta una persona.
+      escrito, pero lo aprieta una persona. El código del envío automático ya
+      está y está apagado: lo que falta es el trámite con Meta, no programar. Ver
+      `docs/whatsapp-automatico.md` §9.
 - [ ] **Las invitadas no aparecen en Clientes.** Los turnos de gente sin cuenta
       ya se pueden cargar, pero la pantalla de Clientes lista `profiles`, así
       que alguien que vino tres veces sin registrarse no figura en ningún lado.
@@ -411,8 +458,11 @@ SERVICIOS
 x- recordatorios en el dia del turno/ y un wasap apenas saquen turno, Astrid-Profesional-cliente
       → el mail de todos esos avisos ya sale solo. El WhatsApp hoy es a mano, con
       el botón que abre el mensaje escrito. Automatizarlo depende de una decisión
-      de la dueña —número, plantillas y unos dólares por mes—: está todo escrito
-      en `docs/whatsapp-automatico.md`, con las tres salidas y qué preguntarle.
+      de la dueña —plantillas, un proveedor y unos dólares por mes—: está todo
+      escrito en `docs/whatsapp-automatico.md`. **Actualizado el 4/9/2026**: con
+      la coexistencia de Meta ya no hace falta un chip nuevo, los avisos salen del
+      número de siempre y las secretarias siguen atendiendo desde el celular. Son
+      avisos y nada más: se decidió que no hay bot que responda.
 
 - [x] todas las profesionales manejan turnos
       → la cuenta de una profesional nace con «Gestionar turnos» tildado, por las
