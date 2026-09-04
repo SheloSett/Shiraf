@@ -132,22 +132,33 @@ function EditGuestForm({ guest, onDone }: { guest: GuestToEdit; onDone: () => vo
       // acá, alguien podría reescribirle los datos de invitada a cualquier turno.
       // El pasaje a minúscula del mail también lo hace el servidor, porque es
       // como compara el vínculo automático al pasarle los turnos a su cuenta.
-      const { count } = await apiPut<RtaCorreccion>("/api/turnos/invitada", {
+      return await apiPut<RtaCorreccion>("/api/turnos/invitada", {
         appointmentId: guest.appointmentId,
         originalEmail,
         name: name.trim(),
         phone: phone.trim() || null,
         email: email.trim() || null,
       });
-      return count;
     },
-    onSuccess: async (count) => {
+    onSuccess: async ({ count, vinculados = 0 }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-appointments"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-calendar"] }),
         queryClient.invalidateQueries({ queryKey: ["guest-siblings"] }),
       ]);
-      toast.success(count === 1 ? "Datos corregidos." : `Se corrigieron ${count} turnos.`);
+      // Cuando el mail corregido resulta ser el de una clienta con cuenta, el
+      // servidor le pasa los turnos a su historial en el acto. Eso hay que
+      // decirlo: la fila deja de figurar como invitada y sin aviso parecería que
+      // el turno se perdió.
+      if (vinculados > 0) {
+        toast.success(
+          vinculados === 1
+            ? "Datos corregidos. Ese mail ya tiene cuenta, así que el turno pasó a su historial."
+            : `Datos corregidos. Ese mail ya tiene cuenta, así que sus ${vinculados} turnos pasaron a su historial.`,
+        );
+      } else {
+        toast.success(count === 1 ? "Datos corregidos." : `Se corrigieron ${count} turnos.`);
+      }
       onDone();
     },
     onError: (e: Error) => toast.error(e.message),

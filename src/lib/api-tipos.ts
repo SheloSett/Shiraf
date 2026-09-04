@@ -823,7 +823,15 @@ export type RtaServiciosParaTurno = {
 export type RtaAlcanceInvitada = { ids: string[] };
 
 /** Cuántos turnos tocó la operación. */
-export type RtaCorreccion = { count: number };
+export type RtaCorreccion = {
+  count: number;
+  /**
+   * Cuántos de esos turnos, además de corregirse, pasaron al historial de una
+   * clienta con cuenta. Sólo puede ser > 0 en `corregirInvitada`, y sólo cuando
+   * el mail corregido es el de una cuenta con el mail ya confirmado.
+   */
+  vinculados?: number;
+};
 
 /** Una empleada, con sus accesos tildados. */
 export type RtaEmpleadas = {

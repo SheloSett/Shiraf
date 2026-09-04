@@ -1229,16 +1229,56 @@ export async function corregirInvitada(ctx: Ctx) {
     return json({ error: "No se pudo determinar qué turnos corregir. Probá de nuevo." }, 400);
   }
 
+  const emailNuevo = textoODefault(ctx.body["email"])?.toLowerCase() ?? null;
+
   const { count } = await prisma.appointments.updateMany({
     where: { id: { in: ids } },
     data: {
       guest_name: nombre,
       guest_phone: textoODefault(ctx.body["phone"]),
-      guest_email: textoODefault(ctx.body["email"])?.toLowerCase() ?? null,
+      guest_email: emailNuevo,
     },
   });
 
-  return json({ count } satisfies RtaCorreccion);
+  // ── SI EL MAIL CORREGIDO YA ES DE UNA CUENTA CONFIRMADA, SE VINCULA ACÁ ───
+  //
+  // El traspaso automático de `verifyEmail` es un disparo único: ocurre en el
+  // momento en que la clienta confirma su mail y no vuelve a mirar nunca más. Si
+  // el centro le arregla el mail a la invitada DESPUÉS de que esa persona ya
+  // tenía cuenta —que es el caso normal: se anotó mal por teléfono y se descubre
+  // más tarde—, esos turnos se quedaban sueltos para siempre y había que ir a
+  // vincularlos a mano, sabiendo que hacía falta.
+  //
+  // `email_verified_at` no es un detalle: es la misma condición que en el alta.
+  // Sin ella, escribirle a un turno el mail de cualquier cuenta le metería en el
+  // historial de esa persona turnos que no son suyos. Con ella, la dirección ya
+  // está demostrada.
+  //
+  // Va después del updateMany y no en su lugar porque son dos cosas distintas:
+  // primero el turno queda con los datos corregidos —que es lo que el centro
+  // pidió— y recién si además esa dirección tiene dueña, deja de ser un turno de
+  // invitada. Si no la tiene, el turno queda corregido igual.
+  let vinculados = 0;
+  if (emailNuevo) {
+    const cuenta = await prisma.users.findUnique({
+      where: { email: emailNuevo },
+      select: { id: true, email_verified_at: true },
+    });
+    if (cuenta?.email_verified_at) {
+      const traspaso = await prisma.appointments.updateMany({
+        where: { id: { in: ids }, client_id: null },
+        data: {
+          client_id: cuenta.id,
+          guest_name: null,
+          guest_phone: null,
+          guest_email: null,
+        },
+      });
+      vinculados = traspaso.count;
+    }
+  }
+
+  return json({ count, vinculados } satisfies RtaCorreccion);
 }
 
 /** Le pasa a una clienta con cuenta los turnos que saco como invitada. */
