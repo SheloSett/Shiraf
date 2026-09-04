@@ -6,21 +6,31 @@ import { CONTACT } from "@/lib/contact";
 /**
  * El único lugar por el que sale un mail.
  *
- * ── POR QUÉ SE FUE RESEND ─────────────────────────────────────────────────
+ * ── POR QUÉ SE MANDA POR BREVO Y NO POR GMAIL — 4/9/2026 ──────────────────
  *
- * Resend pide un dominio propio verificado —SPF y DKIM cargados en el
- * registrador— y hasta que eso no esté, no manda nada. Ese trámite tenía
- * frenados los mails desde hacía semanas, y no por una razón técnica: falta
- * saber dónde está registrado `shiraf.com.ar`. Google, además, no deja que otro
- * proveedor firme por `gmail.com`, así que la casilla que el centro usa de
- * verdad tampoco servía de remitente.
+ * Del 26/8 al 4/9 se mandó con **nodemailer por el SMTP de Gmail**, igual que
+ * `Ecommerce_mm`, con una contraseña de aplicación de la casilla del centro. Fue
+ * lo que destrabó los mails, que llevaban semanas frenados porque Resend pedía
+ * un dominio verificado y no se sabía dónde se administraba `shiraf.com.ar`.
  *
- * `Ecommerce_mm` no tiene ese problema porque no usa ningún servicio: manda con
- * **nodemailer por el SMTP de Gmail**, con una contraseña de aplicación
- * (`services/email.service.js`). Es lo mismo que hacemos acá ahora. Alcanza con
- * la casilla que el centro ya tiene, no hay cuenta nueva que crear ni dominio
- * que verificar, y el día que `shiraf.com.ar` esté configurado se cambian tres
- * variables de entorno y se manda desde ahí sin tocar una línea de código.
+ * Funcionaba. Para Gmail.
+ *
+ * A las casillas de **Hotmail/Outlook no llegaba nada**. Ni un mail de texto
+ * plano, sin HTML ni enlaces: Microsoft descarta en silencio lo que viene de un
+ * `@gmail.com` diciendo ser un negocio —no rebota, no cae en correo no deseado,
+ * desaparece— y desde acá se veía un `250 OK` perfecto en cada envío. Se supo
+ * porque una clienta lo comentó por WhatsApp, cuatro días después.
+ *
+ * Y no había arreglo posible del lado de Gmail: Google no deja que otro
+ * proveedor firme por `gmail.com`, así que el mail nunca iba a poder estar
+ * autenticado a nombre de Shiraf.
+ *
+ * Ahora sale por **Brevo**, firmado con el DKIM de `shiraf.com.ar` y desde
+ * `avisos@shiraf.com.ar`. La misma prueba, a la misma casilla de Hotmail, llegó.
+ *
+ * El código no cambió ni una línea en ninguno de los dos movimientos: los tres
+ * proveedores que pasaron por acá fueron seis variables de entorno. Ver
+ * `emails/README.md` para el panel de Brevo y el vencimiento de la clave.
  *
  * ── UN SOLO TRANSPORTE PARA LOS DOS TIPOS DE MAIL ─────────────────────────
  *
@@ -136,19 +146,20 @@ async function obtenerTransporte(): Promise<Correo | null> {
 /**
  * De quién sale el mail.
  *
- * ⚠️ **Con Gmail esto no es libre.** Su SMTP sólo deja mandar como la casilla
- * autenticada o como un alias que esa casilla tenga confirmado en «Enviar
- * como»; cualquier otra dirección la reescribe o la rechaza. Por eso el default
- * es `SMTP_USER` y no una dirección inventada: si `MAIL_FROM` apunta a un
- * dominio que Gmail no reconoce, los mails dejan de salir sin que el código se
- * entere.
+ * Hoy `MAIL_FROM` está definido y vale `Shiraf <avisos@shiraf.com.ar>`: es el
+ * remitente propio, firmado con el DKIM del dominio, y es media razón por la que
+ * los mails llegan a Hotmail.
  *
- * El día que `shiraf.com.ar` tenga su propio servidor de correo, esto se
- * resuelve poniendo las credenciales de allá en `SMTP_*` y `MAIL_FROM` con la
- * dirección del dominio.
+ * ⚠️ La dirección que se ponga acá tiene que estar **dada de alta como remitente
+ * en Brevo**, y su dominio autenticado. Una dirección que el proveedor no
+ * reconoce hace que los mails dejen de salir sin que el código se entere.
+ *
+ * El default a `SMTP_USER` quedó de la época de Gmail, cuyo SMTP sólo dejaba
+ * mandar como la casilla autenticada. Ya no se usa —`MAIL_FROM` siempre está—,
+ * pero se deja porque es el comportamiento correcto para cualquier SMTP que sí
+ * tenga una casilla detrás, y no cuesta nada.
  */
 function remitente(user: string): string {
-  // return process.env["MAIL_FROM"] ?? `Shiraf <${user}>`;
   return variable("MAIL_FROM") ?? `Shiraf <${user}>`;
 }
 
@@ -205,11 +216,14 @@ export async function enviarMail(mail: {
  * Go —de Supabase—. Se reemplaza igual, para no tener que tocar los 509
  * renglones de HTML.
  */
-type Plantilla = "confirmar-cuenta" | "recuperar-contrasena";
+type Plantilla = "confirmar-cuenta" | "recuperar-contrasena" | "cambiar-mail";
 
 const ASUNTOS: Record<Plantilla, string> = {
   "confirmar-cuenta": "Confirmá tu cuenta en Shiraf",
   "recuperar-contrasena": "Recuperá tu contraseña de Shiraf",
+  // Va a la dirección NUEVA, que todavía no sabe nada de Shiraf: el asunto tiene
+  // que explicarse solo para que no parezca un mail suelto de un desconocido.
+  "cambiar-mail": "Confirmá tu dirección nueva en Shiraf",
 };
 
 /**
