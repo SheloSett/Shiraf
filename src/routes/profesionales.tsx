@@ -7,6 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import type { RtaProfesionalesConDetalle } from "@/lib/api-tipos";
+import { texto } from "@/lib/contenido";
+import { useContenido } from "@/hooks/useContenido";
 import { agruparPorDia, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/profesionales")({
@@ -29,6 +31,11 @@ export const Route = createFileRoute("/profesionales")({
 });
 
 function ProfessionalsPage() {
+  // Sólo el encabezado. Cada ficha —nombre, especialidad, bio, qué hace y
+  // cuándo atiende— sale de la sección Profesionales del panel, que es donde
+  // corresponde: son datos de la persona, no texto de la página.
+  const c = useContenido("profesionales");
+
   const team = useQuery({
     queryKey: ["professionals", "full"],
     queryFn: async () =>
@@ -40,12 +47,13 @@ function ProfessionalsPage() {
       <SiteHeader />
 
       <section className="mx-auto max-w-6xl px-5 pt-16 pb-10">
-        <p className="text-eyebrow text-muted-foreground">El equipo</p>
-        <h1 className="mt-4 text-5xl text-foreground">Profesionales</h1>
+        {/* Antes estaban los tres textos escritos acá: "El equipo",
+            "Profesionales" y la bajada. Pasaron a ser los defaults del panel. */}
+        <p className="text-eyebrow text-muted-foreground">{texto(c, "eyebrow")}</p>
+        <h1 className="mt-4 text-5xl text-foreground">{texto(c, "titulo")}</h1>
         <div className="gold-rule mt-6" />
         <p className="mt-6 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-          Cada profesional trabaja en tratamientos y horarios específicos. Al reservar podés elegir
-          con quién querés atenderte.
+          {texto(c, "bajada")}
         </p>
       </section>
 

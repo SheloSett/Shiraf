@@ -37,11 +37,22 @@ export const OPENING_HOURS = [
   { days: "Domingos", hours: "Cerrado" },
 ] as const;
 
-/** Arma el enlace de WhatsApp con el mensaje ya redactado. */
+/**
+ * Arma el enlace de WhatsApp con el mensaje ya redactado.
+ *
+ * `numero` se agregó cuando los datos del centro pasaron a editarse desde el
+ * panel (Contenido del sitio → Datos del centro). Es OPCIONAL y cae al de acá
+ * arriba: así los llamados que no tienen a mano el contenido —un mail, un
+ * script del servidor— siguen andando igual que antes, sin cambiar una línea.
+ *
+ * Las pantallas del sitio público sí lo mandan, porque para ellas el número
+ * verdadero es el que la dueña escribió en el panel.
+ */
 export function buildWhatsappUrl(parts: {
   name?: string;
   treatment?: string;
   message?: string;
+  numero?: string;
 }): string {
   const lines = [
     parts.name ? `Hola Shiraf, soy ${parts.name.trim()}.` : "Hola Shiraf.",
@@ -49,5 +60,9 @@ export function buildWhatsappUrl(parts: {
     parts.message?.trim() || null,
   ].filter((line): line is string => Boolean(line));
 
-  return `https://wa.me/${CONTACT.whatsappNumber}?text=${encodeURIComponent(lines.join("\n"))}`;
+  // Línea anterior, comentada y no borrada: usaba siempre el número de este
+  // archivo, que ahora es el default y no la única opción.
+  //   return `https://wa.me/${CONTACT.whatsappNumber}?text=${encodeURIComponent(lines.join("\n"))}`;
+  const numero = parts.numero?.trim() || CONTACT.whatsappNumber;
+  return `https://wa.me/${numero}?text=${encodeURIComponent(lines.join("\n"))}`;
 }

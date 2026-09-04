@@ -202,6 +202,11 @@ const ADMIN_ROUTES = [
   { path: "/admin/dashboard", access: "metrics" },
   { path: "/admin/metricas", access: "metrics" },
   { path: "/admin/accesos", access: "admin" },
+  // Los textos y las fotos del sitio público. Es "admin" y no un permiso
+  // tildable a propósito: cambia la cara del negocio, no el trabajo de adentro.
+  // Igual estaría cubierto por el fail-closed de más abajo; se declara para que
+  // la respuesta esté escrita y no dependa de un default.
+  { path: "/admin/contenido", access: "admin" },
   // Su contraseña, no el negocio: no depende de ninguna casilla.
   { path: "/admin/cuenta", access: "panel" },
   // Sus propios turnos. Tampoco depende de una casilla: depende de que la ficha

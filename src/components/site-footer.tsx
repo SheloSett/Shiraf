@@ -3,7 +3,9 @@ import { Instagram, MapPin, Phone } from "lucide-react";
 import { LogoLockup } from "@/components/logo";
 import { TiktokIcon } from "@/components/tiktok-icon";
 import { WhatsappIcon } from "@/components/whatsapp-icon";
-import { buildWhatsappUrl, CONTACT } from "@/lib/contact";
+import { buildWhatsappUrl } from "@/lib/contact";
+import { texto } from "@/lib/contenido";
+import { useContenido } from "@/hooks/useContenido";
 
 /**
  * Crédito del programador. Va HARDCODEADO acá y no en `src/lib/contact.ts`, que
@@ -35,6 +37,23 @@ const DEV_CREDIT = {
  *   olivas tienen que tocarse.
  */
 export function SiteFooter({ flush = false }: { flush?: boolean } = {}) {
+  /*
+   * Los datos del centro y los títulos del pie salen del panel.
+   *
+   * Antes salían derecho de `CONTACT`, la constante de src/lib/contact.ts, y
+   * cambiar el teléfono era tocar el código y volver a desplegar. Ahora los
+   * edita la dueña desde Contenido del sitio → Datos del centro.
+   *
+   * `contact.ts` NO se borró ni sobra: sus valores son los defaults del editor
+   * y lo que se sigue usando del lado del servidor —los mails, el sitemap—,
+   * donde no hay pantalla que pueda leer el contenido.
+   */
+  const datos = useContenido("datos");
+  const pie = useContenido("footer");
+
+  const direccion = texto(datos, "direccion");
+  const ciudad = texto(datos, "ciudad");
+
   return (
     <footer className={flush ? "surface-olive" : "mt-24 surface-olive"}>
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:grid-cols-3">
@@ -45,7 +64,8 @@ export function SiteFooter({ flush = false }: { flush?: boolean } = {}) {
         </div>
 
         <div className="text-sm text-primary-foreground/80">
-          <p className="text-eyebrow text-gold">Navegación</p>
+          {/* Título anterior, fijo en el código: <p ...>Navegación</p> */}
+          <p className="text-eyebrow text-gold">{texto(pie, "navTitulo")}</p>
           <div className="mt-4 flex flex-col gap-2">
             <Link to="/servicios">Servicios</Link>
             <Link to="/profesionales">Profesionales</Link>
@@ -55,35 +75,40 @@ export function SiteFooter({ flush = false }: { flush?: boolean } = {}) {
         </div>
 
         <div className="text-sm text-primary-foreground/80">
-          <p className="text-eyebrow text-gold">Visitanos</p>
-          {/* Mismos datos que la página de contacto, desde una sola fuente. */}
+          <p className="text-eyebrow text-gold">{texto(pie, "datosTitulo")}</p>
+          {/* Mismos datos que la página de contacto, desde una sola fuente: el
+              editor del panel. Antes esa fuente era la constante CONTACT, y
+              cada uno de estos cuatro enlaces la leía derecho —quedó comentado
+              al lado de su reemplazo cuando el cambio no era obvio—. */}
           <div className="mt-4 flex flex-col gap-3">
             <a
-              href={CONTACT.mapsUrl}
+              href={texto(datos, "mapsUrl")}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 underline-offset-4 hover:underline"
             >
-              <MapPin className="h-4 w-4 shrink-0 text-gold" /> {CONTACT.address}, {CONTACT.city}
+              {/* Antes: {CONTACT.address}, {CONTACT.city} */}
+              <MapPin className="h-4 w-4 shrink-0 text-gold" /> {direccion}
+              {ciudad ? `, ${ciudad}` : ""}
             </a>
             <a
-              href={buildWhatsappUrl({})}
+              href={buildWhatsappUrl({ numero: texto(datos, "whatsappNumero") })}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 underline-offset-4 hover:underline"
             >
-              <Phone className="h-4 w-4 shrink-0 text-gold" /> {CONTACT.phoneDisplay}
+              <Phone className="h-4 w-4 shrink-0 text-gold" /> {texto(datos, "telefonoVisible")}
             </a>
             <a
-              href={CONTACT.instagramUrl}
+              href={texto(datos, "instagramUrl")}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 underline-offset-4 hover:underline"
             >
-              <Instagram className="h-4 w-4 shrink-0 text-gold" /> {CONTACT.instagram}
+              <Instagram className="h-4 w-4 shrink-0 text-gold" /> {texto(datos, "instagram")}
             </a>
             <a
-              href={CONTACT.tiktokUrl}
+              href={texto(datos, "tiktokUrl")}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 underline-offset-4 hover:underline"
@@ -102,7 +127,13 @@ export function SiteFooter({ flush = false }: { flush?: boolean } = {}) {
           agrandaba una sola, el crédito pasaba a ser lo más grande de la barra
           y quedaba pesando más que el copyright del centro. */}
       <div className="border-t border-primary-foreground/15 px-5 py-6 text-center text-sm text-primary-foreground/60">
-        <p>© {new Date().getFullYear()} Shiraf. Todos los derechos reservados.</p>
+        {/* Línea anterior, con el texto fijo:
+              <p>© {new Date().getFullYear()} Shiraf. Todos los derechos reservados.</p>
+            El año lo sigue poniendo el navegador —no es algo que nadie tenga
+            que acordarse de actualizar cada enero— y lo editable es el resto. */}
+        <p>
+          © {new Date().getFullYear()} {texto(pie, "copyright")}
+        </p>
 
         {/*
           Los íconos van en `text-gold`, igual que los de la columna "Visitanos".

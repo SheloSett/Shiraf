@@ -502,3 +502,41 @@ model stock_movements {
   product products @relation(fields: [product_id], references: [id], onDelete: Cascade)
   author  users?   @relation(fields: [created_by], references: [id], onDelete: SetNull)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El contenido del sitio
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Los textos y las fotos de las páginas públicas, editables desde el panel.
+ *
+ * Una fila por página —inicio, servicios, profesionales, contacto, datos,
+ * footer— y en `content` un objeto JSON con los campos de esa página.
+ *
+ * ── POR QUÉ JSON Y NO UNA COLUMNA POR CAMPO ───────────────────────────────
+ *
+ * Porque QUÉ campos tiene cada página lo decide `src/lib/contenido.ts`, no la
+ * base. Agregar "el subtítulo del cierre del home" es una línea en ese archivo;
+ * con una columna por campo sería una migración cada vez que al centro se le
+ * ocurre un texto nuevo, y son textos: se les ocurren seguido.
+ *
+ * ── LA FILA PUEDE NO EXISTIR, Y ESTÁ BIEN ─────────────────────────────────
+ *
+ * Mientras nadie edite una página, acá no hay fila y el sitio muestra los
+ * valores por defecto de `contenido.ts`, que son exactamente el texto que hoy
+ * está escrito en el JSX. O sea: **con esta tabla vacía el sitio se ve igual
+ * que antes**. Eso es a propósito — es lo que permite que un campo nuevo nazca
+ * andando y que borrar una fila sea "volver al original" y no "romper la
+ * página".
+ *
+ * Lo guardado se mergea SOBRE los defaults, nunca al revés: una clave que quedó
+ * en la base de una versión anterior del esquema se ignora sola.
+ */
+model page_content {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // La clave de la página: "inicio", "servicios", "datos"… Las define
+  // PAGINAS en src/lib/contenido.ts y son las únicas que el servidor acepta.
+  page       String   @unique
+  content    Json     @default("{}")
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+}

@@ -14,6 +14,8 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { WhatsappFab } from "@/components/whatsapp-fab";
 import { CONTACT } from "@/lib/contact";
+import { obtenerContenido } from "@/lib/contenido.functions";
+import type { ContenidoDelSitio } from "@/lib/contenido";
 
 function NotFoundComponent() {
   return (
@@ -71,6 +73,45 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  /**
+   * El contenido editable del sitio, para TODAS las páginas de una vez.
+   *
+   * ── POR QUÉ ACÁ ARRIBA Y NO EN CADA RUTA ────────────────────────────────
+   *
+   * Porque el pie de página se dibuja en las siete páginas públicas y no es una
+   * ruta: es un componente. Sin loader propio no tiene de dónde leer, y ponerle
+   * un `useQuery` adentro haría que la dirección y el teléfono aparezcan medio
+   * segundo después del resto — en el pie, que es donde alguien va a buscarlos.
+   *
+   * Cargado acá, el contenido está en el HTML que sale del servidor: lo indexa
+   * Google y no parpadea nada. `useContenido()` lo lee de este loader.
+   *
+   * ── EL CATCH NO ES DESIDIA ──────────────────────────────────────────────
+   *
+   * Este loader corre en cada página. Si tira, no se rompe una sección: se
+   * rompe el sitio entero, incluido el panel. Con `{}` de vuelta, todo muestra
+   * los textos originales de `contenido.ts` — que es exactamente lo que se veía
+   * antes de que existiera el editor. Degradar así es aceptable; una pantalla
+   * de error para todo el mundo porque no se pudo leer un título, no.
+   */
+  loader: async () => {
+    try {
+      return await obtenerContenido();
+    } catch (error) {
+      console.error("[contenido] El sitio sigue con los textos por defecto:", error);
+      return {} as ContenidoDelSitio;
+    }
+  },
+  /**
+   * Cinco minutos sin volver a preguntar.
+   *
+   * Sin esto el loader se vuelve a ejecutar en CADA navegación —el default de
+   * TanStack es 0— y pasar de Inicio a Servicios dispararía un pedido más para
+   * traer los mismos textos. Cinco minutos es el tiempo que puede tardar en
+   * verse un cambio recién guardado para quien ya tenía el sitio abierto; el
+   * panel no espera nada, porque después de guardar invalida el router a mano.
+   */
+  staleTime: 5 * 60 * 1000,
   head: () => ({
     meta: [
       { charSet: "utf-8" },

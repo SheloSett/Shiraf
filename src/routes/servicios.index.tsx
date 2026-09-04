@@ -7,6 +7,8 @@ import { Reveal } from "@/components/reveal";
 import { api } from "@/lib/api";
 import type { RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
+import { texto } from "@/lib/contenido";
+import { useContenido } from "@/hooks/useContenido";
 import { aSlug, formatMoney } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +95,11 @@ function CategoryPill({
 }
 
 function ServicesPage() {
+  // El encabezado de la carta, editable desde el panel. Los tratamientos, sus
+  // precios y sus fotos NO salen de acá: ésos se cargan en la sección Servicios
+  // y esta página los lista sola.
+  const c = useContenido("servicios");
+
   /* `null` = "Todos". Es el estado inicial, así la primera vista sigue siendo
      el catálogo completo como hasta ahora. */
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -133,7 +140,8 @@ function ServicesPage() {
       <section className="grid lg:grid-cols-12">
         <div className="px-5 pt-14 lg:col-span-10 lg:col-start-2 lg:px-0 lg:pt-20">
           <Reveal>
-            <p className="text-eyebrow text-muted-foreground">Carta de tratamientos</p>
+            {/* Antes: <p ...>Carta de tratamientos</p> */}
+            <p className="text-eyebrow text-muted-foreground">{texto(c, "eyebrow")}</p>
 
             <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end lg:gap-16">
               {/*
@@ -154,14 +162,17 @@ function ServicesPage() {
                     en minúscula. Es un h1 del sitio público; sin corregir se lee
                     como error de tipeo, no como decisión. Las palabras son las
                     que eligieron ellas, no se cambió ninguna. */}
+                {/* El titular y la bajada ahora se editan desde el panel. El
+                    texto que estaba escrito acá pasó a ser su valor por
+                    defecto, palabra por palabra, incluida la corrección de
+                    tipeo que explica el comentario de arriba. */}
                 <h1 className="display-section text-balance text-foreground">
-                  Cómo te vas a consentir hoy
+                  {texto(c, "titulo")}
                 </h1>
                 <div className="gold-rule mt-6 w-24" />
               </div>
               <p className="max-w-lg text-[15px] leading-relaxed text-muted-foreground lg:pb-2">
-                Cada tratamiento se realiza con cosmética profesional y una evaluación previa de la
-                piel. Los precios pueden ajustarse según la zona a tratar.
+                {texto(c, "bajada")}
               </p>
             </div>
 
@@ -174,7 +185,9 @@ function ServicesPage() {
                 aria-label="Filtrar por categoría"
                 className="mt-10 border-t border-border pt-7"
               >
-                <p className="text-eyebrow text-muted-foreground/70">Ver por categoría</p>
+                {/* Antes: <p ...>Ver por categoría</p>. Los nombres de las
+                    categorías no se editan acá: son las del catálogo. */}
+                <p className="text-eyebrow text-muted-foreground/70">{texto(c, "filtroEyebrow")}</p>
                 <ul className="mt-4 flex flex-wrap gap-2.5">
                   {/* "Todos" primero y activo por defecto: sin él no había forma
                       de volver al catálogo completo después de filtrar. */}

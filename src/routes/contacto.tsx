@@ -12,7 +12,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import type { RtaServicios } from "@/lib/api-tipos";
-import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
+// Igual que en la portada: los datos del centro salen del panel y de contact.ts
+// quedan sólo los defaults del editor y el armador del mensaje.
+//   import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
+import { buildWhatsappUrl } from "@/lib/contact";
+import { lista, texto } from "@/lib/contenido";
+import { useContenido } from "@/hooks/useContenido";
 
 export const Route = createFileRoute("/contacto")({
   head: () => ({
@@ -34,6 +39,9 @@ export const Route = createFileRoute("/contacto")({
 });
 
 function ContactPage() {
+  const c = useContenido("contacto");
+  const datos = useContenido("datos");
+
   const [name, setName] = useState("");
   const [treatment, setTreatment] = useState("");
   const [message, setMessage] = useState("");
@@ -47,7 +55,16 @@ function ContactPage() {
 
   function openWhatsapp(event: React.FormEvent) {
     event.preventDefault();
-    const url = buildWhatsappUrl({ name, treatment, message });
+    // El número sale del panel: es el mismo que muestra la columna de al lado,
+    // así que si el centro lo cambia, el formulario y el dato no pueden quedar
+    // apuntando a teléfonos distintos.
+    //   const url = buildWhatsappUrl({ name, treatment, message });
+    const url = buildWhatsappUrl({
+      name,
+      treatment,
+      message,
+      numero: texto(datos, "whatsappNumero"),
+    });
     // Gesto del usuario: los bloqueadores de popups lo dejan pasar. En celular
     // abre la app directamente.
     window.open(url, "_blank", "noopener,noreferrer");
@@ -68,11 +85,12 @@ function ContactPage() {
               abre WhatsApp, que es donde el centro ya atiende. Cero backend,
               cero turnos perdidos en una casilla que nadie mira. */}
           <Reveal>
-            <p className="text-eyebrow text-muted-foreground">Estamos cerca</p>
-            <h1 className="display-section mt-5 text-foreground">Escribinos</h1>
+            {/* Los tres textos estaban escritos acá ("Estamos cerca",
+                "Escribinos" y la bajada) y ahora son los defaults del panel. */}
+            <p className="text-eyebrow text-muted-foreground">{texto(c, "formEyebrow")}</p>
+            <h1 className="display-section mt-5 text-foreground">{texto(c, "formTitulo")}</h1>
             <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-              Si no sabés qué tratamiento te conviene, contanos y te asesoramos. Respondemos por
-              WhatsApp dentro del horario de atención.
+              {texto(c, "formBajada")}
             </p>
 
             <form onSubmit={openWhatsapp} className="mt-10 space-y-6">
@@ -119,11 +137,11 @@ function ContactPage() {
               </div>
 
               <Button type="submit" size="lg" className="w-full sm:w-auto">
-                Enviar por WhatsApp
+                {texto(c, "formBoton")}
               </Button>
 
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Se abre WhatsApp con el mensaje ya escrito. Podés revisarlo antes de enviarlo.
+                {texto(c, "formNota")}
               </p>
             </form>
           </Reveal>
@@ -132,8 +150,8 @@ function ContactPage() {
           <Reveal delay={120}>
             {/* Mismo eyebrow + título que la columna izquierda, para que los
                 dos encabezados arranquen a la misma altura. */}
-            <p className="text-eyebrow text-muted-foreground">Visitanos</p>
-            <h2 className="display-section mt-5 text-foreground">Dónde estamos</h2>
+            <p className="text-eyebrow text-muted-foreground">{texto(c, "datosEyebrow")}</p>
+            <h2 className="display-section mt-5 text-foreground">{texto(c, "datosTitulo")}</h2>
 
             {/* Dos columnas: los cuatro datos entran en el alto del formulario y
                 dejan lugar al mapa abajo. */}
@@ -141,14 +159,18 @@ function ContactPage() {
               <li className="flex gap-4">
                 <MapPin className="mt-1 h-4 w-4 shrink-0 text-gold" />
                 <div>
+                  {/* Los cinco datos de esta lista salían de CONTACT y ahora
+                      salen del panel. Los rótulos —"Dirección", "Mail"— no se
+                      editan: son la etiqueta del dato, no contenido. */}
                   <p className="text-eyebrow text-muted-foreground/70">Dirección</p>
                   <a
-                    href={CONTACT.mapsUrl}
+                    href={texto(datos, "mapsUrl")}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
                   >
-                    {CONTACT.address}, {CONTACT.city}
+                    {texto(datos, "direccion")}
+                    {texto(datos, "ciudad") ? `, ${texto(datos, "ciudad")}` : ""}
                   </a>
                 </div>
               </li>
@@ -158,12 +180,12 @@ function ContactPage() {
                 <div>
                   <p className="text-eyebrow text-muted-foreground/70">Teléfono / WhatsApp</p>
                   <a
-                    href={buildWhatsappUrl({})}
+                    href={buildWhatsappUrl({ numero: texto(datos, "whatsappNumero") })}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
                   >
-                    {CONTACT.phoneDisplay}
+                    {texto(datos, "telefonoVisible")}
                   </a>
                 </div>
               </li>
@@ -173,10 +195,10 @@ function ContactPage() {
                 <div>
                   <p className="text-eyebrow text-muted-foreground/70">Mail</p>
                   <a
-                    href={`mailto:${CONTACT.email}`}
+                    href={`mailto:${texto(datos, "email")}`}
                     className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
                   >
-                    {CONTACT.email}
+                    {texto(datos, "email")}
                   </a>
                 </div>
               </li>
@@ -186,12 +208,12 @@ function ContactPage() {
                 <div>
                   <p className="text-eyebrow text-muted-foreground/70">Instagram</p>
                   <a
-                    href={CONTACT.instagramUrl}
+                    href={texto(datos, "instagramUrl")}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
                   >
-                    {CONTACT.instagram}
+                    {texto(datos, "instagram")}
                   </a>
                 </div>
               </li>
@@ -201,12 +223,12 @@ function ContactPage() {
                 <div>
                   <p className="text-eyebrow text-muted-foreground/70">TikTok</p>
                   <a
-                    href={CONTACT.tiktokUrl}
+                    href={texto(datos, "tiktokUrl")}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 block text-[15px] text-foreground underline-offset-4 hover:underline"
                   >
-                    {CONTACT.tiktok}
+                    {texto(datos, "tiktok")}
                   </a>
                 </div>
               </li>
@@ -217,7 +239,7 @@ function ContactPage() {
             <div className="mt-10 overflow-hidden rounded-sm border border-border">
               <iframe
                 title="Ubicación de Shiraf en el mapa"
-                src={CONTACT.mapsEmbedUrl}
+                src={texto(datos, "mapsEmbedUrl")}
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
                 className="block h-[300px] w-full border-0 lg:h-[340px]"
@@ -233,15 +255,22 @@ function ContactPage() {
         <div className="grid lg:grid-cols-12">
           <div className="px-5 py-24 lg:col-span-10 lg:col-start-2 lg:px-0 lg:py-28">
             <Reveal>
-              <p className="text-eyebrow text-primary-foreground/60">Horarios de atención</p>
+              <p className="text-eyebrow text-primary-foreground/60">
+                {texto(c, "horariosEyebrow")}
+              </p>
             </Reveal>
 
+            {/* La grilla es de tres columnas y los horarios ahora son una lista
+                que el centro puede agrandar. Con cuatro o más renglones no se
+                rompe: bajan a la fila siguiente, que es lo que hace `grid` sola.
+
+                Antes: {OPENING_HOURS.map((slot, i) => ...)} */}
             <dl className="mt-12 grid gap-x-16 gap-y-10 sm:grid-cols-3">
-              {OPENING_HOURS.map((slot, i) => (
-                <Reveal key={slot.days} delay={i * 80}>
-                  <dt className="text-eyebrow text-gold">{slot.days}</dt>
+              {lista(datos, "horarios").map((slot, i) => (
+                <Reveal key={`${slot["dias"]}-${i}`} delay={i * 80}>
+                  <dt className="text-eyebrow text-gold">{slot["dias"]}</dt>
                   <dd className="mt-4 font-display text-4xl leading-none text-primary-foreground">
-                    {slot.hours}
+                    {slot["horas"]}
                   </dd>
                 </Reveal>
               ))}
@@ -249,7 +278,7 @@ function ContactPage() {
 
             <Reveal delay={260}>
               <p className="mt-16 max-w-md border-t border-primary-foreground/20 pt-8 text-sm leading-relaxed text-primary-foreground/70">
-                Los turnos se reservan online y quedan pendientes hasta que el centro los confirma.
+                {texto(c, "horariosNota")}
               </p>
             </Reveal>
           </div>

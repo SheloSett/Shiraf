@@ -11,7 +11,14 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { RtaProfesionales, RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
-import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
+// CONTACT y OPENING_HOURS ya no se leen acá: la dirección, el WhatsApp y los
+// horarios salen del panel (Contenido del sitio → Datos del centro), y los
+// valores de ese archivo son ahora los defaults del editor. `buildWhatsappUrl`
+// sí sigue: es la que arma el mensaje, y ahora recibe el número editado.
+//   import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
+import { buildWhatsappUrl } from "@/lib/contact";
+import { lista, renglones, texto } from "@/lib/contenido";
+import { useContenido } from "@/hooks/useContenido";
 import { formatMoney } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/")({
@@ -48,6 +55,12 @@ export const Route = createFileRoute("/")({
 const MOSTRAR_TRATAMIENTOS: boolean = false;
 
 function Home() {
+  // Los textos de la portada y los datos del centro, editables desde el panel.
+  // Vienen del loader de la raíz, así que ya están cuando esto se dibuja: no
+  // hay un estado de carga que atender ni un parpadeo del titular.
+  const c = useContenido("inicio");
+  const datos = useContenido("datos");
+
   const services = useQuery({
     queryKey: ["services", "published", "featured"],
     queryFn: async () =>
@@ -101,18 +114,35 @@ function Home() {
             empujara la sección más allá de la pantalla otra vez. */}
         <div className="px-5 pt-14 lg:col-span-5 lg:col-start-2 lg:flex lg:flex-col lg:justify-center lg:px-0 lg:py-16">
           <Reveal>
-            <p className="text-eyebrow text-muted-foreground">Centro de estética</p>
+            {/* Antes: <p ...>Centro de estética</p> */}
+            <p className="text-eyebrow text-muted-foreground">{texto(c, "heroEyebrow")}</p>
           </Reveal>
 
           <Reveal delay={90}>
             {/* Sin una palabra en color de acento: ese recurso es la firma más
                 reconocible de las landings generadas. El énfasis lo da el
-                tamaño, no el color. */}
+                tamaño, no el color.
+
+                El titular estaba escrito acá, partido a mano en tres líneas:
+
+                  <h1 className="display-hero mt-7 text-foreground">
+                    Calma,
+                    <br />
+                    belleza
+                    <br />y bienestar
+                  </h1>
+
+                Ese corte es una decisión de diseño y por eso el campo del panel
+                es un textarea: cada renglón que escriban ahí sale en su propia
+                línea, tal como acá. Si escriben todo seguido, es UNA línea y el
+                navegador la parte donde le toque. */}
             <h1 className="display-hero mt-7 text-foreground">
-              Calma,
-              <br />
-              belleza
-              <br />y bienestar
+              {renglones(texto(c, "heroTitulo")).map((linea, i) => (
+                <span key={i}>
+                  {i > 0 && <br />}
+                  {linea}
+                </span>
+              ))}
             </h1>
           </Reveal>
 
@@ -164,14 +194,18 @@ function Home() {
 
           <Reveal delay={260}>
             <div className="mt-9 flex flex-wrap items-center gap-6">
+              {/* Antes los dos textos estaban fijos: "Reservar turno" y "Ver
+                  tratamientos". A dónde llevan NO se edita —son rutas del
+                  sitio, no texto— y eso es a propósito: un enlace apuntando a
+                  una página que no existe no se arregla desde el panel. */}
               <Button asChild size="lg">
-                <Link to="/reservar">Reservar turno</Link>
+                <Link to="/reservar">{texto(c, "heroBotonPrimario")}</Link>
               </Button>
               <Link
                 to="/servicios"
                 className="text-eyebrow text-muted-foreground underline-offset-8 transition-colors hover:text-foreground hover:underline"
               >
-                Ver tratamientos
+                {texto(c, "heroBotonSecundario")}
               </Link>
             </div>
           </Reveal>
@@ -184,9 +218,20 @@ function Home() {
           {/* 58vh → 58svh por el mismo motivo que la sección: en mobile `vh`
               mide la pantalla sin la barra del navegador y la foto se pasaba.
               Valor anterior: className="h-[58vh] w-full object-cover object-[50%_28%] lg:h-full" */}
+          {/* La foto se puede cambiar desde el panel. Si el campo está vacío
+              —que es como nace— se usa `heroImage`, el archivo que viene con el
+              sitio: la portada nunca queda sin foto.
+
+              Antes: src={heroImage} y el alt escrito acá.
+
+              `width`/`height` se dejan fijos aunque la foto cambie. No son el
+              tamaño con el que se muestra —eso lo manda el CSS— sino la
+              proporción que el navegador reserva antes de bajarla, para que el
+              texto de al lado no salte cuando aparece. Una foto de otra
+              proporción hace saltar un poco menos de lo que saltaría sin nada. */}
           <img
-            src={heroImage}
-            alt="Sala de tratamientos de Shiraf con paredes verde oliva y detalles dorados"
+            src={texto(c, "heroImagen") || heroImage}
+            alt={texto(c, "heroImagenAlt")}
             width={1408}
             height={1008}
             className="h-[58svh] w-full object-cover object-[50%_28%] lg:h-full"
@@ -486,8 +531,13 @@ function Home() {
         <div className="grid lg:grid-cols-12">
           <div className="px-5 py-24 lg:col-span-10 lg:col-start-2 lg:px-0 lg:py-32">
             <Reveal>
-              <p className="text-eyebrow text-primary-foreground/60">El equipo</p>
-              <h2 className="display-section mt-5 text-primary-foreground">Profesionales</h2>
+              {/* Antes: "El equipo" y "Profesionales", escritos acá. Los
+                  nombres y las bios que van abajo NO: ésos salen de la ficha de
+                  cada profesional, que se carga en su propia sección. */}
+              <p className="text-eyebrow text-primary-foreground/60">{texto(c, "equipoEyebrow")}</p>
+              <h2 className="display-section mt-5 text-primary-foreground">
+                {texto(c, "equipoTitulo")}
+              </h2>
             </Reveal>
 
             <div className="mt-16 grid gap-x-10 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
@@ -508,7 +558,8 @@ function Home() {
                 to="/profesionales"
                 className="text-eyebrow text-primary-foreground/70 underline-offset-8 transition-colors hover:text-primary-foreground hover:underline"
               >
-                Conocer al equipo
+                {/* Antes: Conocer al equipo */}
+                {texto(c, "equipoLink")}
               </Link>
             </Reveal>
           </div>
@@ -528,16 +579,28 @@ function Home() {
       */}
       <section className="grid gap-y-14 lg:grid-cols-12">
         <Reveal className="px-5 pt-28 lg:col-span-6 lg:col-start-2 lg:px-0 lg:py-40">
+          {/* El cierre estaba escrito acá:
+
+                <h2 ...>Reservá tu próximo<br />momento de calma.</h2>
+                <p ...>Elegís el tratamiento, el día y la profesional. Nosotros
+                confirmamos el turno.</p>
+                <Link to="/reservar">Sacar turno</Link>
+
+              Mismo criterio que el titular del hero: el corte de línea lo
+              decide quien escribe, renglón por renglón. */}
           <h2 className="display-section text-foreground">
-            Reservá tu próximo
-            <br />
-            momento de calma.
+            {renglones(texto(c, "cierreTitulo")).map((linea, i) => (
+              <span key={i}>
+                {i > 0 && <br />}
+                {linea}
+              </span>
+            ))}
           </h2>
           <p className="mt-8 max-w-sm text-[15px] leading-relaxed text-muted-foreground">
-            Elegís el tratamiento, el día y la profesional. Nosotros confirmamos el turno.
+            {texto(c, "cierreTexto")}
           </p>
           <Button asChild size="lg" className="mt-10">
-            <Link to="/reservar">Sacar turno</Link>
+            <Link to="/reservar">{texto(c, "cierreBoton")}</Link>
           </Button>
         </Reveal>
 
@@ -547,30 +610,47 @@ function Home() {
           delay={120}
           className="px-5 pb-28 lg:col-span-3 lg:col-start-9 lg:self-center lg:px-0 lg:pb-0"
         >
-          <p className="text-eyebrow text-muted-foreground">Antes de venir</p>
+          <p className="text-eyebrow text-muted-foreground">{texto(c, "antesEyebrow")}</p>
           <div className="gold-rule mt-5 w-16" />
 
+          {/* Los horarios salían de OPENING_HOURS, la constante de contact.ts:
+
+                {OPENING_HOURS.map((day) => (... day.days ... day.hours ...))}
+
+              Ahora son una lista editable en el panel, donde el centro puede
+              agregar o sacar renglones —un sábado que abre, un feriado— sin que
+              nadie toque el código. La clave sigue siendo el texto del día
+              porque no hay id: si dos renglones dicen lo mismo React se queja,
+              y decir dos veces "Lunes a viernes" ya sería un error de carga. */}
           <dl className="mt-8 space-y-2 text-[15px] leading-relaxed">
-            {OPENING_HOURS.map((day) => (
-              <div key={day.days} className="flex items-baseline justify-between gap-4">
-                <dt className="text-foreground">{day.days}</dt>
+            {lista(datos, "horarios").map((dia, i) => (
+              <div
+                key={`${dia["dias"]}-${i}`}
+                className="flex items-baseline justify-between gap-4"
+              >
+                <dt className="text-foreground">{dia["dias"]}</dt>
                 {/* Los días cerrados van más apagados: son dos de las tres
-                    líneas y con el mismo peso tapan el horario que importa. */}
+                    líneas y con el mismo peso tapan el horario que importa.
+                    Se compara sin distinguir mayúsculas ni espacios de más:
+                    quien lo escribe en el panel puede poner "cerrado". */}
                 <dd
                   className={
-                    day.hours === "Cerrado" ? "text-muted-foreground/60" : "text-muted-foreground"
+                    dia["horas"]?.trim().toLowerCase() === "cerrado"
+                      ? "text-muted-foreground/60"
+                      : "text-muted-foreground"
                   }
                 >
-                  {day.hours}
+                  {dia["horas"]}
                 </dd>
               </div>
             ))}
           </dl>
 
+          {/* Antes: {CONTACT.address} / {CONTACT.city} */}
           <p className="mt-8 text-[15px] leading-relaxed text-foreground">
-            {CONTACT.address}
+            {texto(datos, "direccion")}
             <br />
-            {CONTACT.city}
+            {texto(datos, "ciudad")}
           </p>
 
           {/*
@@ -583,14 +663,21 @@ function Home() {
             debajo, tenerla también linkeada era ofrecer dos veces lo mismo.
           */}
           <div className="mt-6 flex flex-col items-start gap-3">
+            {/* Antes el enlace salía de CONTACT y el texto estaba fijo:
+                  <a href={CONTACT.mapsUrl}>… Ver en Google Maps</a>
+                  <a href={buildWhatsappUrl({})}>… Escribir por WhatsApp</a> */}
             <Button asChild variant="outline" className="w-full">
-              <a href={CONTACT.mapsUrl} target="_blank" rel="noopener noreferrer">
-                <MapPin /> Ver en Google Maps
+              <a href={texto(datos, "mapsUrl")} target="_blank" rel="noopener noreferrer">
+                <MapPin /> {texto(c, "antesBotonMapa")}
               </a>
             </Button>
             <Button asChild variant="outline" className="w-full">
-              <a href={buildWhatsappUrl({})} target="_blank" rel="noopener noreferrer">
-                <MessageCircle /> Escribir por WhatsApp
+              <a
+                href={buildWhatsappUrl({ numero: texto(datos, "whatsappNumero") })}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MessageCircle /> {texto(c, "antesBotonWhatsapp")}
               </a>
             </Button>
           </div>

@@ -14,6 +14,7 @@ import {
   CalendarDays,
   ChevronDown,
   ClipboardList,
+  FileText,
   LayoutDashboard,
   LineChart,
   LogOut,
@@ -175,6 +176,16 @@ const nav = [
     exact: false,
     access: "stock",
     children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
+  },
+  {
+    // Los textos y las fotos del sitio público. Va pegada a Accesos porque es
+    // de la misma familia: las dos cosas que no se delegan con una casilla.
+    to: "/admin/contenido",
+    label: "Contenido del sitio",
+    icon: FileText,
+    exact: false,
+    access: "admin",
+    children: [],
   },
   {
     to: "/admin/accesos",

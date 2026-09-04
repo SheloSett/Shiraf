@@ -1,5 +1,7 @@
 import { WhatsappIcon } from "@/components/whatsapp-icon";
-import { buildWhatsappUrl, CONTACT } from "@/lib/contact";
+import { buildWhatsappUrl } from "@/lib/contact";
+import { texto } from "@/lib/contenido";
+import { useContenido } from "@/hooks/useContenido";
 
 /**
  * Botón flotante de WhatsApp al número del centro.
@@ -23,15 +25,20 @@ import { buildWhatsappUrl, CONTACT } from "@/lib/contact";
  * color de botón nuevo.
  */
 export function WhatsappFab() {
+  // El número y cómo se lee salen del panel, igual que en el pie y en Contacto.
+  // Este botón está en todas las páginas del sitio: si quedara con el número
+  // del código, sería el único lugar donde cambiar el teléfono no alcanza.
+  const datos = useContenido("datos");
+
   return (
     <a
-      href={buildWhatsappUrl({})}
+      href={buildWhatsappUrl({ numero: texto(datos, "whatsappNumero") })}
       target="_blank"
       rel="noopener noreferrer"
       /* El `aria-label` dice a quién se le escribe, no "abrir WhatsApp": es lo
          único que va a leer un lector de pantalla, porque adentro sólo hay un
          SVG marcado como decorativo. */
-      aria-label={`Escribile a Shiraf por WhatsApp al ${CONTACT.phoneDisplay}`}
+      aria-label={`Escribile a Shiraf por WhatsApp al ${texto(datos, "telefonoVisible")}`}
       title="Escribinos por WhatsApp"
       /* `bottom` con `env(safe-area-inset-bottom)`: en iPhone la barra de
          gestos del navegador se come la franja de abajo y el botón queda

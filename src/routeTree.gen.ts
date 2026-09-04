@@ -27,6 +27,7 @@ import { Route as AuthenticatedAdminAvisosRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminCategoriasProductosRouteImport } from './routes/_authenticated/admin.categorias-productos'
 import { Route as AuthenticatedAdminCategoriasServiciosRouteImport } from './routes/_authenticated/admin.categorias-servicios'
 import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authenticated/admin.clientes'
+import { Route as AuthenticatedAdminContenidoRouteImport } from './routes/_authenticated/admin.contenido'
 import { Route as AuthenticatedAdminCuentaRouteImport } from './routes/_authenticated/admin.cuenta'
 import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin.dashboard'
 import { Route as AuthenticatedAdminMetricasRouteImport } from './routes/_authenticated/admin.metricas'
@@ -131,6 +132,12 @@ const AuthenticatedAdminClientesRoute =
     path: '/clientes',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminContenidoRoute =
+  AuthenticatedAdminContenidoRouteImport.update({
+    id: '/contenido',
+    path: '/contenido',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminCuentaRoute =
   AuthenticatedAdminCuentaRouteImport.update({
     id: '/cuenta',
@@ -203,6 +210,7 @@ export interface FileRoutesByFullPath {
   '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/contenido': typeof AuthenticatedAdminContenidoRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/admin/metricas': typeof AuthenticatedAdminMetricasRoute
@@ -229,6 +237,7 @@ export interface FileRoutesByTo {
   '/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/admin/contenido': typeof AuthenticatedAdminContenidoRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/admin/metricas': typeof AuthenticatedAdminMetricasRoute
@@ -259,6 +268,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/categorias-productos': typeof AuthenticatedAdminCategoriasProductosRoute
   '/_authenticated/admin/categorias-servicios': typeof AuthenticatedAdminCategoriasServiciosRoute
   '/_authenticated/admin/clientes': typeof AuthenticatedAdminClientesRoute
+  '/_authenticated/admin/contenido': typeof AuthenticatedAdminContenidoRoute
   '/_authenticated/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/_authenticated/admin/metricas': typeof AuthenticatedAdminMetricasRoute
@@ -289,6 +299,7 @@ export interface FileRouteTypes {
     | '/admin/categorias-productos'
     | '/admin/categorias-servicios'
     | '/admin/clientes'
+    | '/admin/contenido'
     | '/admin/cuenta'
     | '/admin/dashboard'
     | '/admin/metricas'
@@ -315,6 +326,7 @@ export interface FileRouteTypes {
     | '/admin/categorias-productos'
     | '/admin/categorias-servicios'
     | '/admin/clientes'
+    | '/admin/contenido'
     | '/admin/cuenta'
     | '/admin/dashboard'
     | '/admin/metricas'
@@ -344,6 +356,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/categorias-productos'
     | '/_authenticated/admin/categorias-servicios'
     | '/_authenticated/admin/clientes'
+    | '/_authenticated/admin/contenido'
     | '/_authenticated/admin/cuenta'
     | '/_authenticated/admin/dashboard'
     | '/_authenticated/admin/metricas'
@@ -494,6 +507,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminClientesRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/contenido': {
+      id: '/_authenticated/admin/contenido'
+      path: '/contenido'
+      fullPath: '/admin/contenido'
+      preLoaderRoute: typeof AuthenticatedAdminContenidoRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/cuenta': {
       id: '/_authenticated/admin/cuenta'
       path: '/cuenta'
@@ -566,6 +586,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminCategoriasProductosRoute: typeof AuthenticatedAdminCategoriasProductosRoute
   AuthenticatedAdminCategoriasServiciosRoute: typeof AuthenticatedAdminCategoriasServiciosRoute
   AuthenticatedAdminClientesRoute: typeof AuthenticatedAdminClientesRoute
+  AuthenticatedAdminContenidoRoute: typeof AuthenticatedAdminContenidoRoute
   AuthenticatedAdminCuentaRoute: typeof AuthenticatedAdminCuentaRoute
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
   AuthenticatedAdminMetricasRoute: typeof AuthenticatedAdminMetricasRoute
@@ -586,6 +607,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminCategoriasServiciosRoute:
     AuthenticatedAdminCategoriasServiciosRoute,
   AuthenticatedAdminClientesRoute: AuthenticatedAdminClientesRoute,
+  AuthenticatedAdminContenidoRoute: AuthenticatedAdminContenidoRoute,
   AuthenticatedAdminCuentaRoute: AuthenticatedAdminCuentaRoute,
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
   AuthenticatedAdminMetricasRoute: AuthenticatedAdminMetricasRoute,
