@@ -24,6 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { NewClientDialog } from "@/components/admin/new-client-dialog";
 import { api, apiDelete } from "@/lib/api";
 import type { RtaClientas, RtaFichaDeClienta } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
@@ -135,8 +136,18 @@ function AdminClients() {
 
   return (
     <div>
-      <p className="text-eyebrow text-muted-foreground">Base de clientas</p>
-      <h1 className="mt-3 font-display text-4xl text-foreground">Clientes</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-eyebrow text-muted-foreground">Base de clientas</p>
+          <h1 className="mt-3 font-display text-4xl text-foreground">Clientes</h1>
+        </div>
+        {/* El botón pide `clients_contact` a secas, igual que la ruta del
+            servidor —y NO el «uno u otro» con `appointments` que gobierna el
+            resto de la pantalla—. Los dos tienen que decir lo mismo: si acá se
+            afloja, el botón aparece y el alta vuelve con un 403. Ver
+            `gestionarClientas` en clientas.routes.ts. */}
+        {can("clients_contact") && <NewClientDialog />}
+      </div>
 
       <div className="mt-8 rounded-sm border border-border bg-card">
         <Table>

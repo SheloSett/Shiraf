@@ -377,6 +377,21 @@ export type ClientaEnLista = {
 
 export type RtaClientas = { clientas: ClientaEnLista[] };
 
+/**
+ * El alta de una clienta hecha desde el panel.
+ *
+ * `avisoMail` sólo viene cuando el mail de confirmación NO salió. La cuenta
+ * quedó creada igual y la clienta puede entrar —la contraseña se la dio el
+ * centro—; lo que le falta es confirmar la dirección, que es lo que le suma los
+ * turnos que haya sacado antes como invitada.
+ */
+export type RtaAltaDeClienta = {
+  ok: true;
+  id: string;
+  email: string;
+  avisoMail?: string;
+};
+
 /** Los ids de las cuentas del centro, para no confundirlas con clientas. */
 export type RtaEquipo = { ids: string[] };
 

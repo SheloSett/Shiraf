@@ -205,29 +205,52 @@ export async function me(ctx: Ctx) {
 
 // ── Registrarse ─────────────────────────────────────────────────────────────
 
-export async function register(ctx: Ctx) {
-  const email = normalizarMail(ctx.body["email"]);
-  const password = texto(ctx.body["password"]);
-  const nombre = texto(ctx.body["fullName"]).trim();
-  const telefono = texto(ctx.body["phone"]).trim();
+/**
+ * El resultado del alta, para que cada puerta conteste como le corresponde.
+ *
+ * Son dos puertas y **no pueden contestar igual**: `register` es pública y
+ * tiene que callar si el mail ya existe, y el alta del panel tiene que decirlo.
+ * Ver el comentario de `"tomado"` abajo.
+ */
+type AltaDeCuenta =
+  | { estado: "mal"; error: string }
+  | { estado: "tomado" }
+  | { estado: "creada"; id: string; email: string; avisoMail?: string };
 
-  if (!email.includes("@")) return json({ error: "El mail no parece válido." }, 400);
+/**
+ * Crea una cuenta de clienta: la fila de `users`, su ficha y su rol.
+ *
+ * Vive acá y no en `clientas.controller` a propósito: **es el único lugar del
+ * proyecto que escribe una contraseña**, y tenerlo junto a `login` es lo que
+ * permite ver de un vistazo que las dos puntas usan el mismo bcrypt. Que la use
+ * el panel es lo de menos; lo que no puede pasar es que haya dos altas
+ * distintas, cada una con su propio criterio de qué es una contraseña válida.
+ *
+ * Devuelve un resultado en vez de una respuesta HTTP porque las dos puertas que
+ * la llaman contestan distinto ante el mismo hecho.
+ */
+async function crearCuentaDeClienta(datos: {
+  email: unknown;
+  password: unknown;
+  nombre: unknown;
+  telefono: unknown;
+}): Promise<AltaDeCuenta> {
+  const email = normalizarMail(datos.email);
+  const password = texto(datos.password);
+  const nombre = texto(datos.nombre).trim();
+  const telefono = texto(datos.telefono).trim();
+
+  if (!email.includes("@")) return { estado: "mal", error: "El mail no parece válido." };
   if (password.length < MINIMO_CONTRASENA) {
-    return json(
-      { error: "La contraseña necesita al menos " + MINIMO_CONTRASENA + " caracteres." },
-      400,
-    );
+    return {
+      estado: "mal",
+      error: "La contraseña necesita al menos " + MINIMO_CONTRASENA + " caracteres.",
+    };
   }
-  if (!nombre) return json({ error: "Falta el nombre." }, 400);
+  if (!nombre) return { estado: "mal", error: "Falta el nombre." };
 
   const yaExiste = await prisma.users.findUnique({ where: { email }, select: { id: true } });
-
-  // Si el mail ya está tomado se contesta EXACTAMENTE lo mismo que en el alta
-  // buena, y no se manda ningún mail. Quien está registrado no se entera de
-  // nada, y quien prueba direcciones ajenas tampoco.
-  if (yaExiste) {
-    return json({ ok: true, mensaje: "Te mandamos un mail para confirmar tu cuenta." });
-  }
+  if (yaExiste) return { estado: "tomado" };
 
   const verifyToken = token();
 
@@ -246,6 +269,13 @@ export async function register(ctx: Ctx) {
     },
   });
 
+  // 🔴 El mail queda SIN confirmar, la cree quien la cree.
+  //
+  // Es la regla que sostiene todo lo demás: confirmar es lo único que prueba que
+  // la casilla es de quien dice, y es lo que habilita el traspaso de los turnos
+  // de invitada. Si el alta del panel la marcara confirmada, cargar una clienta
+  // con el mail de otra persona le pasaría el historial ajeno — la misma puerta
+  // de atrás que `verifyEmail` cierra, abierta desde adentro del centro.
   const envio = await enviarMailDeCuenta(
     "confirmar-cuenta",
     email,
@@ -268,6 +298,71 @@ export async function register(ctx: Ctx) {
     console.error(`[cuenta] No salió el mail de confirmación para ${email}: ${envio.motivo}`);
   }
 
+  return {
+    estado: "creada",
+    id: creada.id,
+    email: creada.email,
+    ...(envio.ok ? {} : { avisoMail: envio.motivo }),
+  };
+}
+
+/**
+ * El alta de una clienta desde el panel: la carga el centro, con su mail y una
+ * contraseña, y la clienta entra con eso.
+ *
+ * ── POR QUÉ ACÁ SÍ SE DICE QUE EL MAIL ESTÁ TOMADO ────────────────────────
+ *
+ * `register` calla —contesta lo mismo exista o no la cuenta— porque cualquiera
+ * puede golpear esa puerta y la respuesta distinta sería un buscador de
+ * clientas. Acá no: del otro lado hay una empleada con sesión y permiso, que ya
+ * puede ver la lista entera. Callarle no esconde nada de nadie; lo único que
+ * lograría es que cargue a la clienta, no vea ningún error, y crea que quedó
+ * registrada cuando en realidad no se creó nada.
+ *
+ * No abre sesión, por lo mismo: la cuenta es de la clienta, no de quien la
+ * carga. Si empujara una cookie, la empleada terminaría con la sesión de la
+ * clienta que acaba de dar de alta.
+ */
+export async function crearClienta(ctx: Ctx) {
+  const alta = await crearCuentaDeClienta({
+    email: ctx.body["email"],
+    password: ctx.body["password"],
+    nombre: ctx.body["fullName"],
+    telefono: ctx.body["phone"],
+  });
+
+  if (alta.estado === "mal") return json({ error: alta.error }, 400);
+  if (alta.estado === "tomado") {
+    return json({ error: "Ese mail ya tiene cuenta. Buscala en la lista." }, 409);
+  }
+
+  return json({
+    ok: true,
+    id: alta.id,
+    email: alta.email,
+    // La contraseña NO viaja de vuelta ni sale por mail: se la dice el centro a
+    // la clienta. Mandarla escrita la deja guardada para siempre en una casilla.
+    ...(alta.avisoMail ? { avisoMail: alta.avisoMail } : {}),
+  });
+}
+
+export async function register(ctx: Ctx) {
+  const alta = await crearCuentaDeClienta({
+    email: ctx.body["email"],
+    password: ctx.body["password"],
+    nombre: ctx.body["fullName"],
+    telefono: ctx.body["phone"],
+  });
+
+  if (alta.estado === "mal") return json({ error: alta.error }, 400);
+
+  // Si el mail ya está tomado se contesta EXACTAMENTE lo mismo que en el alta
+  // buena, y no se manda ningún mail. Quien está registrado no se entera de
+  // nada, y quien prueba direcciones ajenas tampoco.
+  if (alta.estado === "tomado") {
+    return json({ ok: true, mensaje: "Te mandamos un mail para confirmar tu cuenta." });
+  }
+
   // ── LA SESIÓN SE ABRE ACÁ, SIN ESPERAR LA CONFIRMACIÓN ────────────────────
   //
   // Antes el alta no dejaba entrar: había que ir al mail, abrir el enlace y
@@ -282,17 +377,17 @@ export async function register(ctx: Ctx) {
   // invitada, que es lo que de verdad no se le puede mostrar a quien todavía no
   // demostró que la casilla es suya.
   //
-  // El rol va fijo en "client" y no leído de la base: es el único que crea el
-  // alta, tres líneas más arriba.
-  ctx.cookies.push(crearCookieDeSesion({ id: creada.id, email: creada.email, role: "client" }));
+  // El rol va fijo en "client" y no leído de la base: es el único que le pone
+  // `crearCuentaDeClienta`.
+  ctx.cookies.push(crearCookieDeSesion({ id: alta.id, email: alta.email, role: "client" }));
 
   return json({
     ok: true,
     mensaje: "Te mandamos un mail para confirmar tu cuenta.",
-    user: await retrato(creada.id),
+    user: await retrato(alta.id),
     // Si el mail no salió hay que decirlo: la cuenta quedó creada pero sin
     // forma de confirmarse, y sin este aviso el silencio parece éxito.
-    ...(envio.ok ? {} : { avisoMail: envio.motivo }),
+    ...(alta.avisoMail ? { avisoMail: alta.avisoMail } : {}),
   });
 }
 

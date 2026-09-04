@@ -373,10 +373,26 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       escrito, pero lo aprieta una persona. El código del envío automático ya
       está y está apagado: lo que falta es el trámite con Meta, no programar. Ver
       `docs/whatsapp-automatico.md` §9.
+- [x] ~~**Dar de alta una clienta desde el panel.**~~ Hecho (4/9/2026). Botón
+      «Nueva clienta» en la pantalla de Clientes: nombre, mail, teléfono y una
+      contraseña. Crea la **cuenta entera** —la clienta después entra al sitio
+      con eso, reserva sola y ve su historial—, que es distinto de anotar a una
+      invitada al cargarle un turno. Tres decisiones que quedaron adentro:
+      la contraseña **no se manda por mail** (queda guardada para siempre en esa
+      casilla; se la dicta el centro y la clienta la cambia cuando quiera); el
+      mail nace **sin confirmar** y le sale el enlace de siempre, porque que el
+      centro escriba una dirección no prueba que sea suya —darla por confirmada
+      sería pasarle a alguien el historial de otra—; y pide `clients_contact` a
+      secas, no `appointments`, que ya tiene su forma de anotar gente sin crear
+      cuentas. El alta quedó en `crearCuentaDeClienta()`, compartida con
+      `register`: hay un solo lugar en el proyecto que escribe contraseñas.
+      **Sin probar contra una base todavía**: pasa `tsc` y `eslint`.
 - [ ] **Las invitadas no aparecen en Clientes.** Los turnos de gente sin cuenta
       ya se pueden cargar, pero la pantalla de Clientes lista `profiles`, así
       que alguien que vino tres veces sin registrarse no figura en ningún lado.
-      Falta decidir si esa pantalla debe mostrarlas y cómo.
+      Falta decidir si esa pantalla debe mostrarlas y cómo. **Sigue abierto** y
+      es otra cosa que el alta manual de acá arriba: eso crea una cuenta nueva,
+      esto es mostrar a las que ya vinieron y nunca se registraron.
 - [x] ~~**Vincular una invitada con su cuenta.**~~ Hecho (migración
       `20260816020000`): por mail se vincula sola al confirmarse la cuenta, y por
       teléfono a mano desde la lista de turnos.
