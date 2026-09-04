@@ -152,6 +152,27 @@ model users {
   verify_token_expiry DateTime? @db.Timestamptz(6)
   email_verified_at   DateTime? @db.Timestamptz(6)
 
+  // Cambiar el mail de la cuenta. La dirección nueva NO pisa a `email` cuando se
+  // pide: espera acá hasta que se abre el enlace que le llega A ELLA. Si pisara
+  // en el acto, un dedazo dejaría a la clienta afuera de su propia cuenta —el
+  // mail es con lo que entra— y no habría forma de volver.
+  //
+  // `pending_email` va sin @unique a propósito: dos personas pueden tener
+  // pendiente la misma dirección al mismo tiempo, y quien confirma primero se la
+  // queda. Con un índice único, la segunda recibiría un error de la base al
+  // PEDIRLO, y ese error diría que alguien más está esperando esa casilla. La
+  // comprobación real se hace al aplicar el cambio, que es cuando importa.
+  //
+  // El token tampoco lleva @unique, a diferencia de sus dos hermanos de arriba.
+  // No es una decisión de diseño: `db push` no puede agregar una restricción
+  // única sin `--accept-data-loss`, y esa bandera no se corre sobre una base con
+  // datos adentro por una columna nueva. Son 32 bytes de `randomBytes`: la
+  // colisión no es un riesgo que haya que atajar con un índice. Queda el índice
+  // común, que es lo que hace falta para buscar por él.
+  pending_email       String?
+  email_change_token  String?
+  email_change_expiry DateTime? @db.Timestamptz(6)
+
   /**
    * La cuenta puede entrar.
    * Es la baja SIN borrar: la empleada que se va de licencia, la que dejó de
@@ -175,6 +196,10 @@ model users {
   professional    professionals?
   client_note     client_notes?
   stock_movements stock_movements[]
+
+  // Para buscar la cuenta por el token del cambio de mail. Ver el comentario de
+  // `email_change_token` arriba: es el índice que reemplaza al @unique.
+  @@index([email_change_token])
 }
 
 // La ficha de la clienta. NO tiene el mail y es deliberado: vive en users, y
@@ -692,26 +717,20 @@ model stock_movements {
 
 /**
  * Los textos y las fotos de las páginas públicas, editables desde el panel.
- *
  * Una fila por página —inicio, servicios, profesionales, contacto, datos,
  * footer— y en `content` un objeto JSON con los campos de esa página.
- *
  * ── POR QUÉ JSON Y NO UNA COLUMNA POR CAMPO ───────────────────────────────
- *
  * Porque QUÉ campos tiene cada página lo decide `src/lib/contenido.ts`, no la
  * base. Agregar "el subtítulo del cierre del home" es una línea en ese archivo;
  * con una columna por campo sería una migración cada vez que al centro se le
  * ocurre un texto nuevo, y son textos: se les ocurren seguido.
- *
  * ── LA FILA PUEDE NO EXISTIR, Y ESTÁ BIEN ─────────────────────────────────
- *
  * Mientras nadie edite una página, acá no hay fila y el sitio muestra los
  * valores por defecto de `contenido.ts`, que son exactamente el texto que hoy
  * está escrito en el JSX. O sea: **con esta tabla vacía el sitio se ve igual
  * que antes**. Eso es a propósito — es lo que permite que un campo nuevo nazca
  * andando y que borrar una fila sea "volver al original" y no "romper la
  * página".
- *
  * Lo guardado se mergea SOBRE los defaults, nunca al revés: una clave que quedó
  * en la base de una versión anterior del esquema se ignora sola.
  */

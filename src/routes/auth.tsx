@@ -3,11 +3,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Logo, LogoWordmark } from "@/components/logo";
+import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiPost } from "@/lib/api";
+import { buildWhatsappUrl } from "@/lib/contact";
 import { olvidarSesion, pedirSesion } from "@/lib/sesion";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { isTeamAccount } from "@/lib/roles";
@@ -39,8 +41,16 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
-  /** Mail a confirmar. Si está seteado, el registro quedó a la espera. */
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  /**
+   * Por qué NO salió el mail de confirmación, cuando no salió.
+   *
+   * El servidor lo devuelve en `avisoMail` desde que existe el alta, y esta
+   * pantalla lo venía tirando a la basura: hacía el POST y ni miraba la
+   * respuesta. El resultado era el peor de los dos mundos —la cuenta creada y un
+   * cartel diciendo "te mandamos un mail" que era mentira— y nadie se enteraba
+   * hasta que la clienta escribía por WhatsApp. Pasó el 4/9/2026.
+   */
+  const [avisoMail, setAvisoMail] = useState<string | null>(null);
   /** Mail al que se mandó el enlace de recuperación, si se pidió uno. */
   const [recoverySent, setRecoverySent] = useState<string | null>(null);
 
@@ -111,8 +121,18 @@ function AuthPage() {
   async function signUp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    // `avisoMail` viaja sólo cuando el mail NO salió. La cuenta igual quedó
+    // creada —el alta no depende del correo—, así que esto no es un error del
+    // registro: es la diferencia entre "andá a ver tu casilla" y "escribinos,
+    // que no te va a llegar nada".
+    let respuesta: { avisoMail?: string };
     try {
-      await apiPost("/api/auth/register", { email, password, fullName, phone });
+      respuesta = await apiPost<{ avisoMail?: string }>("/api/auth/register", {
+        email,
+        password,
+        fullName,
+        phone,
+      });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo crear la cuenta.");
       return;
@@ -120,14 +140,35 @@ function AuthPage() {
       setLoading(false);
     }
 
-    // El alta NO deja la sesión abierta, y es a propósito: hasta que no confirma
-    // el mail no se le vinculan los turnos que había sacado como invitada,
-    // porque ese vínculo se busca POR MAIL. Sin confirmar, cualquiera se
-    // registraría con el mail de otra y vería sus turnos.
+    // ── EL ALTA AHORA SÍ DEJA LA SESIÓN ABIERTA ─────────────────────────────
     //
-    // Antes acá se preguntaba si vino sesión, porque con Supabase dependía de
-    // una casilla del panel. Ahora no depende de nada: nunca viene.
-    setPendingEmail(email);
+    // Hasta el 4/9/2026 acá se frenaba con un "Verificá tu mail" y había que ir
+    // a la casilla antes de poder entrar. No servía para lo que parecía servir:
+    // `login` nunca miró si el mail estaba confirmado, así que quien cerraba ese
+    // cartel y tocaba "Ingresar" pasaba igual. Y el enlace del mail, encima,
+    // llevaba a una ruta que no existía.
+    //
+    // Lo que de verdad espera a la confirmación es el traspaso de los turnos de
+    // invitada, que se busca POR MAIL: sin la prueba de que la casilla es suya,
+    // alguien se registraría con el mail de otra y se quedaría con su historial.
+    // Eso sigue igual, en `verifyEmail`. Lo único que cambió es que ya no se le
+    // cobra a TODA el alta el precio de una regla que protege una sola cosa.
+    //
+    // Si el mail no salió no se dice nada acá: el cartel de /mi-cuenta lo cuenta
+    // con el botón para reintentar al lado, que es más útil que un aviso en una
+    // pantalla que estamos por dejar atrás.
+    if (respuesta?.avisoMail) {
+      // Alcanza con éste: ahora es `avisoMail` el que decide si hay cartel y
+      // cuál. El `pendingEmail` que lo acompañaba se fue con la pantalla de
+      // "verificá tu mail", que era lo único que necesitaba saber a qué
+      // dirección se estaba esperando.
+      setAvisoMail(respuesta.avisoMail);
+      return;
+    }
+
+    olvidarSesion(queryClient);
+    toast.success("Cuenta creada. Te mandamos un mail para confirmar tu dirección.");
+    await goToMyPlace();
   }
 
   return (
@@ -183,9 +224,8 @@ function AuthPage() {
                       Olvidé mi contraseña
                     </button>
                   </div>
-                  <Input
+                  <PasswordInput
                     id="password"
-                    type="password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -209,29 +249,52 @@ function AuthPage() {
             </TabsContent>
 
             <TabsContent value="signup">
-              {pendingEmail ? (
+              {/*
+                Este cartel quedó SÓLO para cuando el mail no salió. El de
+                "verificá tu mail y después ingresá" se fue: ahora el alta entra
+                derecho, y lo único que espera a la confirmación es el historial
+                de invitada. Ver `signUp`.
+
+                Cuando el mail no sale, en cambio, sigue habiendo algo que
+                contar: la cuenta está creada y sirve, pero el enlace no va a
+                llegar, y mandarla a esperarlo sería mentirle. Se le da el
+                WhatsApp del centro, que es el canal que siempre funciona.
+              */}
+              {avisoMail ? (
                 <div className="mt-6 rounded-sm border border-gold/50 bg-gold/10 p-6 text-center">
-                  <p className="text-eyebrow text-gold">Falta un paso</p>
+                  <p className="text-eyebrow text-gold">Tu cuenta quedó creada</p>
                   <h2 className="mt-4 font-display text-3xl leading-tight text-foreground">
-                    Verificá tu mail
+                    No pudimos mandarte el mail
                   </h2>
                   <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                    Te mandamos un enlace de confirmación a{" "}
-                    <span className="text-foreground">{pendingEmail}</span>. Abrilo para activar tu
-                    cuenta y después ingresá.
+                    Ya podés entrar y reservar. Lo que no salió es el mail de confirmación, así que
+                    no lo esperes: escribinos y confirmamos{" "}
+                    <span className="text-foreground">{email}</span> nosotras, y ahí aparecen los
+                    turnos que hayas sacado antes de tener cuenta.
                   </p>
                   <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-                    Si no lo ves, revisá la carpeta de spam.
+                    Motivo: {avisoMail}
                   </p>
                   <Button
-                    variant="outline"
-                    className="mt-6"
+                    className="mt-6 w-full"
                     onClick={() => {
-                      setPendingEmail(null);
-                      setPassword("");
+                      olvidarSesion(queryClient);
+                      void goToMyPlace();
                     }}
                   >
-                    Usar otro mail
+                    Ir a mi cuenta
+                  </Button>
+                  <Button asChild variant="outline" className="mt-3 w-full">
+                    <a
+                      href={buildWhatsappUrl({
+                        name: fullName,
+                        message: `Me registré con ${email} y no me llegó el mail de confirmación.`,
+                      })}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Escribirnos por WhatsApp
+                    </a>
                   </Button>
                 </div>
               ) : (
@@ -261,9 +324,8 @@ function AuthPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password2">Contraseña</Label>
-                    <Input
+                    <PasswordInput
                       id="password2"
-                      type="password"
                       required
                       // Era 6 acá y 8 en el alta de empleadas, sin que nadie lo
                       // hubiera decidido. Unificado en MIN_PASSWORD_LENGTH.

@@ -30,6 +30,8 @@ export type Sesion = {
   id: string;
   email: string;
   emailVerificado: boolean;
+  /** La dirección nueva esperando su enlace, si pidió cambiar el mail. */
+  emailPendiente: string | null;
   nombre: string | null;
   telefono: string | null;
   roles: string[];

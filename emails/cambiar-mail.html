@@ -1,9 +1,10 @@
 <!--
-  Shiraf — mail de confirmación de cuenta.
+  Shiraf — mail para confirmar una dirección nueva.
 
-  Se pega en Supabase → Authentication → Emails → Confirm signup.
-  Es el PRIMER mail que recibe una clienta, así que es el que más define si el
-  centro le parece serio. Ver supabase/emails/README.md.
+  Lo manda enviarMailDeCuenta("cambiar-mail", ...) cuando alguien pide cambiar
+  el mail de su cuenta desde Mi cuenta. Va SIEMPRE a la dirección nueva: eso es
+  lo que demuestra que la casilla es suya.
+  Ver emails/README.md.
 
   Las decisiones de maquetado (tablas, estilos inline, Georgia, hex) están
   explicadas en recuperar-contrasena.html y valen igual acá.
@@ -15,7 +16,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light only" />
     <meta name="supported-color-schemes" content="light only" />
-    <title>Confirmá tu cuenta — Shiraf</title>
+    <title>Confirmá tu dirección nueva — Shiraf</title>
   </head>
   <body
     style="margin: 0; padding: 0; background-color: #f7f6f0; -webkit-font-smoothing: antialiased"
@@ -31,7 +32,7 @@
         color: #f7f6f0;
       "
     >
-      Confirmá tu mail y sumá a tu historial los turnos que ya tenías en Shiraf.
+      Confirmá esta dirección para terminar el cambio de mail en Shiraf.
     </div>
 
     <table
@@ -100,7 +101,7 @@
                     color: #252b1f;
                   "
                 >
-                  Bienvenida a Shiraf
+                  Confirmá tu mail nuevo
                 </h1>
 
                 <table
@@ -134,9 +135,9 @@
                     color: #676b5e;
                   "
                 >
-                  Tu cuenta ya está lista: podés reservar turnos y elegir con qué profesional
-                  atenderte. Confirmando tu mail sumamos además a tu historial los turnos que hayas
-                  sacado antes de tener cuenta.
+                  Pediste cambiar por esta dirección el mail de tu cuenta de Shiraf. Tocá el botón y
+                  desde ese momento entrás con ésta. Hasta que no lo hagas, tu cuenta sigue
+                  funcionando con la anterior.
                 </p>
 
                 <table
@@ -166,7 +167,7 @@
                           text-decoration: none;
                           border-radius: 2px;
                         "
-                        >Confirmar mi cuenta</a
+                        >Confirmar esta dirección</a
                       >
                     </td>
                   </tr>
@@ -182,9 +183,9 @@
                   "
                 >
                   <strong style="color: #252b1f"
-                    >Si no creaste ninguna cuenta, ignorá este mail.</strong
+                    >Si no pediste ningún cambio, ignorá este mail.</strong
                   >
-                  Sin ese botón nadie puede ver el historial de turnos de esta dirección.
+                  Sin ese botón no se cambia nada y esta dirección no queda atada a ninguna cuenta.
                 </p>
 
                 <p

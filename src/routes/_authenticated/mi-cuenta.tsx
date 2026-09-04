@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarDays, History, KeyRound, User } from "lucide-react";
+import { CalendarDays, History, KeyRound, MailWarning, User } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { api, apiPut } from "@/lib/api";
+import { api, apiPost, apiPut } from "@/lib/api";
 import { ReprogramarTurnoDialog } from "@/components/reprogramar-turno-dialog";
 import { CancelarTurnoDialog } from "@/components/cancelar-turno-dialog";
 import { notifyAppointment } from "@/lib/notifications.functions";
@@ -25,6 +25,7 @@ import {
 } from "@/lib/shiraf";
 import { passwordProblem } from "@/lib/password";
 import { isTeamAccount } from "@/lib/roles";
+import { sesionQuery } from "@/lib/sesion";
 
 export const Route = createFileRoute("/_authenticated/mi-cuenta")({
   /**
@@ -60,6 +61,142 @@ export const Route = createFileRoute("/_authenticated/mi-cuenta")({
   }),
   component: AccountPage,
 });
+
+/**
+ * "Todavía no confirmaste tu mail", con el botón para que se lo manden de nuevo.
+ *
+ * ── POR QUÉ ESTO EXISTE ───────────────────────────────────────────────────
+ *
+ * Desde el 4/9/2026 el alta entra derecho, sin pasar por la casilla. La
+ * confirmación dejó de ser una tranquera y quedó siendo lo que siempre fue de
+ * verdad: la prueba de que el mail es suyo, que es lo único que habilita el
+ * traspaso de los turnos que sacó como invitada (ver `verifyEmail` en el
+ * controller). Este cartel es el que lo pide, y sólo lo pide: no bloquea nada.
+ *
+ * Por eso el texto habla de los turnos anteriores y no de "activar la cuenta".
+ * La cuenta ya está activa — decir lo contrario sería el mismo malentendido que
+ * teníamos antes, ahora en un cartel más chico.
+ */
+function AvisoMailSinConfirmar() {
+  const sesion = useQuery(sesionQuery());
+
+  const reenviar = useMutation({
+    mutationFn: async () =>
+      await apiPost<{ mensaje?: string }>("/api/auth/resend-verification", undefined),
+    onSuccess: (r) => toast.success(r?.mensaje ?? "Listo, te lo mandamos de nuevo."),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Mientras la sesión carga no se dibuja nada. Un cartel que aparece medio
+  // segundo después de la pantalla y empuja todo hacia abajo se lee como un
+  // error, y encima le saltaría a quien ya confirmó.
+  if (!sesion.data || sesion.data.emailVerificado) return null;
+
+  return (
+    <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-sm border border-gold/50 bg-gold/10 p-5">
+      <div className="flex items-start gap-3">
+        <MailWarning className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
+        <div>
+          <p className="text-sm text-foreground">Te falta confirmar tu mail</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            Mandamos un enlace a {sesion.data.email}. Abrilo y sumamos acá los turnos que hayas
+            sacado antes de tener cuenta. Si no lo ves, fijate en el correo no deseado.
+          </p>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={reenviar.isPending}
+        onClick={() => reenviar.mutate()}
+      >
+        {reenviar.isPending ? "Mandando…" : "Reenviar el mail"}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * El mail de la cuenta, y el pedido para cambiarlo.
+ *
+ * ── POR QUÉ NO SE GUARDA CON EL RESTO DE LA FICHA ─────────────────────────
+ *
+ * Porque no es un dato más: es con lo que entra. El nombre y el teléfono se
+ * guardan y listo; el mail se guarda en `pending_email` y no pasa nada hasta que
+ * la clienta abre el enlace que le llega A LA DIRECCIÓN NUEVA. Ese rodeo es lo
+ * único que evita que un dedazo —una letra de más en el dominio— la deje afuera
+ * de su propia cuenta sin forma de volver, porque «olvidé mi contraseña» le
+ * mandaría el enlace a una casilla que no existe.
+ *
+ * Por eso tiene su propio botón y su propio cartel de estado, en vez de vivir
+ * adentro de "Guardar cambios".
+ */
+function MiMail() {
+  const sesion = useQuery(sesionQuery());
+  const [email, setEmail] = useState("");
+  const [tocado, setTocado] = useState(false);
+
+  const actual = sesion.data?.email ?? "";
+  const pendiente = sesion.data?.emailPendiente ?? null;
+
+  // Mientras no lo toque, el campo muestra el mail de la cuenta. `tocado` existe
+  // para que la sesión —que se vuelve a pedir sola cada minuto— no le pise lo
+  // que está escribiendo a mitad de camino.
+  const valor = tocado ? email : actual;
+
+  const cambiar = useMutation({
+    mutationFn: async () =>
+      await apiPost<{ mensaje?: string }>("/api/auth/change-email", { email: valor.trim() }),
+    onSuccess: (r) => {
+      setTocado(false);
+      toast.success(r?.mensaje ?? "Te mandamos un enlace a la dirección nueva.");
+      // Para que aparezca el renglón del pendiente sin esperar al refresco.
+      void sesion.refetch();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const cambio = valor.trim().toLowerCase() !== actual.toLowerCase() && valor.trim().length > 0;
+
+  return (
+    <>
+      <Label htmlFor="email">Mail</Label>
+      <div className="flex flex-wrap items-center gap-3">
+        <Input
+          id="email"
+          type="email"
+          autoComplete="email"
+          className="min-w-56 flex-1"
+          value={valor}
+          onChange={(e) => {
+            setTocado(true);
+            setEmail(e.target.value);
+          }}
+        />
+        {/* El botón sólo aparece cuando de verdad escribió otra dirección. Un
+            botón siempre visible al lado de un campo que no cambió invita a
+            apretarlo y recibir "ése es el mail que ya tenés". */}
+        {cambio && (
+          <Button variant="outline" disabled={cambiar.isPending} onClick={() => cambiar.mutate()}>
+            {cambiar.isPending ? "Mandando…" : "Cambiar mail"}
+          </Button>
+        )}
+      </div>
+
+      {pendiente ? (
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Te mandamos un enlace a <span className="text-foreground">{pendiente}</span>. Hasta que no
+          lo abras seguís entrando con {actual}. El enlace dura una hora.
+        </p>
+      ) : (
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Es con lo que entrás y a donde te llegan los avisos de tus turnos. Si lo cambiás, te
+          mandamos un enlace a la dirección nueva para confirmarla.
+        </p>
+      )}
+    </>
+  );
+}
 
 function AccountPage() {
   const queryClient = useQueryClient();
@@ -174,6 +311,8 @@ function AccountPage() {
         </h1>
         <div className="gold-rule mt-6" />
 
+        <AvisoMailSinConfirmar />
+
         <div className="mt-12 flex items-center gap-3">
           <CalendarDays className="h-5 w-5 text-gold" />
           <h2 className="font-display text-2xl text-foreground">Próximos turnos</h2>
@@ -286,6 +425,14 @@ function AccountPage() {
             <div className="space-y-2">
               <Label htmlFor="phone">Teléfono</Label>
               <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            {/* El mail va acá abajo y con su propio botón, separado de
+                "Guardar cambios". No es capricho de maquetado: cambiar el mail
+                no se aplica al guardar, se aplica cuando la clienta abre el
+                enlace que le llega a la dirección nueva. Meterlo adentro del
+                mismo botón haría creer que ya está hecho. */}
+            <div className="space-y-2 sm:col-span-2">
+              <MiMail />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="notes">Notas (alergias, tipo de piel, preferencias)</Label>

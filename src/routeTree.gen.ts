@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ConfirmarRouteImport } from './routes/confirmar'
+import { Route as ConfirmarMailRouteImport } from './routes/confirmar-mail'
 import { Route as ContactoRouteImport } from './routes/contacto'
 import { Route as ProfesionalesRouteImport } from './routes/profesionales'
 import { Route as RecuperarRouteImport } from './routes/recuperar'
@@ -50,6 +52,16 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfirmarRoute = ConfirmarRouteImport.update({
+  id: '/confirmar',
+  path: '/confirmar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfirmarMailRoute = ConfirmarMailRouteImport.update({
+  id: '/confirmar-mail',
+  path: '/confirmar-mail',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactoRoute = ContactoRouteImport.update({
@@ -196,6 +208,8 @@ const AuthenticatedAdminTurnosIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/confirmar': typeof ConfirmarRoute
+  '/confirmar-mail': typeof ConfirmarMailRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
   '/recuperar': typeof RecuperarRoute
@@ -225,6 +239,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/confirmar': typeof ConfirmarRoute
+  '/confirmar-mail': typeof ConfirmarMailRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
   '/recuperar': typeof RecuperarRoute
@@ -254,6 +270,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/confirmar': typeof ConfirmarRoute
+  '/confirmar-mail': typeof ConfirmarMailRoute
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
   '/recuperar': typeof RecuperarRoute
@@ -285,6 +303,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/confirmar'
+    | '/confirmar-mail'
     | '/contacto'
     | '/profesionales'
     | '/recuperar'
@@ -314,6 +334,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/confirmar'
+    | '/confirmar-mail'
     | '/contacto'
     | '/profesionales'
     | '/recuperar'
@@ -342,6 +364,8 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/confirmar'
+    | '/confirmar-mail'
     | '/contacto'
     | '/profesionales'
     | '/recuperar'
@@ -373,6 +397,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ConfirmarRoute: typeof ConfirmarRoute
+  ConfirmarMailRoute: typeof ConfirmarMailRoute
   ContactoRoute: typeof ContactoRoute
   ProfesionalesRoute: typeof ProfesionalesRoute
   RecuperarRoute: typeof RecuperarRoute
@@ -400,6 +426,20 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/confirmar': {
+      id: '/confirmar'
+      path: '/confirmar'
+      fullPath: '/confirmar'
+      preLoaderRoute: typeof ConfirmarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/confirmar-mail': {
+      id: '/confirmar-mail'
+      path: '/confirmar-mail'
+      fullPath: '/confirmar-mail'
+      preLoaderRoute: typeof ConfirmarMailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contacto': {
@@ -656,6 +696,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ConfirmarRoute: ConfirmarRoute,
+  ConfirmarMailRoute: ConfirmarMailRoute,
   ContactoRoute: ContactoRoute,
   ProfesionalesRoute: ProfesionalesRoute,
   RecuperarRoute: RecuperarRoute,
