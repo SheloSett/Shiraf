@@ -62,6 +62,15 @@
   --shadow-lift: var(--shadow-lift);
 }
 
+/* Punto de corte propio, por debajo del `sm` (640px) de Tailwind. Hacía falta
+   uno acá abajo: entre 320 y 640px no había ningún escalón, y el header —que
+   entra justo en un iPhone 15 Pro Max de 430px— se desbordaba en cualquier
+   teléfono más angosto (390, 375, 360). 26rem = 416px deja del lado compacto a
+   todos los teléfonos comunes en vertical. */
+@theme {
+  --breakpoint-xs: 26rem;
+}
+
 :root {
   --radius: 0.25rem;
 

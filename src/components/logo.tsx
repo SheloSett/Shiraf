@@ -51,14 +51,35 @@ export function LogoLockup({ className = "w-44" }: { className?: string }) {
  * Sello + wordmark tipografiado. El texto va aparte y no duplica al del
  * archivo, porque <Logo> muestra únicamente el monograma.
  */
-export function LogoWordmark({ tone = "dark" }: { tone?: "dark" | "light" }) {
+export function LogoWordmark({
+  tone = "dark",
+  compact = false,
+}: {
+  tone?: "dark" | "light";
+  /**
+   * Para cuando el wordmark comparte una fila angosta con otras cosas —hoy
+   * sólo el header, que además del logo lleva el botón dorado y el ícono del
+   * menú. Ahí el lockup a tamaño completo pide 426px de ancho: entra en un
+   * iPhone 15 Pro Max (430) y se desborda en todo lo demás (390, 375, 360),
+   * con el botón encimado a la bajada y el ícono del menú saliéndose del
+   * borde. En `compact` el sello y las dos líneas achican un escalón por
+   * debajo de `sm`, y por debajo de `xs` (416px) la bajada se esconde: es lo
+   * más ancho del bloque, y en el teléfono la repite el titular de la portada
+   * dos centímetros más abajo.
+   *
+   * En /auth y /recuperar el wordmark está solo y centrado, así que ahí sigue
+   * yendo entero.
+   */
+  compact?: boolean;
+}) {
   return (
-    <span className="flex items-center gap-3">
+    <span className={`flex items-center ${compact ? "gap-2.5 sm:gap-3" : "gap-3"}`}>
       {/* Sello un poco más grande a pedido del centro: 44px se perdía dentro de
           los 80px de alto del header. A 52px sigue entrando con aire arriba y
           abajo, y equilibra mejor el bloque de dos líneas que tiene al lado. */}
       {/* <Logo /> */}
-      <Logo className="h-13 w-13" />
+      {/* <Logo className="h-13 w-13" /> */}
+      <Logo className={compact ? "h-11 w-11 sm:h-13 sm:w-13" : "h-13 w-13"} />
       <span className="leading-none">
         {/* Wordmark en dorado, para que el texto tipografiado use el mismo color
             que el del logo en vez de leerse como texto de interfaz.
@@ -72,20 +93,26 @@ export function LogoWordmark({ tone = "dark" }: { tone?: "dark" | "light" }) {
             usa sobre fondo claro. Sobre el oliva el dorado da 4.54:1, que pasa
             AA para texto normal. */}
         {/* tone === "light" ? "text-primary-foreground" : "text-foreground" */}
+        {/* Antes: `block font-display text-xl tracking-[0.3em]`, fijo. */}
         <span
-          className={`block font-display text-xl tracking-[0.3em] ${
-            tone === "light" ? "text-gold" : "text-foreground"
-          }`}
+          className={`block font-display ${
+            compact
+              ? "text-lg tracking-[0.24em] sm:text-xl sm:tracking-[0.3em]"
+              : "text-xl tracking-[0.3em]"
+          } ${tone === "light" ? "text-gold" : "text-foreground"}`}
         >
           SHIRAF
         </span>
         {/* La bajada iba en /60 sobre el oliva. En dorado va al 100%: bajarle la
             opacidad la tiraba a 3.3:1 y a 10px eso ya no se lee. */}
         {/* tone === "light" ? "text-primary-foreground/60" : "text-muted-foreground" */}
+        {/* Antes: `mt-1 block text-[10px] tracking-[0.18em]`, fijo. */}
         <span
-          className={`mt-1 block text-[10px] tracking-[0.18em] ${
-            tone === "light" ? "text-gold" : "text-muted-foreground"
-          }`}
+          className={`mt-1 ${
+            compact
+              ? "hidden text-[9px] tracking-[0.12em] xs:block sm:text-[10px] sm:tracking-[0.18em]"
+              : "block text-[10px] tracking-[0.18em]"
+          } ${tone === "light" ? "text-gold" : "text-muted-foreground"}`}
         >
           {/* Antes: "calma · belleza · bienestar", todo en minúscula. Va con las
               tres iniciales en mayúscula: acá las tres palabras están separadas

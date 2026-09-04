@@ -52,9 +52,13 @@ export function SiteHeader() {
     // página. El fondo va con algo de alfa + blur para que el contenido se
     // insinúe al pasar por debajo.
     <header className="sticky top-0 z-40 border-b border-primary-foreground/15 bg-primary/95 text-primary-foreground backdrop-blur">
-      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-5">
+      {/* Antes: `h-20 ... px-5` fijos. En el teléfono los 20px de costado eran
+          parte del problema de desborde, así que van a 16 hasta `sm`. */}
+      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-4 sm:px-5">
         <Link to="/" className="shrink-0">
-          <LogoWordmark tone="light" />
+          {/* compact: esta fila es angosta y el logo la comparte con el botón
+              dorado y el ícono del menú. Ver LogoWordmark. */}
+          <LogoWordmark tone="light" compact />
         </Link>
 
         <nav className="hidden items-center gap-9 md:flex">
@@ -72,7 +76,8 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        {/* Antes: `gap-2` fijo. */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Al lado del botón dorado, que es la acción principal, va lo de la
               sesión. Cuánto hay para poner ahí depende de quién esté:
 
@@ -117,7 +122,7 @@ export function SiteHeader() {
             <Button
               asChild
               size="sm"
-              className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
+              className="bg-gold px-2.5 text-[13px] text-accent-foreground shadow-none hover:bg-gold/85 sm:px-3 sm:text-sm"
             >
               <Link to="/admin">Ir al panel</Link>
             </Button>
@@ -125,7 +130,7 @@ export function SiteHeader() {
             <Button
               asChild
               size="sm"
-              className="bg-gold text-accent-foreground shadow-none hover:bg-gold/85"
+              className="bg-gold px-2.5 text-[13px] text-accent-foreground shadow-none hover:bg-gold/85 sm:px-3 sm:text-sm"
             >
               <Link to="/reservar">Reservar turno</Link>
             </Button>
