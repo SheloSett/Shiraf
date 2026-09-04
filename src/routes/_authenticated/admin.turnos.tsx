@@ -28,10 +28,19 @@ import {
 import { EstadoTurno } from "@/components/admin/estado-turno";
 import { estadoVisible, quienAtiende } from "@/lib/shiraf";
 import { useEffect, useRef, useState } from "react";
-import { Check, FileText, MessageCircle, Plus, Trash2, TriangleAlert } from "lucide-react";
+import {
+  CalendarPlus,
+  Check,
+  FileText,
+  MessageCircle,
+  Plus,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { NewAppointmentDialog } from "@/components/admin/new-appointment-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
+import { NextSessionDialog, type SesionAAgendar } from "@/components/admin/next-session-dialog";
 // import { api, apiPut } from "@/lib/api";  ← `apiPut` se fue con la mutación.
 import { api } from "@/lib/api";
 import type { RtaTurnos, TurnoDelPanel } from "@/lib/api-tipos";
@@ -235,6 +244,8 @@ function AdminAppointments() {
   const [linking, setLinking] = useState<GuestToLink | null>(null);
   /** Invitada a la que se le están corrigiendo los datos, o null. */
   const [editing, setEditing] = useState<GuestToEdit | null>(null);
+  /** Turno del que se está agendando la sesión siguiente, o null. */
+  const [agendando, setAgendando] = useState<SesionAAgendar | null>(null);
   /**
    * El turno que se está por borrar, o null.
    *
@@ -372,6 +383,15 @@ function AdminAppointments() {
         open={creating}
         onOpenChange={setCreating}
         onCreated={(status) => setFilter(status)}
+      />
+
+      {/* Agendar la sesion siguiente de un tratamiento de varias. Vive acá y no
+          en cada fila: es un solo diálogo que se abre con el turno del que se
+          parte. */}
+      <NextSessionDialog
+        turno={agendando}
+        onOpenChange={(next) => !next && setAgendando(null)}
+        onCreated={() => setAgendando(null)}
       />
 
       <LinkGuestDialog guest={linking} onOpenChange={(next) => !next && setLinking(null)} />
@@ -538,7 +558,10 @@ function AdminAppointments() {
               // «Marcar realizado» no aparecían NUNCA —porque `filter` vale
               // "todos" y nunca es igual a "pending" ni a "confirmed"—, así que
               // desde la pestaña por defecto no se podía cerrar ningún turno.
-              const estado = estadoVisible(a.status, a.starts_at, ahora);
+              const estado = estadoVisible(
+                { status: a.status, startsAt: a.starts_at, minutos: a.duration_minutes },
+                ahora,
+              );
 
               // «Cancelar» es el único botón de estado que queda en la tabla, y
               // sólo sobre un turno que sigue en pie. Vencido queda afuera: ahí
@@ -645,7 +668,18 @@ function AdminAppointments() {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell>{a.services?.name}</TableCell>
+                  <TableCell>
+                    {a.services?.name}
+                    {/* "Sesión 2 de 3" debajo del nombre y no pegada a él: es
+                        lo que explica que este turno salga $0, y con el nombre
+                        en la misma línea se perdía en tratamientos de nombre
+                        largo. Sólo aparece en los de varias sesiones. */}
+                    {a.sessions_total > 1 && (
+                      <span className="block text-xs text-muted-foreground">
+                        Sesión {a.session_number} de {a.sessions_total}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {/* Los DOS casos que hay que resolver van en rojo y enlazados a
                       la ficha, que es donde se reasigna:
@@ -660,8 +694,7 @@ function AdminAppointments() {
                       const q = quienAtiende(
                         a.professionals,
                         a.professional_name,
-                        a.status,
-                        a.starts_at,
+                        { status: a.status, startsAt: a.starts_at, minutos: a.duration_minutes },
                         ahora,
                       );
 
@@ -709,9 +742,23 @@ function AdminAppointments() {
                       );
                     })()}
                   </TableCell>
-                  <TableCell>{formatMoney(a.services?.price)}</TableCell>
+                  {/* Una sesión que no es la primera vale $0 a propósito: el
+                      paquete se cobró entero en la primera. Escribir "$ 0" ahí
+                      se lee como un error de carga, así que se dice qué pasó. */}
                   <TableCell>
-                    <EstadoTurno status={a.status} startsAt={a.starts_at} now={ahora} />
+                    {a.sessions_total > 1 && a.session_number > 1 ? (
+                      <span className="text-sm text-muted-foreground">Incluida</span>
+                    ) : (
+                      formatMoney(a.services?.price)
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <EstadoTurno
+                      status={a.status}
+                      startsAt={a.starts_at}
+                      minutos={a.duration_minutes}
+                      now={ahora}
+                    />
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -739,6 +786,52 @@ function AdminAppointments() {
                           <Check className="mr-2 h-4 w-4" /> Confirmar
                         </Button>
                       )}
+
+                      {/* Agendar la sesión que sigue.
+                        Aparece sólo cuando hay una que agendar: tratamiento de
+                        varias sesiones, ésta no es la última, la próxima
+                        todavía no está cargada, y ÉSTA se realizó.
+
+                        Ese último es el que no estaba y hacía falta: sin él se
+                        podía agendar la sesión 2 con la 1 todavía pendiente o
+                        vencida —la clienta nunca vino, o vino y nadie lo
+                        registró— y la serie avanzaba sola sin que nadie hubiera
+                        confirmado que había algo que avanzar. Mientras la
+                        sesión sigue abierta, lo que corresponde es "Marcar
+                        realizado" (si vino) o reprogramarla (si no vino) — no
+                        agendar la siguiente. El servidor exige lo mismo en
+                        \`agendarSiguienteSesion\`; acá se oculta el botón para
+                        no ofrecer una acción que ya sabemos que va a rebotar.
+
+                        Con estas cuatro condiciones el botón no aparece nunca en
+                        el 99% de los turnos, que son de una sola sesión. */}
+                      {a.sessions_total > 1 &&
+                        a.session_number < a.sessions_total &&
+                        !a.next_session_booked &&
+                        a.status === "completed" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setAgendando({
+                                id: a.id,
+                                session_number: a.session_number,
+                                sessions_total: a.sessions_total,
+                                serviceName: a.services?.name ?? "Tratamiento",
+                                personName: a.person.name,
+                                suggestedAt: a.next_session_suggested_at,
+                                // La sesión que sigue se hace con la misma
+                                // profesional y dura lo mismo: con eso el
+                                // diálogo busca los huecos libres de verdad.
+                                professionalId: a.professional_id ?? undefined,
+                                duracion: a.duration_minutes,
+                                margen: a.buffer_minutes,
+                              })
+                            }
+                          >
+                            <CalendarPlus className="mr-2 h-4 w-4" /> Sesión {a.session_number + 1}
+                          </Button>
+                        )}
 
                       {/* «Ver turno» y no «Ver ficha»: en este panel «ficha» ya
                         es la de la clienta —la de Clientes, con las notas

@@ -1,13 +1,100 @@
 # Qué cambió y qué falta probar
 
-Rama: **`trabajo/panel-turnos-y-reprogramar`** · actualizado el **26/8/2026**
+Rama: **`trabajo/margen-y-ausencias`** · actualizado el **31/8/2026**
 
-Nada se mergeó a `main`.
+Lo de `trabajo/vencido-a-tiempo` **ya está en `main`** (merge del 31/8). Esta
+rama sale de ahí.
 
-Este archivo se reescribe cada vez que se cierra una tanda de trabajo. Lo de la
-tanda anterior (25/8: colores del calendario, estado a la vista, reprogramar)
-sigue abajo, en **«Lo que venía de antes»**, porque hay cosas de ahí que todavía
-no se probaron.
+Este archivo se reescribe cada vez que se cierra una tanda de trabajo. Lo de las
+tandas anteriores sigue abajo, porque hay cosas de ahí que todavía no se
+probaron.
+
+---
+
+## ✅ Tanda del 31/8 — el margen por tratamiento y los días que no está
+
+Dos cosas que el centro pidió el mismo día. Las dos tocan la agenda, y por eso
+salieron juntas: comparten `buildSlots`.
+
+### 1. El tiempo entre turnos lo decide cada tratamiento
+
+Era `SLOT_BUFFER_MINUTES`, un 10 fijo para todo el catálogo. Ahora es
+`services.buffer_minutes`, una columna por tratamiento: una depilación deja la
+cabina para limpiar y un masaje no, y con un solo número o se le regala tiempo a
+uno o se le queda corto al otro.
+
+**Entre dos turnos manda el margen del que TERMINA**, porque el rato es para
+limpiar lo que ése acaba de usar:
+
+| Lo que ya está tomado 12:00–13:00 | Lo que se quiere reservar | Primer horario libre |
+|---|---|---|
+| Depilación (margen 20) | Masaje (margen 5) | **13:20** — manda el 20 |
+| Masaje (margen 5) | Depilación (margen 20) | **13:05** — manda el 5 |
+
+El margen **se congela en el turno** (`appointments.buffer_minutes`), junto al
+precio y la duración. No es prolijidad: `service_id` es nullable a propósito —el
+turno sobrevive al borrado del tratamiento— y sin esa copia la agenda no sabría
+cuánto tarda en liberarse la cabina que ese turno ocupó.
+
+Se edita en el formulario de tratamientos, con una ayuda que muestra el efecto
+en vivo: *"un turno de 45 minutos a las 12:00 deja libre las 13:05"*.
+
+### 2. Los días que una profesional no está
+
+Tabla nueva `professional_absences`: un rango `starts_on`–`ends_on` con los dos
+extremos incluidos, más un motivo interno. Del 15 al 29 son quince días sin
+trabajar, no catorce.
+
+Es un **rango y no una fila por día** porque el caso real son las vacaciones: dos
+semanas serían catorce filas para cargar de a una y borrar de a una. El día
+suelto entra igual, con `starts_on` = `ends_on`.
+
+Se carga desde la ficha de la profesional, en Accesos. En la tarjeta va sólo un
+renglón —*"No está del 15/09 al 29/09"*— y el formulario está en un diálogo: son
+días que se anotan dos o tres veces al año, y tenerlo siempre abierto le comía
+media ficha a algo que casi nunca se toca.
+
+**Se hace cumplir en los dos lados**, que es lo que importa:
+
+- la pantalla no ofrece esos días (`buildSlots` los descarta);
+- y el servidor los rechaza en `exigirQueEntreEnLaAgenda`, que es el que ataja
+  el POST armado a mano — la pantalla es comodidad, no el candado.
+
+**Si el rango tapa turnos ya dados, la ausencia se guarda igual** y se abre un
+diálogo con la lista: quién, cuándo y qué tratamiento. No se cancelan solos a
+propósito — son clientas con una confirmación por mail en la mano, y una
+cancelación masiva silenciosa no se deshace. Hay que resolverlos uno por uno
+desde Turnos, con el mail que cada caso merezca.
+
+### Una sola definición para cada regla
+
+`estaAusente()` en `lib/shiraf.ts` es LA definición de "ese día no atiende", y la
+usan los tres consumidores: la pantalla de reserva, el diálogo del panel y el
+candado del servidor. Es la lección de `yaVencio`, que existe porque "vencido"
+se había escrito dos veces y se separaron.
+
+### Verificado el 31/8, sin tocar ni una fila
+
+| Qué | Resultado |
+|---|---|
+| `tsc --noEmit` | limpio |
+| `eslint` | 0 errores (los 7 warnings son de antes, en archivos que no se tocaron) |
+| `buildSlots` y `estaAusente` | 18/18 casos, incluidos los cruces entre tratamientos de margen distinto y los dos extremos del rango |
+| `horariosOcupados` / `ausenciasDe` | corridas contra la base local: devuelven la forma esperada |
+| El esquema | 8 turnos, 6 tratamientos, 3 profesionales y 14 horarios antes y después del `db push` |
+
+El SQL que aplicó `db push` fueron cinco sentencias y las cinco agregan: dos
+`ADD COLUMN ... DEFAULT 10`, la tabla nueva, su índice y su FK. Ni un DROP.
+
+### ⚠️ Lo que NO se probó
+
+- [ ] **El flujo de ausencias de punta a punta.** Anotar una y comprobar que
+      /reservar deja de ofrecer esos días requiere insertar una fila, y la base
+      no se toca sin permiso. Lo único ejercitado es la consulta.
+- [ ] **La pantalla, con ojos.** El endpoint pide sesión. Falta mirar el renglón
+      en la tarjeta, el diálogo, y el campo nuevo del formulario de tratamientos.
+- [ ] **Qué pasa con un turno cuyo tratamiento cambió de margen después.** El
+      congelado dice que el turno viejo conserva el suyo; falta verlo pasar.
 
 ---
 
@@ -76,10 +163,15 @@ Queda anotado porque sirve para la próxima.
    Antes de cualquier `docker compose up -d` de producción hay que forzar
    `docker compose build app`.
 
-### Una decisión de agenda que conviene llevar al centro con un número
+### ~~Una decisión de agenda que conviene llevar al centro con un número~~
 
-`SLOT_BUFFER_MINUTES` está en 10 y TODO.md deja abierto repreguntar si conviene
-15. Con la agenda real de Julieta —lunes 14 a 20, sesiones de 45— la cuenta da:
+> **Resuelta de otra manera el 31/8/2026.** La pregunta era "¿10 o 15 para todo
+> el catálogo?", y la respuesta terminó siendo que no hay un número para todo el
+> catálogo: cada tratamiento tiene el suyo en `services.buffer_minutes`. La
+> cuenta de abajo sigue sirviendo para elegir el de cada uno.
+
+`SLOT_BUFFER_MINUTES` estaba en 10 y TODO.md dejaba abierto repreguntar si
+convenía 15. Con la agenda real de Julieta —lunes 14 a 20, sesiones de 45— la cuenta da:
 
 | Con 10 (hoy) | Con 15 |
 |---|---|

@@ -45,8 +45,11 @@ type Tono = {
 const SECUNDARIO = "text-muted-foreground";
 const AVISO = "text-destructive";
 
-function appointmentTone(status: string, startsAt: string, now: number | null): Tono {
-  switch (estadoVisible(status, startsAt, now)) {
+function appointmentTone(
+  turno: { status: string; startsAt: string; minutos: number },
+  now: number | null,
+): Tono {
+  switch (estadoVisible(turno, now)) {
     case "cancelled":
       return {
         pastilla: "bg-muted text-muted-foreground line-through",
@@ -245,7 +248,10 @@ function AdminCalendar() {
                     lista con su pestaña y su fila marcada. */}
                 <div className="mt-1 space-y-1">
                   {(byDay[day] ?? []).map((a) => {
-                    const tono = appointmentTone(a.status, a.starts_at, now);
+                    const tono = appointmentTone(
+                      { status: a.status, startsAt: a.starts_at, minutos: a.duration_minutes },
+                      now,
+                    );
                     return (
                       <Link
                         key={a.id}
@@ -280,8 +286,11 @@ function AdminCalendar() {
                               const q = quienAtiende(
                                 a.professionals,
                                 a.professional_name,
-                                a.status,
-                                a.starts_at,
+                                {
+                                  status: a.status,
+                                  startsAt: a.starts_at,
+                                  minutos: a.duration_minutes,
+                                },
                                 now,
                               );
 

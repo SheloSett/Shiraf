@@ -7,6 +7,7 @@ import type {
   RtaProfesionalesConHorarios,
   RtaServicio,
   RtaServicios,
+  VarianteDeServicio,
 } from "@/lib/api-tipos";
 
 /**
@@ -58,6 +59,33 @@ function comoHora(valor: Date): string {
   return valor.toISOString().slice(11, 19);
 }
 
+/**
+ * Las opciones del tratamiento, sólo las activas y en el orden del panel.
+ *
+ * Va en el LISTADO y no sólo en la ficha, aunque sean más filas: es lo que deja
+ * escribir "desde $55.000" en la tarjeta. Sin esto el catálogo mostraría
+ * `services.price` —el precio del tratamiento sin opciones— y diría un número
+ * que no se le cobra a nadie.
+ *
+ * Una opción apagada NO sale: existe para que los turnos viejos que la usaron
+ * sigan teniendo nombre, no para reservarla.
+ *
+ * Va suelta y NO adentro del `as const` de CAMPOS_DEL_CATALOGO: ese `as const`
+ * vuelve `readonly` al array del `orderBy`, y Prisma lo pide mutable. Se marca
+ * "asc" de a uno para conservar el literal sin congelar el array.
+ */
+const VARIANTES_ACTIVAS = {
+  where: { is_active: true },
+  select: {
+    id: true,
+    name: true,
+    duration_minutes: true,
+    buffer_minutes: true,
+    price: true,
+  },
+  orderBy: [{ position: "asc" as const }, { created_at: "asc" as const }],
+};
+
 const CAMPOS_DEL_CATALOGO = {
   id: true,
   // Va en el listado y no sólo en la ficha: es lo que el listado necesita para
@@ -68,9 +96,31 @@ const CAMPOS_DEL_CATALOGO = {
   description: true,
   category: true,
   duration_minutes: true,
+  // Lo pide la agenda: es cada cuánto se pueden encadenar dos turnos de este
+  // tratamiento. Ver `services.buffer_minutes`.
+  buffer_minutes: true,
   price: true,
   image_url: true,
+  // Cuantas sesiones son y cada cuantos dias. Van en el listado y no solo en
+  // la ficha: la tarjeta del catalogo tiene que poder avisar "3 sesiones"
+  // antes de que la clienta entre.
+  sessions_count: true,
+  session_interval_days: true,
+  variants: VARIANTES_ACTIVAS,
 } as const;
+
+/**
+ * Las opciones, con el precio en número.
+ *
+ * El tipo del precio se declara estructural —`{ toNumber() }`— y no como
+ * `Prisma.Decimal`: es lo único que `comoNumero` necesita, y así este archivo
+ * no importa nada de Prisma sólo para nombrar un tipo.
+ */
+function variantesComoSalen(
+  variants: (Omit<VarianteDeServicio, "price"> & { price: { toNumber(): number } })[],
+): VarianteDeServicio[] {
+  return variants.map((v) => ({ ...v, price: comoNumero(v.price) }));
+}
 
 /**
  * Cuántas filas devolver.
@@ -145,7 +195,11 @@ export async function listarServicios(ctx: Ctx) {
   });
 
   const salida: RtaServicios = {
-    servicios: servicios.map((s) => ({ ...s, price: comoNumero(s.price) })),
+    servicios: servicios.map((s) => ({
+      ...s,
+      price: comoNumero(s.price),
+      variants: variantesComoSalen(s.variants),
+    })),
   };
   return json(salida);
 }
@@ -192,6 +246,7 @@ export async function verServicio(ctx: Ctx) {
     servicio: {
       ...resto,
       price: comoNumero(servicio.price),
+      variants: variantesComoSalen(servicio.variants),
       // La pantalla lo lee como `service_media`, que es como lo nombraba el
       // select anidado de supabase-js. Se conserva el nombre para no tener que
       // tocar el JSX.

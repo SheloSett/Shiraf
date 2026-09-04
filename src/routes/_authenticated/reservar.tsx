@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -7,12 +7,20 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Calendar } from "@/components/ui/calendar";
+import { CalendarioDeLaProfesional } from "@/components/calendario-de-la-profesional";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiPost } from "@/lib/api";
 import { imageUrl } from "@/lib/cloudinary";
 import type { RtaDisponibilidad, RtaProfesionalesConHorarios, RtaServicios } from "@/lib/api-tipos";
-import { buildSlots, formatMoney, formatTime, toDateKey, TOLERANCIA_MINUTOS } from "@/lib/shiraf";
+import {
+  buildSlots,
+  formatMoney,
+  formatTime,
+  precioYDuracion,
+  toDateKey,
+  TOLERANCIA_MINUTOS,
+} from "@/lib/shiraf";
+import { parseDateKey } from "@/lib/horarios";
 import { isTeamAccount } from "@/lib/roles";
 import { notifyAppointment } from "@/lib/notifications.functions";
 
@@ -68,6 +76,20 @@ function BookingPage() {
   const queryClient = useQueryClient();
 
   const [serviceId, setServiceId] = useState<string | undefined>(search.service);
+
+  /** Igual que en /servicios: si la foto tiene `image_url` pero el archivo ya
+   * no existe en Cloudinary, cae al mismo placeholder que "sin foto" en vez
+   * de mostrar el ícono de imagen rota. Ver el comentario de `fotosRotas` en
+   * `servicios.index.tsx`. */
+  const [fotosRotas, setFotosRotas] = useState<Set<string>>(new Set());
+  /**
+   * Qué opción del tratamiento se eligió, cuando el tratamiento tiene.
+   *
+   * Se guarda el id y no la opción entera por lo mismo que el tratamiento: si
+   * el catálogo se refresca mientras la clienta completa el formulario, un
+   * objeto viejo seguiría en pantalla con un precio que ya cambió.
+   */
+  const [variantId, setVariantId] = useState<string | undefined>();
   const [professionalId, setProfessionalId] = useState<string | undefined>(search.professional);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [slot, setSlot] = useState<string | undefined>();
@@ -92,6 +114,42 @@ function BookingPage() {
 
   const service = services.data?.find((s) => s.id === serviceId);
 
+  /**
+   * La opción elegida, y si ya se puede seguir.
+   *
+   * Un tratamiento con opciones no tiene precio ni duración propios hasta que se
+   * elige una: sin eso no se puede calcular ni un horario libre. Por eso
+   * `elegido` es lo que abre el paso de la profesional, y no `serviceId` a
+   * secas como antes.
+   *
+   * La regla la vuelve a aplicar el servidor en `validarTurno` — acá es para que
+   * la pantalla no ofrezca horarios de una duración que todavía nadie eligió.
+   */
+  const variant = service?.variants.find((v) => v.id === variantId);
+  const elegido = !!service && (service.variants.length === 0 || !!variant);
+
+  /**
+   * Apenas queda elegido el tratamiento, la pantalla baja sola hasta
+   * "Elegí la profesional" — sea porque se acaba de tocar una tarjeta, o
+   * porque se llegó con `?service=` ya puesto (el botón "Reservar" de la
+   * ficha del tratamiento) y el paso 1 nace resuelto.
+   *
+   * Depende de `elegido` y no de `serviceId`: con opciones, tocar la tarjeta
+   * no alcanza —falta elegir cuál— así que recién ahí tiene sentido bajar.
+   */
+  useEffect(() => {
+    if (elegido) {
+      document
+        .getElementById("paso-profesional")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [elegido]);
+
+  /** Lo que dura y lo que sale este turno: de la opción si hay, del tratamiento si no. */
+  const duracion = variant?.duration_minutes ?? service?.duration_minutes ?? 0;
+  const margen = variant?.buffer_minutes ?? service?.buffer_minutes ?? 0;
+  const precio = variant?.price ?? service?.price ?? 0;
+
   const availability = useQuery({
     queryKey: ["availability", professionalId, date && toDateKey(date)],
     enabled: !!professionalId && !!date,
@@ -110,13 +168,17 @@ function BookingPage() {
 
   const slots = useMemo(() => {
     if (!date || !service || !availability.data) return [];
+    // La duración es la de la OPCIÓN cuando el tratamiento tiene: un "cuerpo
+    // completo" de 80 minutos no entra en los huecos de uno de 40, y ofrecer
+    // esos horarios sería mandar a la clienta a un turno que va a rebotar.
     return buildSlots(
       date,
       availability.data.schedules,
       availability.data.busy,
-      service.duration_minutes,
+      { minutos: duracion, margen },
+      availability.data.ausencias,
     );
-  }, [date, service, availability.data]);
+  }, [date, service, availability.data, duracion, margen]);
 
   const book = useMutation({
     mutationFn: async () => {
@@ -126,6 +188,9 @@ function BookingPage() {
       // del día de hoy congelado en el turno.
       const created = await apiPost<{ id: string }>("/api/reservar", {
         service_id: serviceId,
+        // Viaja el id de la opción, nunca su precio: lo busca el servidor. Es
+        // la misma regla que ya valía para el tratamiento.
+        variant_id: variantId ?? null,
         professional_id: professionalId,
         starts_at: slot,
         client_notes: notes || null,
@@ -203,6 +268,11 @@ function BookingPage() {
                   aria-pressed={active}
                   onClick={() => {
                     setServiceId(s.id);
+                    // La opción es de ESTE tratamiento: cambiar de tratamiento
+                    // la deja sin sentido. Sin limpiarla, el id viejo viajaría
+                    // al servidor y rebotaría con "ese tratamiento no tiene
+                    // opciones", que no le explica nada a nadie.
+                    setVariantId(undefined);
                     setProfessionalId(undefined);
                     setSlot(undefined);
                   }}
@@ -213,14 +283,25 @@ function BookingPage() {
                   }`}
                 >
                   {/*
-                    Misma foto y MISMO recorte que las tarjetas de /servicios
-                    (`aspect-[4/3]` con el preset "card"). Es a propósito: casi
-                    todas las que llegan acá vienen de mirar el catálogo, y lo que
-                    tiene que pasar es que reconozcan la que ya eligieron. Con
-                    otro encuadre la misma foto se ve como otra foto.
+                    Misma foto y MISMO encuadre que las tarjetas de /servicios
+                    (`aspect-square` con el preset "card", sin recortar). Es a
+                    propósito: casi todas las que llegan acá vienen de mirar el
+                    catálogo, y lo que tiene que pasar es que reconozcan la que
+                    ya eligieron. Con otro encuadre la misma foto se ve como
+                    otra foto.
+
+                    Esto era `aspect-[4/3]` con `object-cover`: la esquina de
+                    abajo del flyer —el precio, la duración— quedaba recortada
+                    igual que en /servicios antes de arreglarlo ahí, sólo que acá
+                    nadie lo había tocado todavía. Ver el comentario largo en
+                    `servicios.index.tsx` para el porqué de cada clase.
                   */}
-                  <div className="relative aspect-[4/3] overflow-hidden bg-primary">
-                    {s.image_url ? (
+                  <div
+                    className={`relative aspect-square overflow-hidden ${
+                      s.image_url && !fotosRotas.has(s.id) ? "" : "surface-olive"
+                    }`}
+                  >
+                    {s.image_url && !fotosRotas.has(s.id) ? (
                       <img
                         src={imageUrl(s.image_url, "card") ?? undefined}
                         // Decorativa: el nombre del tratamiento está escrito justo
@@ -228,12 +309,19 @@ function BookingPage() {
                         // a quien escucha la página.
                         alt=""
                         loading="lazy"
-                        className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                        onError={() => setFotosRotas((prev) => new Set(prev).add(s.id))}
+                        // Sin `group-hover:scale-105`: con `contain` ese zoom
+                        // empujaba los bordes fuera de la caja, o sea recortaba
+                        // al pasar el mouse justo lo que se acaba de sacar. El
+                        // hover ya se nota en el borde del botón (`hover:border-primary/40`).
+                        className="h-full w-full object-contain"
                       />
                     ) : (
-                      /* Sin foto cargada: inicial del tratamiento sobre el oliva
-                         con grano. El mismo relleno que el catálogo, para que el
-                         hueco se lea como decisión y no como imagen rota. */
+                      /* Sin foto cargada —o con `image_url` pero el archivo ya
+                         no existe en Cloudinary, ver `fotosRotas`—: inicial del
+                         tratamiento sobre el oliva con grano. El mismo relleno
+                         que el catálogo, para que el hueco se lea como decisión
+                         y no como imagen rota. */
                       <div className="grain absolute inset-0 flex items-center justify-center">
                         <span className="font-display text-6xl text-primary-foreground/25">
                           {s.name.charAt(0)}
@@ -251,18 +339,75 @@ function BookingPage() {
                   <div className="p-4">
                     <p className="text-eyebrow text-gold">{s.category}</p>
                     <p className="mt-2 font-display text-xl text-foreground">{s.name}</p>
+                    {/* Con opciones, el precio del tratamiento no se le cobra a
+                        nadie: se muestra el de la más barata, con "desde". */}
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {s.duration_minutes} min · {formatMoney(s.price)}
+                      {precioYDuracion(s).duracion} · {precioYDuracion(s).desde ? "desde " : ""}
+                      {formatMoney(precioYDuracion(s).precio)}
                     </p>
                   </div>
                 </button>
               );
             })}
           </div>
+
+          {/* Que son varias sesiones, dicho apenas se elige el tratamiento: es
+              parte de lo que se está reservando y no puede aparecer recién en
+              el resumen, cuando ya eligió día y hora. */}
+          {service && service.sessions_count > 1 && (
+            <p className="mt-6 rounded-sm border border-gold/40 bg-gold/5 px-4 py-3 text-sm leading-relaxed text-foreground">
+              {service.name} son {service.sessions_count} sesiones
+              {service.session_interval_days > 0
+                ? ` con ${service.session_interval_days} días entre una y otra`
+                : ""}
+              . Acá reservás la primera; las siguientes las coordinamos con vos en el centro. El
+              valor es por el tratamiento completo.
+            </p>
+          )}
+
+          {/* Las opciones van DENTRO del paso 1 y no en un paso propio: elegir
+              "cuerpo completo" es terminar de elegir el tratamiento, no una
+              decisión aparte. Además así los pasos siguen siendo cuatro para
+              todos los tratamientos, con y sin opciones. */}
+          {service && service.variants.length > 0 && (
+            <div className="mt-6 border-t border-border pt-6">
+              <p className="text-sm text-foreground">
+                {service.name} se hace de más de una forma. ¿Cuál querés?
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {service.variants.map((v) => {
+                  const active = v.id === variantId;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => {
+                        setVariantId(v.id);
+                        // El horario se limpia: los huecos libres dependen de
+                        // cuánto dura, y la opción nueva puede durar el doble.
+                        setSlot(undefined);
+                      }}
+                      className={`rounded-sm border p-4 text-left transition-colors ${
+                        active
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-card hover:border-primary/40"
+                      }`}
+                    >
+                      <p className="text-[15px] text-foreground">{v.name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {v.duration_minutes} min · {formatMoney(v.price)}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </Step>
 
-        {serviceId && (
-          <Step n={2} title="Elegí la profesional" className="mt-12">
+        {elegido && (
+          <Step n={2} id="paso-profesional" title="Elegí la profesional" className="mt-12">
             <div className="grid gap-3 sm:grid-cols-3">
               {professionals.data?.map((p) => {
                 const active = p.id === professionalId;
@@ -294,20 +439,25 @@ function BookingPage() {
           </Step>
         )}
 
-        {serviceId && professionalId && (
+        {elegido && professionalId && (
           <Step n={3} title="Día y horario" className="mt-12">
             <div className="grid gap-8 md:grid-cols-[auto_1fr]">
+              {/* El mismo calendario que usan el panel y «cambiar el turno»:
+                  los días que la profesional atiende salen resaltados y los que
+                  no trabaja, los de ausencia y los pasados quedan
+                  deshabilitados. Antes se podía elegir cualquier día futuro y el
+                  "no hay horarios ese día" llegaba después — que en el sitio
+                  público es peor que en el panel, porque la clienta no sabe qué
+                  días viene cada profesional y prueba a ciegas. */}
               <Card className="w-fit border-border/80 shadow-soft">
                 <CardContent className="p-3">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={(d) => {
-                      setDate(d);
+                  <CalendarioDeLaProfesional
+                    profesionalId={professionalId}
+                    dateKey={date ? toDateKey(date) : ""}
+                    onDateKey={(next) => {
+                      setDate(parseDateKey(next));
                       setSlot(undefined);
                     }}
-                    disabled={{ before: new Date() }}
-                    className="pointer-events-auto"
                   />
                 </CardContent>
               </Card>
@@ -359,6 +509,25 @@ function BookingPage() {
                     <span className="text-muted-foreground">Tratamiento</span>
                     <span className="text-foreground">{service.name}</span>
                   </li>
+                  {service.sessions_count > 1 && (
+                    <li className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">Sesiones</span>
+                      <span className="text-foreground">
+                        {service.sessions_count} · reservás la 1ª
+                      </span>
+                    </li>
+                  )}
+                  {/* En su propio renglón y no pegada al nombre: es lo que
+                      explica el precio de abajo, y con dos opciones de precios
+                      distintos ese renglón tiene que poder leerse solo. */}
+                  {variant && (
+                    <li className="flex justify-between gap-6">
+                      <span className="text-muted-foreground">Opción</span>
+                      <span className="text-foreground">
+                        {variant.name} · {variant.duration_minutes} min
+                      </span>
+                    </li>
+                  )}
                   <li className="flex justify-between gap-6">
                     <span className="text-muted-foreground">Profesional</span>
                     <span className="text-foreground">
@@ -384,9 +553,9 @@ function BookingPage() {
                   </li>
                   <li className="flex justify-between gap-6 border-t border-border pt-3">
                     <span className="text-muted-foreground">Valor</span>
-                    <span className="font-semibold text-foreground">
-                      {formatMoney(service.price)}
-                    </span>
+                    {/* El de la opción cuando hay: es el que se va a cobrar y
+                        el que el servidor congela en el turno. */}
+                    <span className="font-semibold text-foreground">{formatMoney(precio)}</span>
                   </li>
                 </ul>
 
@@ -463,15 +632,20 @@ function Step({
   n,
   title,
   className = "",
+  id,
   children,
 }: {
   n: number;
   title: string;
   className?: string;
+  /** Para poder bajar hasta acá con `scrollIntoView`, ver el efecto de arriba. */
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className={className}>
+    // `scroll-mt-28`: el header es sticky, y sin este margen el scroll
+    // automático deja el título tapado justo debajo de la barra.
+    <div id={id} className={`scroll-mt-28 ${className}`}>
       <div className="mb-5 flex items-center gap-3">
         <span className="flex h-7 w-7 items-center justify-center rounded-full border border-gold text-xs text-gold">
           {n}

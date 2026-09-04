@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { LinkGuestDialog, type GuestToLink } from "@/components/admin/link-guest-dialog";
 import { EditGuestDialog, type GuestToEdit } from "@/components/admin/edit-guest-dialog";
+import { SelectorDeHorario } from "@/components/admin/selector-de-horario";
+import { instanteDe } from "@/lib/horarios";
 import { api, apiPut } from "@/lib/api";
 import type { RtaProfesionalesParaElTurno, RtaTurnoEnDetalle } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, toStatus } from "@/lib/shiraf";
@@ -69,6 +71,87 @@ function Dato({
   );
 }
 
+/**
+ * Todas las sesiones de un tratamiento de varias, una debajo de la otra.
+ *
+ * Cada sesión sigue siendo un turno completo con su propio id y sus propias
+ * acciones (cancelar, reprogramar, marcar realizada): la línea de tiempo no
+ * reemplaza esa pantalla, es la forma de saltar de una sesión a otra sin
+ * volver primero a la tabla. Por eso cada fila que no es la actual es un link
+ * a `/admin/turnos/$id` — el mismo detalle que se está viendo ahora, pero de
+ * otra sesión.
+ *
+ * La actual no es un link: ya se está en ella, y convertirla en un botón que
+ * no lleva a ningún lado es la clase de affordance que invita al clic en vano.
+ */
+function LineaDeTiempo({
+  sesiones,
+  actual,
+}: {
+  sesiones: {
+    id: string;
+    session_number: number;
+    starts_at: string;
+    duration_minutes: number;
+    status: string;
+  }[];
+  actual: string;
+}) {
+  return (
+    <section className="rounded-sm border border-border bg-card p-6">
+      <h2 className="font-display text-xl text-foreground">Línea de tiempo</h2>
+      <ul className="mt-5 space-y-2">
+        {sesiones.map((s) => {
+          const esLaActual = s.id === actual;
+          const fila = (
+            <div
+              className={`flex flex-wrap items-center gap-3 rounded-sm border p-3 ${
+                esLaActual
+                  ? "border-l-4 border-l-primary border-y-primary/40 border-r-primary/40 bg-primary/5"
+                  : "border-border bg-background transition-colors hover:border-primary/30"
+              }`}
+            >
+              {/* "Viendo" como badge propio y no pegado al texto de la fecha:
+                  ahí quedaba tan junto a la hora que costaba distinguirlo en
+                  una fecha larga ("miércoles, 02 de septiembre, 12:29viendo"). */}
+              {esLaActual && (
+                <span className="text-eyebrow shrink-0 rounded-sm bg-primary px-1.5 py-0.5 text-primary-foreground">
+                  Viendo
+                </span>
+              )}
+              <span className="min-w-0 flex-1 text-sm text-foreground">
+                <span className="text-muted-foreground">
+                  Sesión {s.session_number} de {sesiones.length} ·{" "}
+                </span>
+                {formatDateTime(s.starts_at)}
+              </span>
+              <EstadoTurno
+                status={s.status}
+                startsAt={s.starts_at}
+                minutos={s.duration_minutes}
+                now={Date.now()}
+                className="shrink-0 text-xs"
+              />
+            </div>
+          );
+
+          return (
+            <li key={s.id}>
+              {esLaActual ? (
+                fila
+              ) : (
+                <Link to="/admin/turnos/$id" params={{ id: s.id }} className="block">
+                  {fila}
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function Tarjeta({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="rounded-sm border border-border bg-card p-6">
@@ -102,8 +185,21 @@ function FichaDelTurno() {
 
   const setStatus = useCambiarEstadoDeTurno();
   const reprogramar = useReprogramarTurno();
-  // El valor del <input type="datetime-local">, que es hora LOCAL sin zona.
-  const [nuevoHorario, setNuevoHorario] = useState("");
+  /**
+   * El horario nuevo, en dos piezas: el día y la hora.
+   *
+   * Era un solo `<input type="datetime-local">`, y ese es justamente el
+   * problema que resuelve `SelectorDeHorario`: el calendario del navegador no
+   * sabe nada de la agenda del centro, así que ofrecía domingos, las 3 de la
+   * mañana y horarios ya tomados con la misma cara que uno libre. Ahora las
+   * horas que se ofrecen son los huecos reales de esa profesional ese día.
+   */
+  const [dia, setDia] = useState("");
+  const [hora, setHora] = useState("");
+  /** La puerta de atrás: escribir la hora a mano para cargar fuera de horario. */
+  const [horaAMano, setHoraAMano] = useState(false);
+  /** Las dos piezas juntas, o null mientras falte alguna. */
+  const nuevoHorario = instanteDe(dia, hora);
   const borrar = useBorrarTurno();
 
   if (turno.isPending) {
@@ -187,10 +283,23 @@ function FichaDelTurno() {
         <EstadoTurno
           status={t.status}
           startsAt={t.starts_at}
+          minutos={t.duration_minutes}
           now={Date.now()}
           className="text-sm"
         />
       </div>
+
+      {/* La línea de tiempo va ANTES de "La clienta": es lo primero que hay que
+          ver en un tratamiento de varias sesiones — en qué punto está la serie
+          —, y sólo existe cuando lo es. Antes cada sesión vivía como una fila
+          suelta en la tabla ("Exosomas · sesión 1 de 2" al lado de "Exosomas ·
+          sesión 2 de 2"), que se leía como dos turnos de dos clientas
+          distintas en vez de un mismo tratamiento con dos visitas. */}
+      {t.sesiones.length > 1 && (
+        <div className="mt-8">
+          <LineaDeTiempo sesiones={t.sesiones} actual={t.id} />
+        </div>
+      )}
 
       <div className="mt-8 space-y-6">
         <Tarjeta titulo="La clienta">
@@ -275,8 +384,7 @@ function FichaDelTurno() {
               const q = quienAtiende(
                 t.professionals,
                 t.professional_name,
-                t.status,
-                t.starts_at,
+                { status: t.status, startsAt: t.starts_at, minutos: t.duration_minutes },
                 Date.now(),
               );
 
@@ -439,14 +547,29 @@ function FichaDelTurno() {
                 Se le avisa a la clienta con el horario nuevo. Si ese horario ya está tomado con la
                 misma profesional, la base lo frena y no se guarda nada.
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <input
-                  type="datetime-local"
-                  aria-label="Nuevo día y hora del turno"
-                  value={nuevoHorario}
-                  onChange={(e) => setNuevoHorario(e.target.value)}
-                  className="h-10 rounded-sm border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              <div className="mt-4 max-w-md space-y-4">
+                {/* `excluirTurnoId`: sin esto el turno se contaría a sí mismo
+                    como ocupado y su propio horario aparecería tomado, así que
+                    no se podría, por ejemplo, correrlo media hora. */}
+                <SelectorDeHorario
+                  idPrefijo="rp"
+                  profesionalId={t.professionals?.id}
+                  duracion={t.duration_minutes}
+                  margen={t.buffer_minutes}
+                  dateKey={dia}
+                  onDateKey={setDia}
+                  time={hora}
+                  onTime={setHora}
+                  manual={horaAMano}
+                  onManual={setHoraAMano}
+                  excluirTurnoId={t.id}
+                  // Colapsado: reprogramar es una acción más de esta pantalla,
+                  // no el motivo por el que se entró a ella. Con el calendario
+                  // siempre abierto era, con diferencia, el bloque más grande
+                  // de toda la ficha del turno.
+                  colapsable
                 />
+
                 <Button
                   size="sm"
                   variant="outline"
@@ -455,19 +578,23 @@ function FichaDelTurno() {
                     reprogramar.mutate(
                       {
                         id: t.id,
-                        // `datetime-local` da "2026-08-25T14:30" sin zona, que
-                        // `new Date` interpreta como hora local — la del centro,
-                        // que es la que se acaba de tipear. De ahí sale el
-                        // instante absoluto que guarda la base.
-                        startsAt: new Date(nuevoHorario).toISOString(),
+                        // El día y la hora son de pared —el reloj del centro—;
+                        // de ahí sale el instante absoluto que guarda la base.
+                        startsAt: nuevoHorario!.toISOString(),
                         // El aviso lleva el horario NUEVO, no el que el turno
                         // todavía tiene en pantalla.
                         notify: {
                           ...toNotifiable(t),
-                          startsAt: new Date(nuevoHorario).toISOString(),
+                          startsAt: nuevoHorario!.toISOString(),
                         },
                       },
-                      { onSuccess: () => setNuevoHorario("") },
+                      {
+                        onSuccess: () => {
+                          setDia("");
+                          setHora("");
+                          setHoraAMano(false);
+                        },
+                      },
                     )
                   }
                 >

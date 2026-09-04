@@ -52,10 +52,59 @@ export type ServicioPublico = {
   description: string | null;
   category: string;
   duration_minutes: number;
-  /** Número, no Decimal: lo espera `formatMoney()`. */
+  /**
+   * Los minutos de limpieza que este tratamiento pide después.
+   *
+   * Hace falta en la pantalla: sin él, `buildSlots` no sabe cada cuánto
+   * encadenar los horarios. Ver `services.buffer_minutes`.
+   */
+  buffer_minutes: number;
+  /**
+   * Número, no Decimal: lo espera `formatMoney()`.
+   *
+   * Con variantes cargadas, éste es el precio del tratamiento "a secas" y lo
+   * que se muestra es el más barato de las opciones, con un "desde" adelante.
+   * Ver `precioDesde()` en src/lib/shiraf.ts.
+   */
   price: number;
   image_url: string | null;
+  /** Las opciones activas. Vacía en el tratamiento que no tiene. */
+  variants: VarianteDeServicio[];
+  /**
+   * Cuántas sesiones son y cada cuántos días.
+   *
+   * 1 y 0 en casi todo el catálogo, y ahí no se muestra nada. Con más de una,
+   * la clienta reserva la PRIMERA y el centro le agenda las siguientes: el
+   * intervalo es lo que el panel propone, no un candado.
+   *
+   * El precio es el del tratamiento completo, no el de cada sesión.
+   */
+  sessions_count: number;
+  session_interval_days: number;
 };
+
+/**
+ * Una opción del tratamiento: "Solo espalda", "Cuerpo completo".
+ *
+ * La lista viene **vacía** en la enorme mayoría de los tratamientos, que no
+ * tienen opciones. Vacía y no ausente: así ninguna pantalla tiene que preguntar
+ * si el campo vino, y `variants.length > 0` es la única pregunta que hay que
+ * hacerse en todos lados. Ver `service_variants` en el esquema.
+ *
+ * En el catálogo público salen **sólo las activas**: una opción apagada existe
+ * para que el historial de turnos siga teniendo sentido, no para reservarla.
+ */
+export type VarianteDeServicio = {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  buffer_minutes: number;
+  /** Número, no Decimal: lo espera `formatMoney()`. */
+  price: number;
+};
+
+/** La opción como la ve el panel: también las apagadas, y en su orden. */
+export type VarianteAdmin = VarianteDeServicio & { is_active: boolean };
 
 export type MediaDeServicio = {
   id: string;
@@ -79,6 +128,21 @@ export type HorarioDeAgenda = {
   weekday: number;
   start_time: string;
   end_time: string;
+};
+
+/**
+ * Un tramo en que una profesional no atiende, con los dos extremos incluidos.
+ *
+ * Las fechas son "YYYY-MM-DD" y no instantes: un día de ausencia es un día del
+ * almanaque del centro. Así se comparan como texto, que ordena igual que como
+ * fechas y no arrastra ninguna zona horaria. Ver `professional_absences`.
+ */
+export type AusenciaDeAgenda = {
+  id: string;
+  starts_on: string;
+  ends_on: string;
+  /** Interno: no sale en ningún mail ni en el sitio público. */
+  reason: string | null;
 };
 
 /**
@@ -147,16 +211,38 @@ export type RtaUsoDeCategorias = { uso: Record<string, number> };
 // Catálogo desde el panel
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Un tratamiento como lo ve la dueña: incluye los despublicados. */
-export type ServicioAdmin = ServicioPublico & {
+/**
+ * Un tratamiento como lo ve la dueña: incluye los despublicados.
+ *
+ * `Omit<…, "variants">` para poder pisar el tipo de la lista: el panel ve
+ * también las opciones apagadas, y necesita el `is_active` de cada una para
+ * poder prenderlas de nuevo.
+ */
+export type ServicioAdmin = Omit<ServicioPublico, "variants"> & {
   is_published: boolean;
   service_media: MediaDeServicio[];
+  variants: VarianteAdmin[];
 };
 
 export type RtaServiciosAdmin = { servicios: ServicioAdmin[] };
 
 /** Lo que manda el formulario. Las fotos nuevas todavía no tienen id. */
 export type MediaAGuardar = { id?: string; url: string; kind: "image" | "video" };
+
+/**
+ * Una opción tal como quedó en el formulario. Las nuevas no traen `id`.
+ *
+ * El orden de la lista ES el orden en que se muestran: el servidor escribe
+ * `position` por el índice, igual que hace con la galería.
+ */
+export type VarianteAGuardar = {
+  id?: string;
+  name: string;
+  duration_minutes: number;
+  buffer_minutes: number;
+  price: number;
+  is_active: boolean;
+};
 
 /**
  * Los archivos que dejaron de estar referenciados.
@@ -220,9 +306,37 @@ export type ProfesionalAdmin = {
     services: { id: string; name: string };
   }[];
   professional_schedules: HorarioConId[];
+  /**
+   * Los días que avisó que no viene, de hoy en adelante.
+   *
+   * Las viejas no vienen: la pantalla es para decidir qué se puede reservar,
+   * y unas vacaciones de marzo ahí sólo son ruido. Quedan en la base igual.
+   */
+  professional_absences: AusenciaDeAgenda[];
 };
 
 export type RtaProfesionalesAdmin = { profesionales: ProfesionalAdmin[] };
+
+/**
+ * Lo que vuelve al cargar una ausencia.
+ *
+ * `turnos_en_pie` es la parte que importa: la ausencia SE GUARDA igual, y
+ * estos son los turnos que ya estaban dados dentro del rango y que nadie tocó.
+ * No se cancelan solos a propósito — son clientas con un turno confirmado por
+ * mail, y cancelarlas en masa sin que la dueña lo pida no se puede deshacer.
+ *
+ * Viene vacío cuando no hay ninguno, que es el caso normal.
+ */
+export type RtaAusenciaGuardada = {
+  ausencia: AusenciaDeAgenda;
+  turnos_en_pie: {
+    id: string;
+    starts_at: string;
+    /** El nombre de la clienta, o el de la invitada que cargó el centro. */
+    quien: string;
+    tratamiento: string;
+  }[];
+};
 
 /** El selector de tratamientos del formulario del equipo. */
 export type RtaServiciosParaElegir = {
@@ -282,6 +396,13 @@ export type MiTurno = {
   starts_at: string;
   status: string;
   duration_minutes: number;
+  /**
+   * El margen de limpieza, congelado en el turno.
+   *
+   * Lo necesita «Reprogramar», que arma los horarios con `buildSlots` y sin
+   * esto no sabría cada cuánto encadenarlos.
+   */
+  buffer_minutes: number;
   client_notes: string | null;
   // `category` es null cuando el tratamiento ya no está en el catálogo. `name`
   // y `price` no: el turno los tiene congelados desde el día que se reservó.
@@ -291,6 +412,15 @@ export type MiTurno = {
   service_id: string | null;
   /** La profesional actual, para dejarla preseleccionada. */
   professional_id: string | null;
+  /**
+   * Qué sesión es y de cuántas. 1 de 1 en un tratamiento normal.
+   *
+   * Con más de una, el precio de las que no son la primera es 0 —el paquete se
+   * cobró entero en la primera— y la pantalla escribe "Incluida" en vez del
+   * número, que se leería como un error.
+   */
+  session_number: number;
+  sessions_total: number;
 };
 
 export type RtaMisTurnos = { turnos: MiTurno[] };
@@ -328,7 +458,44 @@ export type TurnoDelPanel = {
    * los turnos que nunca tuvieron a nadie asignado.
    */
   professional_name: string | null;
+  /**
+   * El id de la profesional y el margen del turno.
+   *
+   * No se muestran: los usa el buscador de horarios libres cuando desde esta
+   * misma tabla se agenda la sesión siguiente. Sin el id no hay agenda a la que
+   * preguntarle, y sin el margen los huecos saldrían más juntos de lo que la
+   * cabina permite.
+   */
+  professional_id: string | null;
+  buffer_minutes: number;
   person: PersonaDelTurno;
+  /**
+   * Qué sesión de la serie es, y de cuántas. 1 de 1 en un tratamiento normal.
+   *
+   * Con `sessions_total > 1` la fila lo muestra, y el precio de una sesión que
+   * no es la primera va en 0 a propósito: el paquete se cobra una sola vez, en
+   * la primera. Ver `validarTurno`.
+   */
+  session_number: number;
+  sessions_total: number;
+  /**
+   * Si la sesión siguiente de esta serie ya está agendada.
+   *
+   * Lo resuelve el servidor, que es el único que puede mirar la serie entera de
+   * una sin que la pantalla haga una consulta por fila. Es lo que decide si se
+   * ofrece el botón de agendarla.
+   */
+  next_session_booked: boolean;
+  /**
+   * Cuándo caería la sesión siguiente, según el intervalo del tratamiento.
+   *
+   * Es una PROPUESTA, no una fecha reservada: el diálogo la trae escrita y el
+   * centro la corrige si la clienta no puede. La calcula el servidor —fecha de
+   * este turno más los días del tratamiento— para que el intervalo se lea de un
+   * solo lugar. Null si el tratamiento se borró del catálogo o si no hay
+   * intervalo cargado.
+   */
+  next_session_suggested_at: string | null;
 };
 
 export type RtaTurnos = { turnos: TurnoDelPanel[] };
@@ -383,6 +550,13 @@ export type TurnoEnDetalle = {
   starts_at: string;
   status: string;
   duration_minutes: number;
+  /**
+   * El margen de limpieza congelado en el turno.
+   *
+   * Lo pide el buscador de horarios de «Reprogramar»: sin él los huecos
+   * saldrían más juntos de lo que la cabina permite.
+   */
+  buffer_minutes: number;
   /** El precio del día en que se reservó, NO el actual del catálogo. */
   price: number;
   client_notes: string | null;
@@ -415,6 +589,23 @@ export type TurnoEnDetalle = {
   /** Ver `professional_name` en TurnoDelPanel: quién atendió, congelado. */
   professional_name: string | null;
   person: PersonaDelTurno;
+  /**
+   * Todas las sesiones de la serie, para la línea de tiempo — este turno
+   * incluido. Vacía en un tratamiento de una sola sesión, que es la enorme
+   * mayoría: mismo patrón que `variants: []` en el catálogo, para no tener que
+   * preguntar si la clave vino.
+   */
+  sesiones: SesionDeLaSerie[];
+};
+
+/** Una sesión dentro de la línea de tiempo de un turno de varias. */
+export type SesionDeLaSerie = {
+  id: string;
+  session_number: number;
+  starts_at: string;
+  /** La necesita `EstadoTurno` para calcular "Vencido": hace falta saber cuándo TERMINA. */
+  duration_minutes: number;
+  status: string;
 };
 
 export type RtaTurnoEnDetalle = { turno: TurnoEnDetalle };
@@ -431,6 +622,12 @@ export type RtaPendientes = { total: number; sinProfesional: number };
 export type TurnoDelCalendario = {
   id: string;
   starts_at: string;
+  /**
+   * Cuánto dura. No lo usa la grilla para dibujar —las pastillas son todas del
+   * mismo alto— sino `estadoVisible`, que necesita saber cuándo TERMINA el turno
+   * para no marcarlo vencido mientras está pasando. Ver `yaVencio`.
+   */
+  duration_minutes: number;
   status: string;
   /** Siempre está: si el tratamiento se borró, sale el nombre congelado. */
   services: { name: string };
@@ -574,7 +771,23 @@ export type RtaMetricas = {
  */
 export type RtaDisponibilidad = {
   schedules: HorarioDeAgenda[];
-  busy: { starts_at: string; duration_minutes: number }[];
+  /**
+   * Cuándo, cuánto y con cuánto margen — y nada más. Ver el 🔴 de
+   * `disponibilidad()`: quién reservó y de qué no son asunto de quien está
+   * eligiendo horario.
+   *
+   * `buffer_minutes` es el DEL TURNO, congelado, no el del tratamiento que se
+   * está por reservar: entre dos turnos manda el margen del que termina.
+   */
+  busy: { starts_at: string; duration_minutes: number; buffer_minutes: number }[];
+  /**
+   * Los días que esa profesional no está, dentro de la ventana consultada.
+   *
+   * Van aparte de `schedules` a propósito: el horario semanal sigue diciendo
+   * que trabaja los martes, y esto es la excepción que lo tapa. Mezclarlos haría
+   * imposible distinguir "ese día no trabaja nunca" de "ese día no viene".
+   */
+  ausencias: { starts_on: string; ends_on: string }[];
 };
 
 export type RtaClientasParaElegir = {
@@ -588,8 +801,21 @@ export type RtaServiciosParaTurno = {
     name: string;
     category: string;
     duration_minutes: number;
+    /** El margen de limpieza, para que el panel encadene igual que /reservar. */
+    buffer_minutes: number;
     price: number;
     is_published: boolean;
+    /** Cuántas sesiones son y cada cuántos días. 1 y 0 en casi todo el catálogo. */
+    sessions_count: number;
+    session_interval_days: number;
+    /**
+     * Las opciones activas del tratamiento. Vacía en el que no tiene.
+     *
+     * El panel las necesita por lo mismo que la reserva: con opciones cargadas,
+     * el turno no tiene precio ni duración hasta que se elige una, y el
+     * servidor rechaza el alta que no la traiga.
+     */
+    variants: VarianteDeServicio[];
   }[];
 };
 

@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { CalendarioDeLaProfesional } from "@/components/calendario-de-la-profesional";
 import { api, apiPut } from "@/lib/api";
 import { notifyAppointment } from "@/lib/notifications.functions";
 import type { MiTurno, RtaDisponibilidad, RtaProfesionalesConHorarios } from "@/lib/api-tipos";
@@ -108,7 +109,8 @@ export function ReprogramarTurnoDialog({
       fecha,
       disponibilidad.data.schedules,
       disponibilidad.data.busy,
-      turno.duration_minutes,
+      { minutos: turno.duration_minutes, margen: turno.buffer_minutes },
+      disponibilidad.data.ausencias,
     );
   }, [fecha, turno, disponibilidad.data]);
 
@@ -205,10 +207,8 @@ export function ReprogramarTurnoDialog({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // El día de hoy, para que el calendario no ofrezca fechas pasadas. El servidor
-  // las rechaza igual.
-  const hoy = new Date();
-  const minimo = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+  // El "no ofrecer fechas pasadas" se mudó al calendario, que además descuenta
+  // los días que la profesional no viene. El servidor las rechaza igual.
 
   return (
     <Dialog open={turno !== null} onOpenChange={onOpenChange}>
@@ -244,19 +244,29 @@ export function ReprogramarTurnoDialog({
             </select>
           </label>
 
-          <label className="block">
-            <span className="text-eyebrow text-muted-foreground">Qué día</span>
-            <input
-              type="date"
-              min={minimo}
-              value={dia}
-              onChange={(e) => {
-                setDia(e.target.value);
-                setHora("");
-              }}
-              className="mt-2 h-10 w-full rounded-sm border border-input bg-background px-3 text-sm text-foreground"
-            />
-          </label>
+          {/* El calendario de la app y no el del navegador: los días que la
+              profesional atiende salen resaltados y el resto no se puede
+              elegir. Antes era un `input type="date"` que ofrecía los
+              domingos y las semanas de vacaciones igual que un martes, y el
+              "ese día no le quedan horarios" aparecía después de elegir.
+
+              Sólo aparece con una profesional elegida: sin ella no hay agenda
+              que mirar, y un calendario sin días resaltados no dice nada. */}
+          {profesionalId && (
+            <div className="block">
+              <span className="text-eyebrow text-muted-foreground">Qué día</span>
+              <div className="mt-2">
+                <CalendarioDeLaProfesional
+                  profesionalId={profesionalId}
+                  dateKey={dia}
+                  onDateKey={(next) => {
+                    setDia(next);
+                    setHora("");
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           {profesionalId && fecha && (
             <div>

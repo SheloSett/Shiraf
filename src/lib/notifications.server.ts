@@ -244,6 +244,10 @@ type DatosDelAviso = {
 
 async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | null> {
   const { prisma } = await import("@/server/db");
+  // Dinámico igual que prisma, y por lo mismo: turnos.service lo importa arriba
+  // de todo, así que un import estático acá lo arrastraría al bundle del
+  // navegador y el guard de importación lo frenaría.
+  const { nombreDelTratamiento } = await import("@/server/services/turnos.service");
 
   // El mail y el nombre de la clienta salen del mismo viaje que el turno.
   //
@@ -266,6 +270,14 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
       // El nombre congelado: si el tratamiento se borró del catálogo, el mail
       // igual tiene que decir de qué es el turno.
       service_name: true,
+      // La opción elegida, para que el mail diga "Masaje — cuerpo completo" y no
+      // sólo "Masaje": con dos opciones de precio distinto, el nombre solo no
+      // alcanza para saber qué reservó.
+      variant: { select: { name: true } },
+      variant_name: true,
+      // En qué punto del tratamiento está, cuando son varias sesiones.
+      session_number: true,
+      sessions_total: true,
       professional: { select: { full_name: true } },
       // El teléfono del profile entró con el WhatsApp: hasta entonces sólo
       // viajaba `guest_phone`, así que de una clienta CON cuenta no se sabía el
@@ -290,9 +302,14 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
     // Igual que el nombre: si tiene cuenta manda el profile, y los datos de
     // invitada son el respaldo.
     clientPhone: appointment.client?.profile?.phone ?? appointment.guest_phone,
-    serviceName: appointment.service?.name ?? appointment.service_name ?? null,
+    // La misma función que arma el nombre en el panel y en la agenda: el
+    // catálogo primero, el congelado como respaldo, y la opción pegada al final.
+    // Escribirlo acá otra vez sería tener dos redacciones del mismo nombre.
+    serviceName: nombreDelTratamiento(appointment),
     professionalName: appointment.professional?.full_name ?? null,
     cancelReason: appointment.cancel_reason,
+    sessionNumber: appointment.session_number,
+    sessionsTotal: appointment.sessions_total,
   };
 
   return { notifiable, clientEmail };

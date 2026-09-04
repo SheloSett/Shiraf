@@ -114,26 +114,48 @@ el 3000 y se puede entrar salteando nginx —sin HTTPS y sin que `TRUST_PROXY`
 sirva de nada—, y sin `APP_URL` en `https://` el sitio queda con certificado y
 la cookie de sesión viajando sin el flag `Secure`.
 
-### El `www` tiene que redirigir, no servir
+### El `www` redirige, no sirve
 
-Hoy `shiraf.com.ar` y `www.shiraf.com.ar` sirven **lo mismo** desde el mismo
-`server` block. Para una persona da igual; para Google son dos sitios distintos
-con el catálogo duplicado, y el posicionamiento se reparte entre los dos en vez
-de sumar en uno.
+Servían **lo mismo** desde el mismo `server` block. Para una persona da igual;
+para Google eran dos sitios distintos con el catálogo duplicado, y el
+posicionamiento se repartía entre los dos en vez de sumar en uno.
 
-Se arregla en nginx, sacando el `www` del bloque que sirve y dándole uno propio
-que redirige:
+**Puesto en el VPS el 2 de septiembre de 2026.** El `server_name` del bloque que
+sirve quedó sólo con `shiraf.com.ar`, y el `www` tiene el suyo, al final de
+`/etc/nginx/sites-available/shiraf`:
 
 ```nginx
 server {
     listen 443 ssl;
+    listen [::]:443 ssl;
     server_name www.shiraf.com.ar;
-    # los mismos ssl_certificate que puso certbot en el bloque de al lado
+
+    # Los mismos que puso certbot en el bloque de al lado. El certificado se
+    # emitió para los dos nombres, así que no hizo falta uno nuevo — y por eso
+    # no hay que tocar nada cuando se renueva.
+    ssl_certificate /etc/letsencrypt/live/shiraf.com.ar/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/shiraf.com.ar/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # El `$request_uri` es lo que conserva la ruta: un link viejo con www a un
+    # tratamiento cae en ese tratamiento y no en la portada.
     return 301 https://shiraf.com.ar$request_uri;
 }
 ```
 
-Y del bloque que sirve, el `server_name` queda sólo con `shiraf.com.ar`.
+El bloque que Certbot escucha en el 80 **no se tocó**: sigue mandando los dos
+nombres a HTTPS. Por eso un `http://www…` da dos saltos —primero a
+`https://www…`, de ahí al dominio pelado—, que es correcto y los buscadores lo
+siguen sin problema.
+
+Comprobado el día que se puso, y con una ruta interna a propósito, que es donde
+se ve que la dirección no se pierde:
+
+```sh
+curl -sI https://www.shiraf.com.ar/servicios   # 301 → https://shiraf.com.ar/servicios
+curl -sI https://shiraf.com.ar/servicios       # 200
+```
 
 > La otra forma de resolverlo es una etiqueta `canonical` en el HTML, y **se
 > probó y se descartó**: en este proyecto el `<head>` común vive en el root de

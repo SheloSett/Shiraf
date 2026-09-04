@@ -77,14 +77,55 @@ export const ESTADO_VISIBLE_LABEL: Record<EstadoVisible, string> = {
  * allá ya es el día siguiente, así que decidir qué venció daría distinto en cada
  * lado y React se quejaría del cambio.
  */
-export function estadoVisible(status: string, startsAt: string, now: number | null): EstadoVisible {
-  const guardado = toStatus(status);
+export function estadoVisible(
+  /*
+   * Los tres datos del turno van juntos en un objeto y no sueltos como
+   * parámetros. Es por una razón concreta: `minutos` y `now` son los dos
+   * números, así que sueltos se pueden pasar al revés y TypeScript no dice nada
+   * — el turno quedaría durando 1.7 billones de minutos y nunca vencería.
+   */
+  turno: { status: string; startsAt: string; minutos: number },
+  now: number | null,
+): EstadoVisible {
+  const guardado = toStatus(turno.status);
   if (!guardado) return "pending";
 
   const abierto = guardado === "pending" || guardado === "confirmed";
-  if (abierto && now !== null && new Date(startsAt).getTime() < now) return "overdue";
+  if (abierto && now !== null && yaVencio(turno.startsAt, turno.minutos, now)) return "overdue";
 
   return guardado;
+}
+
+/**
+ * ¿Este turno ya pasó y sigue abierto?
+ *
+ * ── EL CORTE ES CUÁNDO TERMINA, MÁS LA TOLERANCIA ─────────────────────────
+ *
+ * No cuándo empieza. Ese era el bug: un turno de las 14:50 se marcaba «Vencido»
+ * a las 14:50 en punto, con la clienta entrando por la puerta. Un turno que está
+ * PASANDO no está vencido — vencido significa "ya terminó y nadie lo cerró",
+ * que es una tarea pendiente para alguien; mientras la sesión corre no hay nada
+ * que hacer.
+ *
+ * Es la misma lección que ya estaba aprendida en `miAgenda`, donde el comentario
+ * dice textual: "con `starts_at >= now()` el turno de las 14:00 se borraba de la
+ * pantalla a las 14:01, con la clienta todavía en la camilla". Acá faltaba.
+ *
+ * Y encima suma `TOLERANCIA_MINUTOS`, los 10 que el centro promete esperarle a
+ * la que llega tarde — en la pantalla de reserva y en el mail de confirmación.
+ * Si se le está esperando por escrito, el panel no puede darla por perdida en el
+ * mismo minuto: la que llega 9 minutos tarde a un turno de 60 se va a las 15:59,
+ * no a las 14:50.
+ *
+ * 🔴 **Esta es LA definición de «vencido» y no hay otra.** La usan las pantallas
+ * (vía `estadoVisible`), el mail de vencidos que le llega al centro
+ * (`reminders.service`) y el aviso del panel de métricas. Estuvo escrita por
+ * separado en dos lados y se desincronizaron; si cambia, cambia acá y en ningún
+ * otro lugar.
+ */
+export function yaVencio(startsAt: string | Date, minutos: number, now: number): boolean {
+  const inicio = typeof startsAt === "string" ? new Date(startsAt).getTime() : startsAt.getTime();
+  return inicio + (minutos + TOLERANCIA_MINUTOS) * 60_000 < now;
 }
 
 /**
@@ -153,11 +194,11 @@ export type QuienAtiende =
 export function quienAtiende(
   profesional: { full_name: string; is_active: boolean } | null | undefined,
   nombreCongelado: string | null | undefined,
-  status: string,
-  startsAt: string,
+  /* Mismo objeto que `estadoVisible`, y por el mismo motivo. */
+  turno: { status: string; startsAt: string; minutos: number },
   now: number | null,
 ): QuienAtiende {
-  const estado = estadoVisible(status, startsAt, now);
+  const estado = estadoVisible(turno, now);
   const seArregla = estado === "pending" || estado === "confirmed";
 
   if (profesional?.is_active) return { caso: "asignada", nombre: profesional.full_name };
@@ -219,6 +260,42 @@ export function diaConTramosSuperpuestos(tramos: Tramo[]): number | null {
     }
   }
   return null;
+}
+
+/**
+ * Qué precio y qué duración mostrar de un tratamiento que puede tener opciones.
+ *
+ * Sin opciones, los del tratamiento y listo. Con opciones, el tratamiento no se
+ * cobra a su precio —ese número no se le cobra a nadie— así que se muestra el de
+ * la opción más barata con un "desde" adelante, y la duración como rango.
+ *
+ * Va acá y no en cada pantalla porque son cuatro las que lo muestran —el
+ * catálogo, la ficha, el paso 1 de la reserva y el buscador del panel— y la
+ * primera versión de esto ya había quedado escrita distinto en dos de ellas: en
+ * una decía "desde" y en la otra el precio pelado, que es exactamente la clase
+ * de diferencia que hace dudar del precio.
+ */
+export function precioYDuracion(servicio: {
+  price: number;
+  duration_minutes: number;
+  variants: { price: number; duration_minutes: number }[];
+}): { desde: boolean; precio: number; duracion: string } {
+  if (servicio.variants.length === 0) {
+    return { desde: false, precio: servicio.price, duracion: `${servicio.duration_minutes} min` };
+  }
+
+  const precios = servicio.variants.map((v) => v.price);
+  const duraciones = servicio.variants.map((v) => v.duration_minutes);
+  const min = Math.min(...duraciones);
+  const max = Math.max(...duraciones);
+
+  return {
+    desde: true,
+    precio: Math.min(...precios),
+    // Una sola opción, o varias que duran lo mismo, no arman rango: "40 a 40
+    // min" se lee como un error.
+    duracion: min === max ? `${min} min` : `${min} a ${max} min`,
+  };
 }
 
 export function formatMoney(value: number | string | null | undefined) {
@@ -310,7 +387,27 @@ export function aSlug(texto: string): string {
 }
 
 type Schedule = { weekday: number; start_time: string; end_time: string };
-type Busy = { starts_at: string; duration_minutes: number };
+type Busy = {
+  starts_at: string;
+  duration_minutes: number;
+  /**
+   * El margen de limpieza DE ESE TURNO, congelado cuando se reservó.
+   *
+   * No es el del tratamiento que se está por reservar: entre dos turnos manda
+   * el del que termina, y el que termina acá es éste. Ver `buildSlots`.
+   */
+  buffer_minutes: number;
+};
+
+/**
+ * Un tramo en que una profesional no atiende, con los dos extremos incluidos.
+ *
+ * Las fechas son "YYYY-MM-DD" y se comparan como texto a propósito: así ordenan
+ * igual que como fechas y no hay ninguna zona horaria de por medio. Un día es un
+ * día del almanaque del centro; convertirlo a instante sólo agregaría la
+ * pregunta de a qué hora empieza, que no tiene sentido acá.
+ */
+export type Ausencia = { starts_on: string; ends_on: string };
 
 const MINUTE = 60000;
 
@@ -322,24 +419,38 @@ const MINUTE = 60000;
  */
 
 /**
- * Minutos entre una clienta y la siguiente, para limpiar y preparar la cabina.
+ * El margen de limpieza que se usa cuando el tratamiento no dice otra cosa.
  *
- * DEFINIDO POR EL CENTRO (18/8/2026): 10 minutos de limpieza entre clienta y
- * clienta. Antes estaba en 0 y los turnos iban pegados — la que entraba 12:45
- * se cruzaba en la puerta con la que salía.
+ * DEFINIDO POR EL CENTRO (18/8/2026): 10 minutos entre clienta y clienta. Antes
+ * estaba en 0 y los turnos iban pegados — la que entraba 12:45 se cruzaba en la
+ * puerta con la que salía.
  *
- * El margen sale del paso entre horarios y también ensancha los bloques ya
- * ocupados, así que vale igual contra un turno existente que entre dos horarios
- * sugeridos. Una profesional de 12 a 16 con sesiones de 45 ofrece ahora
- * 12:00, 12:55, 13:50, 14:45 — cuatro donde antes entraban cinco.
+ * ⚠️ **Ya NO es la regla: es sólo el default.** Desde el 31/8/2026 el margen lo
+ * dice cada tratamiento, en `services.buffer_minutes`, porque una depilación
+ * deja la cabina para limpiar y un masaje no. Este número es el `@default(10)`
+ * de esa columna escrito en TypeScript, y lo que se usa cuando el dato falta:
+ * un turno viejo, una fila que entró por fuera de la app.
  *
- * Ojo con lo que esto le hace a los horarios: dejan de ser redondos y quedan en
- * :55, :50, :45, que son más incómodos de dictar por teléfono. Si el centro
- * prefiere 12:00 · 13:00 · 14:00 · 15:00, eso es este número en 15 y no en 10:
- * cuesta lo mismo en turnos (también entran cuatro) y se lee mucho mejor. Vale
- * la pena preguntárselo.
+ * **No lo uses para calcular una agenda.** Eso se hace con el margen del
+ * tratamiento; quien lo necesite lo recibe. Ver `buildSlots`.
  */
 export const SLOT_BUFFER_MINUTES = 10;
+
+/**
+ * ¿Esta profesional está ausente ese día?
+ *
+ * 🔴 **Ésta es LA definición de "ese día no atiende" y no hay otra.** La usan la
+ * pantalla de reserva (vía `buildSlots`), el diálogo del panel y el candado del
+ * servidor en `exigirQueEntreEnLaAgenda`. La lección está aprendida: `yaVencio`
+ * existe porque la regla de "vencido" se había escrito dos veces y se separaron.
+ *
+ * Los dos extremos entran: del 15 al 29 son quince días sin trabajar, no
+ * catorce. Es como lo lee cualquiera que escriba esas fechas en un papel.
+ */
+export function estaAusente(dia: Date | string, ausencias: readonly Ausencia[]): boolean {
+  const clave = typeof dia === "string" ? dia.slice(0, 10) : toDateKey(dia);
+  return ausencias.some((a) => a.starts_on <= clave && clave <= a.ends_on);
+}
 
 /**
  * Cuántos minutos espera el centro a una clienta que llega tarde.
@@ -393,8 +504,32 @@ export const ALLOW_OVERTIME = false;
  * Los horarios que se le pueden ofrecer a alguien para un tratamiento.
  *
  * Los turnos se ENCADENAN: cada uno arranca cuando termina el anterior, y el
- * paso lo da la duración del tratamiento. Una profesional de 12 a 16 con
- * sesiones de 45 ofrece 12:00, 12:45, 13:30, 14:15, 15:00.
+ * paso lo da la duración del tratamiento más su margen de limpieza. Una
+ * profesional de 12 a 16, con sesiones de 45 y margen de 10, ofrece 12:00,
+ * 12:55, 13:50, 14:45.
+ *
+ * ── ENTRE DOS TURNOS MANDA EL MARGEN DEL QUE TERMINA ──────────────────────
+ *
+ * El margen es el rato de limpiar lo que se acaba de usar, así que lo pone el
+ * tratamiento de ATRÁS y no el que viene. Se ve en las dos direcciones:
+ *
+ *   · Después de un turno ya tomado manda el margen DE ESE TURNO
+ *     (`b.buffer_minutes`, congelado el día que se reservó). Una depilación de
+ *     20 tapa hasta 20 minutos después de terminar, venga lo que venga.
+ *   · Antes de un turno ya tomado manda el margen del tratamiento que se está
+ *     eligiendo, porque el que termina ahí es él.
+ *   · Entre dos horarios sugeridos los dos son el mismo tratamiento, así que
+ *     sale del `step` y da igual mirarlo de un lado o del otro.
+ *
+ * Hasta el 31/8/2026 esto era un solo número para todo el catálogo
+ * (`SLOT_BUFFER_MINUTES`), y por eso el bloque ocupado se ensanchaba igual de
+ * los dos lados.
+ *
+ * ── LOS DÍAS QUE NO ESTÁ ──────────────────────────────────────────────────
+ *
+ * Se descartan enteros, antes de cualquier cuenta: no hay medio día ausente. El
+ * horario semanal dice "los martes de 12 a 16" y la ausencia es la excepción que
+ * lo tapa. Ver `estaAusente`.
  *
  * Antes esto caminaba una grilla fija de 30 minutos y descartaba lo que pisara
  * un turno. El problema no era estético: tomadas las 12:00, la sesión terminaba
@@ -415,24 +550,37 @@ export function buildSlots(
   date: Date,
   schedules: Schedule[],
   busy: Busy[],
-  durationMinutes: number,
+  /*
+   * Los dos números del tratamiento van juntos en un objeto y no sueltos, por
+   * el mismo motivo que en `estadoVisible`: `minutos` y `margen` son los dos
+   * números y sueltos se pueden pasar al revés sin que TypeScript diga nada.
+   * Una sesión de 10 minutos con 45 de limpieza no se distingue de una de 45
+   * con 10 mirando la llamada; agrupados, no se puede escribir mal.
+   */
+  tratamiento: { minutos: number; margen: number },
+  ausencias: readonly Ausencia[],
 ): string[] {
   const weekday = date.getDay();
   const daySchedules = schedules.filter((s) => s.weekday === weekday);
-  if (daySchedules.length === 0 || durationMinutes <= 0) return [];
+  if (daySchedules.length === 0 || tratamiento.minutos <= 0) return [];
+
+  // El día que no está no se ofrece, aunque su horario semanal lo tenga.
+  if (estaAusente(date, ausencias)) return [];
 
   const now = Date.now();
-  const step = (durationMinutes + SLOT_BUFFER_MINUTES) * MINUTE;
+  const step = (tratamiento.minutos + tratamiento.margen) * MINUTE;
 
-  // Cada bloque ocupado se ensancha por el margen de limpieza a los dos lados:
-  // así el margen vale tanto contra un turno ya existente como entre dos
-  // horarios sugeridos, que lo toman del `step`.
+  // Cada bloque ocupado se ensancha, pero NO con el mismo número de los dos
+  // lados: manda siempre el margen del tratamiento que termina. Ver el bloque
+  // del comentario de arriba.
   const blocked = busy
     .map((b) => {
       const from = new Date(b.starts_at).getTime();
       return {
-        from: from - SLOT_BUFFER_MINUTES * MINUTE,
-        to: from + (b.duration_minutes + SLOT_BUFFER_MINUTES) * MINUTE,
+        // Antes del turno ocupado el que termina es el que se está eligiendo.
+        from: from - tratamiento.margen * MINUTE,
+        // Después, el que termina es el turno ocupado, con SU margen.
+        to: from + (b.duration_minutes + b.buffer_minutes) * MINUTE,
       };
     })
     .sort((a, b) => a.from - b.from);
@@ -456,7 +604,7 @@ export function buildSlots(
       const canOverrun = ALLOW_OVERTIME && gap.to === closing;
 
       for (let start = gap.from; ; start += step) {
-        const fits = canOverrun ? start < gap.to : start + durationMinutes * MINUTE <= gap.to;
+        const fits = canOverrun ? start < gap.to : start + tratamiento.minutos * MINUTE <= gap.to;
         if (!fits) break;
         // Los horarios ya pasados no se ofrecen, ni siquiera los de esta mañana
         // cuando se mira el día de hoy a la tarde.

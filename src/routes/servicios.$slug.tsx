@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { RtaProfesionalesConHorarios, RtaServicio } from "@/lib/api-tipos";
 import { imageUrl, videoPosterUrl, videoUrl } from "@/lib/cloudinary";
-import { agruparPorDia, formatMoney, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
+import { agruparPorDia, aSlug, formatMoney, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
 
 // El archivo se llamaba `servicios.$serviceId.tsx` y la ruta era
 // "/servicios/$serviceId". Cambió junto con lo que viaja en la URL: antes era
@@ -49,6 +49,23 @@ const STEPS = [
     text: "Queda pendiente hasta que el centro lo confirma. El pago se realiza en el centro.",
   },
 ] as const;
+
+/**
+ * La descripción, partida en párrafos.
+ *
+ * En el panel se escribe en un textarea, así que los renglones y las líneas en
+ * blanco existen en el dato; el HTML los colapsa, y metida en un solo <p> la
+ * descripción salía como un ladrillo de veinte renglones sin respiro.
+ *
+ * Se corta por línea en blanco, que es como separa párrafos quien escribe. Si
+ * no hay ninguna —alguien escribió todo seguido apretando Enter una sola vez—
+ * se cae al salto suelto, que es lo único que queda para inferir el corte.
+ */
+function enParrafos(texto: string): string[] {
+  const limpiar = (partes: string[]) => partes.map((p) => p.trim()).filter(Boolean);
+  const porBloque = limpiar(texto.split(/\n\s*\n/));
+  return porBloque.length > 1 ? porBloque : limpiar(texto.split("\n"));
+}
 
 function ServiceDetail() {
   //   const { serviceId } = Route.useParams();
@@ -131,6 +148,12 @@ function ServiceDetail() {
 
   const s = service.data;
 
+  // Una descripción de dos renglones entra entera en el hero; una de veinte
+  // no, y ahí hace falta la sección de abajo. El corte por largo es para el
+  // caso de un solo párrafo largísimo, que en párrafos no se puede detectar.
+  const parrafos = enParrafos(s.description ?? "");
+  const hayMas = parrafos.length > 1 || (parrafos[0]?.length ?? 0) > 320;
+
   return (
     // `clip` en vez de `hidden`: `hidden` crea contenedor de scroll y anula el
     // `sticky` del header.
@@ -140,8 +163,14 @@ function ServiceDetail() {
       <section className="grid items-stretch gap-y-10 lg:grid-cols-12">
         <div className="px-5 pt-14 lg:col-span-5 lg:col-start-2 lg:flex lg:flex-col lg:justify-center lg:px-0 lg:py-24">
           <Reveal>
+            {/* Vuelve al catálogo FILTRADO por la categoría de este
+                tratamiento. El «atrás» del navegador ya conserva el filtro
+                —ahora vive en la URL— pero este enlace es la otra forma de
+                volver, y llevaba siempre al catálogo entero: se perdía el grupo
+                que se estaba mirando. */}
             <Link
               to="/servicios"
+              search={s.category ? { categoria: aSlug(s.category) } : {}}
               className="text-eyebrow text-muted-foreground underline-offset-8 hover:text-foreground hover:underline"
             >
               ← Tratamientos
@@ -173,24 +202,114 @@ function ServiceDetail() {
           </Reveal>
 
           <Reveal delay={160}>
-            <p className="mt-8 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-              {s.description}
-            </p>
+            {/* Sólo el arranque, y cortado a seis renglones.
 
-            <div className="mt-10 flex items-baseline gap-10 border-t border-border pt-6">
-              <div>
-                <p className="text-eyebrow text-muted-foreground/70">Duración</p>
-                <p className="mt-2 font-display text-3xl text-foreground">
-                  {s.duration_minutes} min
-                </p>
+                Lo que sube el centro no es una bajada de dos líneas: son
+                descripciones de veinte renglones, con beneficios y frecuencia
+                recomendada adentro. Enteras acá, la columna de texto crecía muy
+                por debajo del flyer —que tiene su tope en 70vh— y quedaba media
+                pantalla de crema vacía al lado, con el precio y el botón de
+                reservar empujados fuera de la vista.
+
+                El texto no se pierde: completo y en párrafos, más abajo.
+
+                ── POR QUÉ VA LA DESCRIPCIÓN ENTERA Y NO EL PRIMER PÁRRAFO ──
+
+                Porque el primer párrafo puede no ser una bajada. "Pulidos
+                corporales" arranca con "Categoría recomendada:" —una nota que
+                quedó pegada del texto que sube el centro— y con eso solo, el
+                hero mostraba un renglón suelto, sin sentido, y media pantalla
+                vacía debajo del título.
+
+                Unida y cortada a seis renglones, el corte cae donde tenga que
+                caer y siempre se lee texto de verdad. Los párrafos siguen
+                existiendo abajo, que es donde se leen como párrafos. */}
+            {parrafos.length > 0 && (
+              <p className="mt-8 line-clamp-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+                {parrafos.join(" ")}
+              </p>
+            )}
+
+            {hayMas && (
+              <a
+                href="#descripcion"
+                className="text-eyebrow mt-4 inline-block text-foreground underline-offset-8 hover:underline"
+              >
+                Seguir leyendo ↓
+              </a>
+            )}
+
+            {/* Con opciones, la tabla de abajo dice el precio de cada una y
+                este bloque sería un tercer número compitiendo con esos dos. Sin
+                opciones, es lo de siempre. */}
+            {s.variants.length === 0 ? (
+              <div className="mt-10 flex items-baseline gap-10 border-t border-border pt-6">
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">Duración</p>
+                  <p className="mt-2 font-display text-3xl text-foreground">
+                    {s.duration_minutes} min
+                  </p>
+                </div>
+                <div>
+                  <p className="text-eyebrow text-muted-foreground/70">Valor</p>
+                  <p className="mt-2 font-display text-3xl tabular-nums text-foreground">
+                    {formatMoney(s.price)}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-eyebrow text-muted-foreground/70">Valor</p>
-                <p className="mt-2 font-display text-3xl tabular-nums text-foreground">
-                  {formatMoney(s.price)}
-                </p>
+            ) : (
+              /* `max-w-md`, el mismo ancho que la bajada de arriba: sin eso la
+                 lista se estiraba hasta el borde de la columna y el precio
+                 quedaba pegado al canto de la foto, sin aire — se leía como si
+                 estuviera cortado. Con el tope queda una franja de crema entre
+                 el texto y el flyer, y la lista respeta la misma medida que el
+                 resto de la columna. */
+              <div className="mt-10 max-w-md border-t border-border pt-6">
+                <p className="text-eyebrow text-muted-foreground/70">Opciones</p>
+                {/* Cada opción con su duración y su precio, una debajo de la
+                    otra. La elección se hace al reservar, no acá: este es el
+                    lugar donde se compara, y meter botones sería empezar la
+                    reserva en la mitad de la ficha. */}
+                <ul className="mt-4">
+                  {s.variants.map((v) => (
+                    <li
+                      key={v.id}
+                      className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-0.5 border-b border-border/60 py-2.5 last:border-0 last:pb-0"
+                    >
+                      <span className="text-[15px] text-foreground">{v.name}</span>
+                      <span className="flex items-baseline gap-3">
+                        <span className="text-xs text-muted-foreground/70">
+                          {v.duration_minutes} min
+                        </span>
+                        {/* Un escalón más chico que el precio único de un
+                            tratamiento sin opciones: son dos o tres números
+                            repetidos, y en el cuerpo grande competían con el
+                            título en vez de leerse como una lista. */}
+                        <span className="font-display text-xl tabular-nums text-foreground">
+                          {formatMoney(v.price)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
+            )}
+
+            {/* Que son varias sesiones se dice ACÁ, arriba del botón, y no en
+                la letra chica de más abajo: es parte de lo que la clienta está
+                comprando —tres visitas, no una— y enterarse después de reservar
+                es enterarse tarde. Con una sola sesión no aparece nada. */}
+            {s.sessions_count > 1 && (
+              <p className="mt-8 max-w-md rounded-sm border border-gold/40 bg-gold/5 px-4 py-3 text-sm leading-relaxed text-foreground">
+                Este tratamiento son{" "}
+                <strong className="font-medium">{s.sessions_count} sesiones</strong>
+                {s.session_interval_days > 0
+                  ? ` con ${s.session_interval_days} días entre una y otra`
+                  : ""}
+                . El valor es por el tratamiento completo. Reservás la primera y las siguientes las
+                coordinamos con vos en el centro.
+              </p>
+            )}
 
             <Button asChild size="lg" className="mt-10 w-fit">
               <Link to="/reservar" search={{ service: s.id }}>
@@ -225,10 +344,22 @@ function ServiceDetail() {
         <div className="mt-12 px-5 lg:col-span-5 lg:col-start-7 lg:mt-0 lg:px-0">
           {activo ? (
             <>
-              {/* `justify-center` + el tope de alto de adentro: el contenedor
-                  se adapta a la imagen en vez de estirarla, y lo que sobre a los
-                  costados queda del campo oliva con grano. */}
-              <div className="surface-olive grain flex justify-center overflow-hidden rounded-sm">
+              {/* Este div sigue ocupando el ancho entero de la columna —eso no
+                  cambia con `flex`—, pero ya no tiene `surface-olive`: lo que
+                  sobra a los costados de la imagen (`max-h-[70vh]` la achica
+                  sin estirarla, así que rara vez llena el ancho) queda
+                  TRANSPARENTE en vez de pintado. Se ve la crema de la página
+                  de fondo, que es el mismo color de todo alrededor, así que no
+                  se nota que hay un sobrante.
+
+                  Antes ese sobrante se rellenaba con `surface-olive` —el
+                  oliva del header y el footer— y con un flyer cuadrado se
+                  notaba: era un verde parecido pero no igual al del fondo que
+                  el flyer ya trae dibujado, y esa costura entre los dos
+                  verdes se veía como un marco de más. Sacando el color de
+                  relleno en vez de intentar igualarlo, no hay costura que
+                  pueda desentonar con ningún flyer futuro. */}
+              <div className="flex justify-center">
                 {activo.kind === "video" ? (
                   /* `controls` y nada de autoplay: un video que arranca solo con
                      sonido es molesto, y en celular se come los datos de alguien
@@ -245,7 +376,7 @@ function ServiceDetail() {
                        Antes decía `h-auto w-full`, que la estiraba al ancho de
                        la columna — y con un flyer vertical eso la volvía
                        enorme: había que scrollear dos pantallas para verla. */
-                    className="block max-h-[70vh] w-auto max-w-full"
+                    className="block max-h-[70vh] w-auto max-w-full rounded-sm"
                   />
                 ) : (
                   <img
@@ -256,7 +387,7 @@ function ServiceDetail() {
                        Antes decía `h-auto w-full`, que la estiraba al ancho de
                        la columna — y con un flyer vertical eso la volvía
                        enorme: había que scrollear dos pantallas para verla. */
-                    className="block max-h-[70vh] w-auto max-w-full"
+                    className="block max-h-[70vh] w-auto max-w-full rounded-sm"
                   />
                 )}
               </div>
@@ -317,6 +448,31 @@ function ServiceDetail() {
           el hero ni lo que sigue. En mobile la foto está oculta, así que ahí sí
           hace falta aire entre el botón y el filete. */}
       <OrganicRule className="mt-20 lg:mt-0" />
+
+      {/* La descripción completa, en párrafos y en una medida de lectura.
+          Sólo aparece cuando no entró entera en el hero: con un tratamiento de
+          dos renglones sería repetir arriba y abajo lo mismo.
+
+          `scroll-mt-28` porque el header es sticky: sin eso el enlace «Seguir
+          leyendo» deja el título justo debajo de la barra. */}
+      {hayMas && (
+        <section id="descripcion" className="grid scroll-mt-28 lg:grid-cols-12">
+          <div className="px-5 py-20 lg:col-span-7 lg:col-start-2 lg:px-0 lg:py-24">
+            <Reveal>
+              <p className="text-eyebrow text-muted-foreground">En qué consiste</p>
+              <h2 className="display-section mt-5 text-foreground">El tratamiento</h2>
+            </Reveal>
+
+            <Reveal delay={80}>
+              <div className="mt-10 max-w-prose space-y-5 text-[15px] leading-relaxed text-muted-foreground">
+                {parrafos.map((p, i) => (
+                  <p key={i}>{p}</p>
+                ))}
+              </div>
+            </Reveal>
+          </div>
+        </section>
+      )}
 
       {/* Acá iba «La galería»: una sección aparte que listaba el resto de las
           fotos y los videos debajo del hero, con su propio título a media

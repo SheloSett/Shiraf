@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -9,10 +9,37 @@ import type { RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
 import { texto } from "@/lib/contenido";
 import { useContenido } from "@/hooks/useContenido";
-import { aSlug, formatMoney } from "@/lib/shiraf";
+import { aSlug, formatMoney, precioYDuracion } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
+/**
+ * El filtro de categoría, en la URL: /servicios?categoria=cejas-y-pestanas
+ *
+ * Vivía en un `useState`, y ahí se perdía al navegar: filtrar por Facial, entrar
+ * a un tratamiento y volver con el botón «atrás» devolvía el catálogo entero,
+ * porque la pantalla se monta de nuevo y el estado arranca vacío. En la URL, el
+ * «atrás» del navegador vuelve a la dirección filtrada y el filtro sigue puesto.
+ *
+ * De paso, la vista filtrada se puede compartir por link.
+ *
+ * Viaja el slug y no el nombre —"cejas-y-pestanas" y no "Cejas y pestañas"—
+ * porque es lo que se lee en una URL sin escaparse, y es el mismo cálculo que ya
+ * usan las anclas de cada grupo.
+ *
+ * Clave opcional y no obligatoria en `undefined`: con `exactOptionalPropertyTypes`
+ * esa diferencia obliga a pasar `search` en cada <Link to="/servicios">.
+ */
+type Search = { categoria?: string };
+
 export const Route = createFileRoute("/servicios/")({
+  // Pasa por `aSlug` lo que venga: el `?categoria=` lo puede escribir cualquiera
+  // a mano, y así "Facial" o "FACIAL" encuentran igual a "facial". Una categoría
+  // inventada no rompe nada — abajo cae al catálogo completo.
+  validateSearch: (search: Record<string, unknown>): Search => {
+    const crudo = search["categoria"];
+    if (typeof crudo !== "string" || !crudo.trim()) return {};
+    return { categoria: aSlug(crudo) };
+  },
   head: () => ({
     meta: [
       { title: "Servicios y tratamientos — Shiraf" },
@@ -100,14 +127,43 @@ function ServicesPage() {
   // y esta página los lista sola.
   const c = useContenido("servicios");
 
-  /* `null` = "Todos". Es el estado inicial, así la primera vista sigue siendo
-     el catálogo completo como hasta ahora. */
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  /* Sin `?categoria=` es "Todos": la primera vista sigue siendo el catálogo
+     completo, como hasta ahora. */
+  const { categoria } = Route.useSearch();
+  const navigate = useNavigate();
+
+  /**
+   * Cambia el filtro escribiéndolo en la URL. `null` = Todos.
+   *
+   * `replace: true` para no dejar una entrada de historial por cada cápsula que
+   * se toca: si no, después de probar cuatro categorías hay que apretar «atrás»
+   * cuatro veces para salir de la pantalla.
+   */
+  function elegirCategoria(category: string | null) {
+    void navigate({
+      to: "/servicios",
+      search: category ? { categoria: categorySlug(category) } : {},
+      replace: true,
+    });
+  }
 
   const services = useQuery({
     queryKey: ["services", "published"],
     queryFn: async () => (await api<RtaServicios>("/api/publico/servicios")).servicios,
   });
+
+  /**
+   * Tratamientos cuya foto tiene `image_url` pero el archivo ya no está en
+   * Cloudinary (borrado a mano, o la URL quedó mal cargada).
+   *
+   * Sin esto, esa card mostraba el ícono de imagen rota del navegador: se ve
+   * peor que no tener foto, porque el placeholder de la inicial —pensado
+   * justamente para "no hay foto"— nunca se activaba (`s.image_url` es
+   * verdadero, aunque el archivo detrás ya no exista). El `onError` de abajo
+   * la suma acá la primera vez que falla, y desde ese momento la card cae al
+   * mismo placeholder que un tratamiento sin foto.
+   */
+  const [fotosRotas, setFotosRotas] = useState<Set<string>>(new Set());
 
   const grouped = useMemo(() => {
     const groups = new Map<string, NonNullable<typeof services.data>>();
@@ -122,10 +178,10 @@ function ServicesPage() {
   /* Si la categoría elegida deja de existir (se despublicó el último
      tratamiento del grupo), cae a "Todos" en vez de dejar la página vacía. */
   const visibleGroups = useMemo(() => {
-    if (!activeCategory) return grouped;
-    const match = grouped.filter(([category]) => category === activeCategory);
+    if (!categoria) return grouped;
+    const match = grouped.filter(([category]) => categorySlug(category) === categoria);
     return match.length > 0 ? match : grouped;
-  }, [grouped, activeCategory]);
+  }, [grouped, categoria]);
 
   return (
     <div className="min-h-screen">
@@ -195,8 +251,8 @@ function ServicesPage() {
                     <CategoryPill
                       label="Todos"
                       count={services.data?.length ?? 0}
-                      active={activeCategory === null}
-                      onClick={() => setActiveCategory(null)}
+                      active={!categoria}
+                      onClick={() => elegirCategoria(null)}
                     />
                   </li>
                   {grouped.map(([category, items]) => (
@@ -204,8 +260,8 @@ function ServicesPage() {
                       <CategoryPill
                         label={category}
                         count={items.length}
-                        active={activeCategory === category}
-                        onClick={() => setActiveCategory(category)}
+                        active={categoria === categorySlug(category)}
+                        onClick={() => elegirCategoria(category)}
                       />
                     </li>
                   ))}
@@ -222,12 +278,25 @@ function ServicesPage() {
             <Reveal key={category} delay={groupIndex * 60} className="mb-16">
               {/* `scroll-mt-28`: el header es sticky y si no se le descuenta el
                   alto, al saltar desde el índice tapa el nombre de la categoría. */}
-              <p
+              {/* El nombre de la categoría era un `text-eyebrow` dorado: 11px
+                  con 0.22em de tracking, y el dorado (L 0.755) sobre la crema
+                  casi no tiene contraste. Encabezando una grilla de fichas
+                  grandes, no se leía como el título de nada — parecía el pie de
+                  la línea de arriba.
+
+                  Ahora es lo que es: el título de la sección, en Bodoni y en
+                  color de texto. El dorado y las versalitas siguen estando en
+                  los rótulos chicos («Ver por categoría», «Ver tratamiento»),
+                  que es donde ese estilo hace su trabajo. */}
+              <div
                 id={categorySlug(category)}
-                className="text-eyebrow scroll-mt-28 border-b border-border pb-3 text-gold"
+                className="flex scroll-mt-28 items-baseline justify-between gap-6 border-b border-border pb-3"
               >
-                {category}
-              </p>
+                <h2 className="font-display text-3xl leading-tight text-foreground">{category}</h2>
+                <span className="text-eyebrow shrink-0 text-muted-foreground/70">
+                  {items.length} {items.length === 1 ? "tratamiento" : "tratamientos"}
+                </span>
+              </div>
 
               {/* Ficha por tratamiento en vez de renglones: la lista de texto
                   corrido no dejaba mirar un tratamiento a la vez. */}
@@ -249,19 +318,61 @@ function ServicesPage() {
                       params={{ slug: s.slug ?? s.id }}
                       className="group flex h-full flex-col overflow-hidden rounded-sm border border-border bg-card shadow-soft transition-shadow duration-500 hover:shadow-lift"
                     >
-                      <div className="relative aspect-[4/3] overflow-hidden bg-primary">
-                        {s.image_url ? (
+                      {/* La foto ENTERA, no un recorte de la foto.
+
+                          Esto era `aspect-[4/3]` con `object-cover`: una caja
+                          apaisada comiéndose un flyer vertical. De una imagen
+                          3:4 se veía poco más de la mitad, y lo que quedaba
+                          afuera era justamente el nombre del tratamiento arriba
+                          y los íconos de abajo — que es todo lo que el flyer
+                          tiene para decir. Se leía como si la foto estuviera
+                          ampliada de más.
+
+                          Ahora la caja es `aspect-square` —de los flyers reales
+                          cargados hasta ahora, 3 de 4 son exactamente
+                          cuadrados (800×800)— y la imagen va `contain`: se ve
+                          completa siempre. Con un flyer cuadrado no sobra nada;
+                          con una foto de otra proporción (la de "Masaje
+                          descontracturante" es 800×670) sigue sobrando un poco
+                          arriba y abajo, pero mucho menos que con la caja
+                          vertical de antes.
+
+                          Sin el `group-hover:scale-105`: con `contain` ese zoom
+                          empujaba los bordes fuera de la caja, o sea recortaba
+                          al pasar el mouse justo lo que se acaba de arreglar.
+                          El hover ya se nota en la sombra de la tarjeta.
+
+                          El oliva con grano va SÓLO sin foto —es el fondo de la
+                          inicial de abajo—. Con foto, la caja queda sin fondo
+                          propio: lo que sobra (por la proporción, o porque
+                          `fotosRotas` todavía no la sacó de este camino) muestra
+                          el `bg-card` de la tarjeta, el mismo blanco crema de
+                          todo el resto de la tarjeta. Antes ese sobrante se
+                          rellenaba con oliva, un verde parecido pero no igual al
+                          que el flyer ya trae dibujado: se notaba la costura,
+                          igual que pasaba en la ficha del tratamiento
+                          (`servicios.$slug.tsx`). */}
+                      <div
+                        className={`relative aspect-square overflow-hidden ${
+                          s.image_url && !fotosRotas.has(s.id) ? "" : "surface-olive grain"
+                        }`}
+                      >
+                        {s.image_url && !fotosRotas.has(s.id) ? (
                           <img
                             src={imageUrl(s.image_url, "card") ?? undefined}
                             alt=""
                             loading="lazy"
-                            className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                            onError={() => setFotosRotas((prev) => new Set(prev).add(s.id))}
+                            className="h-full w-full object-contain"
                           />
                         ) : (
-                          /* Sin foto cargada: inicial del tratamiento sobre el
-                             oliva con grano, para que el hueco se lea como
-                             decisión y no como imagen rota. */
-                          <div className="grain absolute inset-0 flex items-center justify-center">
+                          /* Sin foto cargada —o con `image_url` pero el archivo
+                             ya no existe en Cloudinary, ver `fotosRotas`—:
+                             inicial del tratamiento sobre el oliva con grano,
+                             para que el hueco se lea como decisión y no como
+                             imagen rota. El grano ya lo pone la caja de afuera;
+                             acá sólo va el centrado. */
+                          <div className="absolute inset-0 flex items-center justify-center">
                             <span className="font-display text-7xl text-primary-foreground/25">
                               {s.name.charAt(0)}
                             </span>
@@ -270,19 +381,28 @@ function ServicesPage() {
                       </div>
 
                       <div className="flex flex-1 flex-col p-6">
-                        <h2 className="font-display text-2xl leading-tight text-foreground">
+                        <h3 className="font-display text-2xl leading-tight text-foreground">
                           {s.name}
-                        </h2>
+                        </h3>
                         <p className="mt-3 line-clamp-2 flex-1 text-sm leading-relaxed text-muted-foreground">
                           {s.description}
                         </p>
 
+                        {/* Con opciones cargadas, el precio del tratamiento no
+                            se le cobra a nadie: lo que vale es el de cada
+                            opción. Se muestra el más barato con "desde", que es
+                            lo que la clienta puede esperar pagar como mínimo. */}
                         <div className="mt-6 flex items-baseline justify-between border-t border-border pt-4">
                           <span className="font-display text-2xl tabular-nums text-foreground">
-                            {formatMoney(s.price)}
+                            {precioYDuracion(s).desde && (
+                              <span className="mr-1.5 font-sans text-xs tracking-wide text-muted-foreground uppercase">
+                                desde
+                              </span>
+                            )}
+                            {formatMoney(precioYDuracion(s).precio)}
                           </span>
                           <span className="text-eyebrow text-muted-foreground/70">
-                            {s.duration_minutes} min
+                            {precioYDuracion(s).duracion}
                           </span>
                         </div>
 

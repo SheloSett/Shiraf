@@ -187,14 +187,23 @@ function AccountPage() {
                   <p className="font-display text-xl text-foreground">{a.services?.name}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {formatDateTime(a.starts_at)} · {a.professionals?.full_name}
+                    {/* En qué sesión va, cuando el tratamiento es de varias:
+                        con tres turnos del mismo nombre en la lista, es lo
+                        único que los distingue. */}
+                    {a.sessions_total > 1 && ` · sesión ${a.session_number} de ${a.sessions_total}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant={a.status === "confirmed" ? "default" : "secondary"}>
                     {STATUS_LABEL[a.status]}
                   </Badge>
+                  {/* El paquete se cobra una sola vez, en la primera sesión;
+                      las otras valen 0 y escribir "$ 0" se leería como un
+                      error. */}
                   <span className="text-sm text-muted-foreground">
-                    {formatMoney(a.services?.price)}
+                    {a.sessions_total > 1 && a.session_number > 1
+                      ? "Incluida"
+                      : formatMoney(a.services?.price)}
                   </span>
                   {/* Cancelar sale sólo con margen. Pasadas las horas del
                       corte el botón se va y queda dicho qué hacer, en vez de
