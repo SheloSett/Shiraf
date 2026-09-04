@@ -209,18 +209,27 @@ function BookingPage() {
       //                 segundos: no quedaba ningún rastro de la reserva salvo
       //                 entrar de nuevo al sitio.
       //
-      // Los dos en paralelo y los dos con el fallo tragado a propósito: el turno
-      // YA está reservado y es lo que le importa a la clienta. Hacer fallar la
-      // mutación por un mail la mandaría a reintentar una reserva que ya existe,
-      // y el segundo intento lo rebotaría el control de superposición contra su
-      // propio turno.
+      // Los dos en paralelo y los dos SIN romper la reserva si el mail falla: el
+      // turno YA está reservado y es lo que le importa a la clienta. Hacer
+      // fallar la mutación por un mail la mandaría a reintentar una reserva que
+      // ya existe, y el segundo intento lo rebotaría el control de superposición
+      // contra su propio turno.
+      //
+      // Pero "no romper" no es "no enterarse". El rastro que sirve —el que puede
+      // ver el centro— lo deja el servidor: `notifyAppointment` escribe una
+      // línea `[aviso]` en el log del contenedor cuando el mail no sale, y por
+      // ahí pasan los tres caminos (esta reserva, el panel y el recordatorio).
+      // Acá sólo queda lo que ese log no ve: que el pedido ni siquiera haya
+      // llegado a destino —sin conexión, o el aviso rechazado por permisos—.
       await Promise.all([
         notifyAppointment({
           data: { appointmentId: created.id, event: "new-request" },
-        }).catch(() => undefined),
+        }).catch((e: Error) => console.error("[reserva] no se pudo avisar al centro:", e.message)),
         notifyAppointment({
           data: { appointmentId: created.id, event: "requested" },
-        }).catch(() => undefined),
+        }).catch((e: Error) =>
+          console.error("[reserva] no se pudo avisar a la clienta:", e.message),
+        ),
       ]);
     },
     onSuccess: () => {

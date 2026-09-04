@@ -111,9 +111,14 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?falta CLOUDINARY_API_SECRET en .env}
 
       # Mails: avisos de turno, recordatorios y los de cuenta (confirmar el
-      # mail, recuperar la contraseña). Salen por SMTP con nodemailer, igual que
-      # en Ecommerce_mm: la casilla de Gmail del centro con una contraseña de
-      # aplicación. No hay servicio de terceros ni dominio que verificar.
+      # mail, recuperar la contraseña). Salen por SMTP con nodemailer, por Brevo,
+      # desde avisos@shiraf.com.ar y firmados con el DKIM del dominio.
+      #
+      # 🔴 Las seis importan ahora, no sólo USER y PASS. Hasta el 4/9/2026 se
+      # mandaba por Gmail y las otras cuatro podían faltar; con Brevo, sin HOST,
+      # PORT y MAIL_FROM el envío se cae al default de Gmail y no sale nada. El
+      # porqué del cambio está en emails/README.md: a Hotmail no le llegaba un
+      # solo mail.
       #
       # Todas van con `:-` y NO con `:?`, o sea que su ausencia no frena el
       # arranque. Es a propósito y respeta una decisión que ya vive en el código:
@@ -147,6 +152,26 @@ services:
       WHATSAPP_PHONE_ID: ${WHATSAPP_PHONE_ID:-}
       WHATSAPP_LANG: ${WHATSAPP_LANG:-}
       WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-}
+
+      # WhatsApp por Evolution, el camino que no se le paga a nadie. Es el que
+      # se eligió; el de Meta queda ahí por si algún día se paga la vía oficial.
+      #
+      # Con las tres puestas, los avisos salen por acá y NO por Meta: la
+      # prioridad la decide `transporteWhatsapp()` en notifications.server.ts.
+      # Vacías, no pasa nada y todo sale por mail.
+      #
+      # `evolution` y no `localhost`: adentro de la red de compose el host es el
+      # nombre del servicio. Es el mismo error que con `db`, y el mensaje
+      # —fetch failed— dice todavía menos.
+      #
+      # Ojo con una asimetría que confunde: estas variables van en la app, que
+      # levanta siempre, pero el contenedor que las atiende está detrás del
+      # perfil `whatsapp`. Si se configuran y nadie levantó el perfil, cada aviso
+      # falla con "No se pudo llamar a Evolution" y sale sólo por mail.
+      EVOLUTION_URL: ${EVOLUTION_URL:-}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}
+      EVOLUTION_DELAY_MS: ${EVOLUTION_DELAY_MS:-}
 
       # Acá vivía REMINDERS_SECRET, que era obligatoria —con `:?`, o sea que sin
       # ella el contenedor no levantaba— y ya no existe. Era la llave de
@@ -212,5 +237,157 @@ services:
     volumes:
       - ./backups:/backups
 
+  # ── WhatsApp por Evolution API ─────────────────────────────────────────────
+  #
+  # Los tres servicios de acá abajo están detrás del perfil `whatsapp`, o sea que
+  # un `docker compose up` normal NO los levanta. Para encenderlos:
+  #
+  #     docker compose --profile whatsapp up -d
+  #
+  # Van con perfil porque son opcionales de verdad: sin ellos la app arranca
+  # igual y los avisos salen por mail, que es como funcionó hasta ahora. En la
+  # máquina de desarrollo casi nunca hacen falta y son tres contenedores más.
+  #
+  # ── 🔴 EL NÚMERO QUE SE VINCULA ACÁ ES DESCARTABLE ────────────────────────
+  #
+  # Evolution habla WhatsApp como un dispositivo vinculado, no por la API oficial
+  # de Meta. Eso va contra los términos de servicio de WhatsApp y el castigo es
+  # que **banean el número**. Por eso acá se vincula un chip comprado para esto y
+  # NUNCA el número por el que el centro atiende clientas. El razonamiento
+  # completo está en `evolution.service.ts` y en `docs/whatsapp-automatico.md`.
+  #
+  # ── POR QUÉ NO USA LA BASE DE LA APP ──────────────────────────────────────
+  #
+  # Evolution necesita su propio Postgres y su propio Redis. El Postgres podría
+  # ser el de `db` con otra base adentro, y saldría más barato en RAM, pero
+  # entonces un servicio no oficial escribiría en el mismo motor donde viven los
+  # turnos y las clientas. Con contenedor y volumen aparte, el día que esto se
+  # abandone se borran los dos volúmenes y no queda nada dando vueltas.
+  evolution-db:
+    image: postgres:17
+    container_name: shiraf-evolution-db
+    profiles: ["whatsapp"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      # Con `:-` y no con `:?`, igual que el SMTP y por el mismo motivo: Compose
+      # interpola las variables de TODO el archivo aunque el perfil esté apagado,
+      # así que un `:?` acá haría que `docker compose up` —el de la app sola— se
+      # negara a arrancar por una variable de un servicio que ni se levanta.
+      #
+      # Vacía no es un default silencioso: Postgres se niega a inicializarse sin
+      # contraseña y lo dice en su primer renglón de log. O sea que el error
+      # aparece cuando se levanta el perfil, que es cuando corresponde.
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:-}
+      POSTGRES_DB: evolution
+    volumes:
+      - shiraf-evolution-pgdata:/var/lib/postgresql/data
+    # Sin `ports`: a esta base sólo le pega Evolution, por la red de compose.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: shiraf-evolution-redis
+    profiles: ["whatsapp"]
+    restart: unless-stopped
+    # Sin volumen a propósito: acá sólo hay caché de sesión. Lo que no se puede
+    # perder —el vínculo con el chip— vive en el volumen de instancias de abajo.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  evolution:
+    # ⚠️ Versión fijada, no `latest`: Evolution rompe cosas entre versiones y una
+    #    sesión de WhatsApp que se desvincula sola hay que volver a escanearla
+    #    desde el teléfono del centro. Subirla es una decisión, no un arranque.
+    #
+    #    Si esta imagen no baja, el proyecto se movió de organización más de una
+    #    vez y el nombre viejo es `atendai/evolution-api`. Verificar contra el
+    #    repo antes de cambiarla.
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.2.3}
+    container_name: shiraf-evolution
+    profiles: ["whatsapp"]
+    restart: unless-stopped
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    environment:
+      # 🔴 Esta llave abre TODO Evolution, incluido leer las conversaciones del
+      # número vinculado. No es la clave de un servicio más: tratarla como la
+      # service role. Por eso el puerto de abajo es sólo loopback.
+      #
+      # ⚠️ Va con `:-` por lo mismo que la contraseña de arriba —no romper el
+      #    arranque de la app—, pero acá el default vacío SÍ es peligroso: un
+      #    Evolution sin llave acepta a cualquiera que llegue al puerto. Está
+      #    atenuado porque el puerto es loopback, no porque esté bien. **Ponerla
+      #    en el `.env` antes de levantar el perfil**, y larga: es la única
+      #    puerta que tiene este servicio.
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8080}
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD}@evolution-db:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: shiraf
+
+      # Lo mínimo que Evolution necesita guardar para funcionar, y nada más.
+      #
+      # No es ahorro de disco: es que este número NO lee conversaciones. Sólo
+      # manda avisos. Guardar mensajes, contactos y chats sería acumular datos de
+      # clientas —quién se atiende, de qué— en la base de un servicio no oficial
+      # que nadie va a mirar nunca. Si algún día se necesita depurar un envío, el
+      # motivo del fallo ya queda en el log de la app.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: shiraf
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+
+      LOG_LEVEL: ${EVOLUTION_LOG_LEVEL:-ERROR}
+      DEL_INSTANCE: "false"
+
+    # 🔴 SÓLO LOOPBACK, y esto no es una preferencia.
+    #
+    # Con la API key, cualquiera que llegue a este puerto puede mandar WhatsApp
+    # a nombre del número vinculado y leer lo que le entre. No hay login, no hay
+    # usuarios: la llave es todo. A internet no sale nunca — ni siquiera detrás
+    # del reverse proxy, porque no hay motivo para que se llegue desde afuera.
+    #
+    # Para escanear el QR la primera vez se abre desde la máquina con un túnel
+    # SSH: `ssh -L 8080:127.0.0.1:8080 usuario@vps`, y después localhost:8080.
+    ports:
+      - "127.0.0.1:${EVOLUTION_PORT:-8080}:8080"
+
+    # Acá vive el vínculo con el chip. Si este volumen se pierde, hay que volver
+    # a escanear el QR desde el teléfono — que es el único paso de todo esto que
+    # necesita a una persona con el celular en la mano.
+    volumes:
+      - shiraf-evolution-instances:/evolution/instances
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   shiraf-pgdata:
+  shiraf-evolution-pgdata:
+  shiraf-evolution-instances:

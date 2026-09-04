@@ -1,6 +1,7 @@
 import { CONTACT } from "@/lib/contact";
 import {
   buildAppointmentMessage,
+  buildProfessionalMessage,
   buildOverdueDigest,
   type TurnoVencido,
   type AppointmentEvent,
@@ -190,8 +191,16 @@ export type DeliveryResult =
  * mail hubiera salido perfecto.
  *
  * Es opcional para que las pantallas que no lo miran compilen igual.
+ *
+ * `professional` entró el 4/9/2026 con el mismo criterio y por el mismo motivo:
+ * la mayoría de las veces NO sale —el turno no tiene profesional, o la hizo ella
+ * misma— y eso es normal, no un fallo. Metido en `sent`, cada turno sin
+ * profesional asignada se reportaría en el panel como un aviso que falló.
  */
-export type NotifyResult = DeliveryResult & { whatsapp?: DeliveryResult };
+export type NotifyResult = DeliveryResult & {
+  whatsapp?: DeliveryResult;
+  professional?: DeliveryResult;
+};
 
 /**
  * Manda el mail. Sin SMTP configurado no falla: no manda y lo dice.
@@ -240,6 +249,13 @@ type DatosDelAviso = {
   notifiable: NotifiableAppointment;
   /** Null cuando la clienta no tiene mail: la invitada que cargó el centro. */
   clientEmail: string | null;
+  /**
+   * La dirección de la profesional, o null si el turno no tiene una asignada o
+   * su ficha no está vinculada a ninguna cuenta.
+   */
+  professionalEmail: string | null;
+  /** La cuenta de la profesional, para no avisarle de lo que hizo ella misma. */
+  professionalUserId: string | null;
 };
 
 async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | null> {
@@ -278,7 +294,18 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
       // En qué punto del tratamiento está, cuando son varias sesiones.
       session_number: true,
       sessions_total: true,
-      professional: { select: { full_name: true } },
+      // La profesional que atiende el turno, con su cuenta si la tiene.
+      //
+      // El mail sale de `user`, no de la ficha: `professionals` no guarda
+      // direcciones, y la ficha existe sin cuenta —`user_id` es nullable— para
+      // las que trabajan en el centro pero no entran al panel. A ésas no hay
+      // dónde avisarles, y no es un error.
+      //
+      // `user_id` viaja además del mail porque con él se compara quién disparó
+      // la acción: ver `deliverAppointmentToProfessional`.
+      professional: {
+        select: { full_name: true, user_id: true, user: { select: { email: true } } },
+      },
       // El teléfono del profile entró con el WhatsApp: hasta entonces sólo
       // viajaba `guest_phone`, así que de una clienta CON cuenta no se sabía el
       // número. Para el mail eso se notaba poco —los avisos al centro decían el
@@ -312,7 +339,12 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
     sessionsTotal: appointment.sessions_total,
   };
 
-  return { notifiable, clientEmail };
+  return {
+    notifiable,
+    clientEmail,
+    professionalEmail: appointment.professional?.user?.email ?? null,
+    professionalUserId: appointment.professional?.user_id ?? null,
+  };
 }
 
 export async function deliverAppointmentEmail(
@@ -342,21 +374,132 @@ export async function deliverAppointmentEmail(
 }
 
 /**
- * El mismo aviso, por WhatsApp. **Hoy apagado.**
+ * El mismo turno, avisado a la profesional que lo atiende. **Sólo por mail.**
  *
- * Sin `WHATSAPP_TOKEN` ni `WHATSAPP_PHONE_ID` esto no intenta nada y contesta
- * que el canal no está configurado, igual que hace el mail sin SMTP. Es el
- * estado de las dos instalaciones mientras la dueña no decida encararlo — ver
+ * Es un tercer destinatario que se suma a los dos que ya había, y no reemplaza a
+ * ninguno: la clienta sigue recibiendo lo suyo y el centro lo suyo. Decidido el
+ * 4/9/2026 — hasta entonces, quien atendía el turno era la única que no se
+ * enteraba de nada, aunque el sistema supiera perfectamente quién era.
+ *
+ * ── LO QUE DEVUELVE `{ sent: false }` Y NO ES UN PROBLEMA ─────────────────
+ *
+ * Casi todo, de hecho. Los cuatro casos normales:
+ *
+ *   · El turno no tiene profesional asignada.
+ *   · La ficha de la profesional no está vinculada a ninguna cuenta, así que no
+ *     hay dirección a dónde mandar.
+ *   · El evento es "requested" o "reminder", que no le corresponden — el porqué
+ *     está en `buildProfessionalMessage`.
+ *   · La acción la hizo ella misma (ver abajo).
+ *
+ * Por eso esto NO se loguea como error en ningún lado y viaja en su propio campo
+ * del resultado, igual que el WhatsApp: si entrara en el `sent` que miran los
+ * toasts del panel, un turno sin profesional se reportaría como aviso fallado.
+ *
+ * ── POR QUÉ NO SE LE AVISA DE LO QUE HIZO ELLA ────────────────────────────
+ *
+ * Todas las profesionales manejan turnos, así que la que confirma un turno desde
+ * el panel es muchas veces la misma que lo va a atender. Mandarle un mail
+ * diciéndole lo que acaba de hacer es la forma más rápida de que estos avisos
+ * terminen en una regla de "mover a la papelera", y con ellos los que sí
+ * importan.
+ *
+ * `quienLoHizo` llega de `notifyAppointment`, que lo saca del middleware de
+ * sesión. Cuando no viene —la tarea del reloj, que no la dispara nadie— no hay
+ * nada que comparar y el aviso sale igual.
+ */
+export async function deliverAppointmentToProfessional(
+  appointmentId: string,
+  event: AppointmentEvent,
+  quienLoHizo?: string,
+): Promise<DeliveryResult> {
+  // Se pregunta ANTES de ir a la base, igual que en el WhatsApp: para los dos
+  // eventos que no le corresponden a la profesional, esto ahorra una consulta
+  // por cada recordatorio del día.
+  if (event === "requested" || event === "reminder") {
+    return { sent: false, reason: "Este aviso no le corresponde a la profesional." };
+  }
+
+  const datos = await datosDelAviso(appointmentId);
+  if (!datos) return { sent: false, reason: "El turno no existe." };
+
+  if (!datos.professionalEmail) {
+    return {
+      sent: false,
+      reason: datos.notifiable.professionalName
+        ? "La profesional no tiene cuenta vinculada."
+        : "El turno no tiene profesional asignada.",
+    };
+  }
+
+  if (quienLoHizo && datos.professionalUserId === quienLoHizo) {
+    return { sent: false, reason: "Lo hizo ella misma." };
+  }
+
+  const message = buildProfessionalMessage(event, datos.notifiable);
+
+  // No debería pasar: los eventos sin mensaje se filtraron arriba y el nombre de
+  // la profesional existe si tiene cuenta. Está igual porque la función puede
+  // devolver null por más de un motivo y el día que se agregue otro, esto tiene
+  // que seguir siendo un aviso que no sale y no una excepción en medio de un
+  // turno que se está confirmando.
+  if (!message) {
+    return { sent: false, reason: "Este aviso no le corresponde a la profesional." };
+  }
+
+  return sendEmail({
+    to: datos.professionalEmail,
+    subject: message.subject,
+    text: message.lines.join("\n"),
+    html: renderEmailHtml(message),
+  });
+}
+
+/** Por dónde salen los WhatsApp, si es que sale alguno. */
+export type TransporteWhatsapp = "evolution" | "meta";
+
+/**
+ * Cuál de los dos transportes está encendido, o null si ninguno.
+ *
+ * **Evolution tiene prioridad**, y el orden no es un detalle: si algún día se
+ * configuran los dos —porque la dueña terminó pagando la vía oficial y nadie se
+ * acordó de sacar las variables del chip— el que gana es el que se eligió último
+ * a mano, y sacar tres variables del `.env` es más fácil que descubrir por qué
+ * los avisos salen por el canal viejo.
+ *
+ * Los dos empiezan apagados y ahí no falla nada: los avisos salen sólo por mail,
+ * que es como estuvo el proyecto hasta hoy.
+ *
+ * Está exportada porque `reminders.service.ts` la necesita para una cosa
+ * distinta que mandar: decidir si un WhatsApp que no salió es un problema que
+ * hay que loguear o el estado normal de un canal apagado.
+ */
+export async function transporteWhatsapp(): Promise<TransporteWhatsapp | null> {
+  const { evolutionConfigurada } = await import("@/server/services/evolution.service");
+  if (evolutionConfigurada()) return "evolution";
+
+  const { whatsappConfigurado } = await import("@/server/services/whatsapp.service");
+  if (whatsappConfigurado()) return "meta";
+
+  return null;
+}
+
+/**
+ * El mismo aviso, por WhatsApp.
+ *
+ * Sale por uno de dos transportes, y quien llama no sabe por cuál —ni tiene que
+ * saberlo—. Lo decide `transporteWhatsapp()` mirando el `.env`:
+ *
+ *   · **evolution** · Un dispositivo vinculado a un chip aparte, corriendo en el
+ *     VPS. No es oficial, no cuesta nada, y el número que vincula es descartable
+ *     a propósito. Manda **texto libre**, o sea el mismo mensaje que el mail.
+ *   · **meta** · La Cloud API oficial. Cuesta plata y exige plantillas
+ *     aprobadas; lo que viaja es el NOMBRE de la plantilla y los valores de sus
+ *     huecos, y el texto lo arma Meta. Por eso ese camino no usa
+ *     `buildAppointmentMessage` sino `PLANTILLAS` de `whatsapp-plantillas.ts`.
+ *
+ * Los dos caminos, y por qué se terminó eligiendo el primero, están en
  * `docs/whatsapp-automatico.md`.
- *
- * ── LO QUE VIAJA NO ES EL TEXTO ───────────────────────────────────────────
- *
- * WhatsApp no acepta texto libre fuera de las 24 horas siguientes a que la
- * clienta escriba, y ningún aviso de turno cae adentro de esa ventana. Lo que se
- * manda es el NOMBRE de una plantilla aprobada por Meta más los valores de sus
- * huecos: el texto lo arma Meta. Por eso esto no llama a
- * `buildAppointmentMessage` —que devuelve el mensaje entero— sino a `PLANTILLAS`
- * de `whatsapp-plantillas.ts`.
  *
  * ── A QUIÉN LE LLEGA ──────────────────────────────────────────────────────
  *
@@ -371,12 +514,11 @@ export async function deliverAppointmentWhatsapp(
   appointmentId: string,
   event: AppointmentEvent,
 ): Promise<DeliveryResult> {
-  const { whatsappConfigurado, enviarWhatsapp } =
-    await import("@/server/services/whatsapp.service");
+  const transporte = await transporteWhatsapp();
 
   // Se pregunta ANTES de ir a la base: sin canal encendido, buscar el turno para
   // después no mandar nada es una consulta por cada confirmación de turno.
-  if (!whatsappConfigurado()) {
+  if (!transporte) {
     return { sent: false, reason: "El envío de WhatsApp todavía no está configurado." };
   }
 
@@ -398,6 +540,23 @@ export async function deliverAppointmentWhatsapp(
         : "Esta clienta no tiene teléfono cargado.",
     };
   }
+
+  // Por Evolution viaja el texto entero; por Meta, el nombre de una plantilla y
+  // los valores de sus huecos. La diferencia está explicada en cada servicio; lo
+  // que importa acá es que el destinatario y el reparto se resolvieron una sola
+  // vez, arriba, y valen para los dos.
+  if (transporte === "evolution") {
+    const { enviarPorEvolution } = await import("@/server/services/evolution.service");
+
+    // El mismo texto que el mail, sin segunda redacción. Es la ventaja de que
+    // este canal acepte texto libre; ver el comentario de evolution.service.ts.
+    const { lines } = buildAppointmentMessage(event, datos.notifiable);
+    const envio = await enviarPorEvolution({ to: numero, texto: lines.join("\n") });
+
+    return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
+  }
+
+  const { enviarWhatsapp } = await import("@/server/services/whatsapp.service");
 
   const plantilla = PLANTILLAS[event];
   const envio = await enviarWhatsapp({

@@ -4,10 +4,10 @@ import {
   deliverAppointmentEmail,
   deliverAppointmentWhatsapp,
   deliverOverdueDigest,
+  transporteWhatsapp,
 } from "@/lib/notifications.server";
 import type { TurnoVencido } from "@/lib/notifications";
 import { yaVencio } from "@/lib/shiraf";
-import { whatsappConfigurado } from "@/server/services/whatsapp.service";
 
 /**
  * El recordatorio del día antes.
@@ -157,7 +157,7 @@ export async function runDailyReminders(): Promise<ReminderRun> {
   // cambian mientras el proceso vive. Sirve para dos cosas, las dos de log —
   // callar el "no está configurado" repetido treinta veces, y que el día que el
   // canal se encienda sus fallas se vean.
-  const conWhatsapp = whatsappConfigurado();
+  const conWhatsapp = (await transporteWhatsapp()) !== null;
 
   // De a uno y en serie, no en paralelo: son pocos por día —lo que entra en la
   // agenda de un centro— y Resend limita los envíos por segundo. Un Promise.all
@@ -166,16 +166,25 @@ export async function runDailyReminders(): Promise<ReminderRun> {
     const mail = await deliverAppointmentEmail(appointment.id, "reminder");
 
     /*
-     * El WhatsApp del recordatorio. Hoy no sale: el canal está apagado mientras
-     * no haya credenciales de Meta (ver `docs/whatsapp-automatico.md`), y en ese
-     * estado devuelve "todavía no está configurado" sin llamar a nadie.
+     * El WhatsApp del recordatorio. Sale si hay algún transporte configurado —el
+     * chip con Evolution o la API de Meta—; con los dos apagados devuelve
+     * "todavía no está configurado" sin llamar a nadie. Cuál es cuál, en
+     * `docs/whatsapp-automatico.md`.
+     *
+     * ⚠️ Éste es el punto del proyecto que más mensajes manda de una sentada:
+     * todos los turnos de mañana, uno atrás del otro. Por el camino de Evolution
+     * eso viaja por un canal no oficial, y una ráfaga es justo lo que hace que a
+     * un número lo miren de cerca. El espaciado no está acá sino en el `delay`
+     * de `evolution.service.ts`, que hace esperar a cada envío; el `for` de
+     * abajo es en serie, así que alcanza con eso.
      *
      * ── POR QUÉ ALCANZA CON QUE SALGA UNO DE LOS DOS ──────────────────────
      *
      * `reminded_at` significa "a esta clienta ya se le avisó del turno de
      * mañana", y no "salió el mail". Marcándolo cuando cualquiera de los dos
      * canales llegó, la segunda pasada del día no le manda un WhatsApp repetido
-     * a quien ya recibió el aviso — que además de molestar se cobra.
+     * a quien ya recibió el aviso — que molesta, y por el camino de Meta además
+     * se cobra.
      *
      * La contra es que un mail que falla no se reintenta si el WhatsApp salió.
      * Se elige igual: la clienta ya está avisada, que es lo que importaba, y el

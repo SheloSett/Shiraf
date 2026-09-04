@@ -115,8 +115,11 @@ export const notifyAppointment = createServerFn({ method: "POST" })
 
     // Dinámico y adentro del handler, como todo lo demás: notifications.server
     // importa Prisma, así que no puede entrar por un import de nivel superior.
-    const { deliverAppointmentEmail, deliverAppointmentWhatsapp } =
-      await import("@/lib/notifications.server");
+    const {
+      deliverAppointmentEmail,
+      deliverAppointmentWhatsapp,
+      deliverAppointmentToProfessional,
+    } = await import("@/lib/notifications.server");
 
     /*
      * Los dos canales, y el mail manda el resultado.
@@ -139,5 +142,47 @@ export const notifyAppointment = createServerFn({ method: "POST" })
     const mail = await deliverAppointmentEmail(data.appointmentId, data.event);
     const whatsapp = await deliverAppointmentWhatsapp(data.appointmentId, data.event);
 
-    return { ...mail, whatsapp };
+    /*
+     * El tercer destinatario: la profesional que atiende el turno.
+     *
+     * Se le avisa ADEMÁS del centro, no en vez del centro —decidido con la dueña
+     * el 4/9/2026—, y de los seis eventos que le cambian la agenda. Los otros
+     * dos, y todos los casos en que esto no manda nada sin que haya problema
+     * alguno, están explicados en `deliverAppointmentToProfessional`.
+     *
+     * `context.userId` va para que no le llegue un mail de algo que acaba de
+     * hacer ella misma desde el panel, que es el caso más frecuente ahora que
+     * todas las profesionales manejan turnos.
+     */
+    const professional = await deliverAppointmentToProfessional(
+      data.appointmentId,
+      data.event,
+      context.userId,
+    );
+
+    /*
+     * 🔴 El aviso que no sale queda en el log, siempre.
+     *
+     * El panel ya muestra el motivo en un toast, pero el toast dura cinco
+     * segundos y sólo existe si el aviso lo disparó una persona mirando la
+     * pantalla. Los otros dos caminos no tienen a nadie del centro delante:
+     *
+     *   · la reserva de la clienta (`reservar.tsx`), que dispara "new-request" y
+     *     "requested" con el fallo tragado a propósito para no romperle la
+     *     reserva por un mail;
+     *   · el recordatorio del reloj, que corre a las 10 de la mañana solo.
+     *
+     * 4/9/2026: una clienta de Hotmail no recibió el aviso de su turno y no
+     * había forma de saberlo desde acá. Éste es el único lugar por el que pasan
+     * los tres caminos, así que el renglón va acá y no en cada pantalla.
+     *
+     * El WhatsApp NO se loguea: hoy está apagado en las dos instalaciones y
+     * contesta "no está configurado" en cada aviso, así que sería una línea de
+     * ruido por turno tapando justamente las que importan.
+     */
+    if (!mail.sent) {
+      console.error(`[aviso] ${data.event} · turno ${data.appointmentId}: ${mail.reason}`);
+    }
+
+    return { ...mail, whatsapp, professional };
   });

@@ -344,6 +344,182 @@ export function buildAppointmentMessage(
   }
 }
 
+/**
+ * El mismo hecho, contado a la profesional que atiende el turno.
+ *
+ * ── POR QUÉ ES UNA FUNCIÓN APARTE Y NO TRES EVENTOS NUEVOS ────────────────
+ *
+ * Porque no son hechos nuevos: son los mismos ocho, mirados desde la tercera
+ * silla. Un turno que se cancela es UN evento; que le llegue a la clienta, al
+ * centro y a la profesional no lo convierte en tres.
+ *
+ * Meterlos como `AppointmentEvent` nuevos —"pro-cancelled" y compañía— habría
+ * obligado a inventarles plantillas de WhatsApp en `whatsapp-plantillas.ts`, que
+ * tiene un registro por evento, y a sumarlos al `z.enum` de
+ * notifications.functions.ts. Todo eso para avisos que hoy sólo salen por mail.
+ *
+ * ── POR QUÉ NO REUSA EL TEXTO DEL CENTRO ──────────────────────────────────
+ *
+ * Los tres avisos internos ya están escritos para quien mira la agenda, así que
+ * la tentación es mandarle ésos y listo. No sirven: hablan desde el negocio —"el
+ * horario quedó libre", "confirmalo desde el panel"— y la profesional no
+ * confirma turnos ni vende el hueco. Lo que ella necesita saber es que SU día
+ * cambió, y el enlace que le sirve es su agenda, no la lista general.
+ *
+ * ── LOS DOS QUE DEVUELVEN null, Y POR QUÉ ─────────────────────────────────
+ *
+ *   · "requested" · Es el mismo hecho que "new-request" —la clienta reservó—
+ *     contado para el otro lado. Los dos se disparan juntos al reservar, así que
+ *     mandar los dos serían dos mails por la misma reserva, con dos minutos de
+ *     diferencia. Gana "new-request", que es el que está escrito para adentro.
+ *
+ *   · "reminder" · Sale una vez por turno del día siguiente. A la profesional
+ *     con seis turnos le llegarían seis mails cada mañana diciéndole cosas que
+ *     ya sabe. Lo que sirve ahí es un resumen del día, que es otra cosa y no
+ *     existe todavía — mientras tanto tiene su agenda en el panel.
+ *
+ * Devuelve null también cuando el turno no tiene profesional asignada: no es un
+ * error, es un turno que todavía no se le repartió a nadie.
+ */
+export function buildProfessionalMessage(
+  event: AppointmentEvent,
+  appointment: NotifiableAppointment,
+): AppointmentMessage | null {
+  if (event === "requested" || event === "reminder") return null;
+  if (!appointment.professionalName) return null;
+
+  const pro = firstName(appointment.professionalName);
+  const when = whenPhrase(appointment.startsAt);
+  const agenda = `${CONTACT.siteUrl}/admin/mi-agenda`;
+
+  /*
+   * La sesión, dicha en tercera persona.
+   *
+   * No se usa `sessionPhrase` —que sería lo natural— porque está escrita para la
+   * clienta y dice "de TU tratamiento". Acá la lee la profesional, y un mail que
+   * le habla de su propio tratamiento se nota enseguida que es texto reciclado.
+   */
+  const sesion =
+    appointment.sessionsTotal && appointment.sessionsTotal > 1 && appointment.sessionNumber
+      ? `Sesión ${appointment.sessionNumber} de ${appointment.sessionsTotal}.`
+      : null;
+
+  /*
+   * Quién viene, con el teléfono si está.
+   *
+   * A diferencia del mail de la clienta, acá el nombre va COMPLETO: la
+   * profesional necesita reconocer a quién tiene en la agenda, y dos Marías en
+   * el mismo día son perfectamente posibles.
+   */
+  const quien = `${appointment.clientName}${appointment.clientPhone ? ` · ${appointment.clientPhone}` : ""}`;
+
+  /*
+   * Qué se hace. Igual que `whatPhrase` pero sin el "con Micaela" del final:
+   * este mail lo está leyendo Micaela.
+   */
+  const que = appointment.serviceName;
+
+  /** El cierre, igual en los seis: dónde mirarlo. */
+  const cierre = ["", `Tu agenda: ${agenda}`];
+
+  switch (event) {
+    case "new-request":
+      return {
+        subject: `Turno nuevo para confirmar — ${appointment.clientName}`,
+        lines: [
+          `Hola ${pro}, te reservaron un turno por el sitio.`,
+          "",
+          quien,
+          `Sería ${when}`,
+          ...(que ? [que] : []),
+          ...(sesion ? [sesion] : []),
+          "",
+          "Todavía está pendiente: lo confirma el centro.",
+          ...cierre,
+        ],
+      };
+
+    case "confirmed":
+      return {
+        subject: `Turno confirmado — ${appointment.clientName}`,
+        lines: [
+          `Hola ${pro}, se confirmó un turno en tu agenda.`,
+          "",
+          quien,
+          `Queda ${when}`,
+          ...(que ? [que] : []),
+          ...(sesion ? [sesion] : []),
+          ...cierre,
+        ],
+      };
+
+    case "cancelled":
+      return {
+        subject: `Turno cancelado — ${appointment.clientName}`,
+        lines: [
+          `Hola ${pro}, se canceló un turno de tu agenda.`,
+          "",
+          quien,
+          `Era ${when}`,
+          ...(que ? [que] : []),
+          ...(appointment.cancelReason ? ["", `Motivo: ${appointment.cancelReason}`] : []),
+          "",
+          "Ese horario te queda libre.",
+          ...cierre,
+        ],
+      };
+
+    // Los dos que siguen son el mismo hecho que los dos de arriba, pero
+    // decididos por la clienta desde «Mi cuenta» en vez de por el centro. Para
+    // la agenda de la profesional el efecto es idéntico; lo que cambia es que
+    // acá nadie del equipo se enteró, y por eso el mail lo dice.
+    case "client-cancelled":
+      return {
+        subject: `Turno cancelado por la clienta — ${appointment.clientName}`,
+        lines: [
+          `Hola ${pro}, te cancelaron un turno: lo dio de baja la clienta desde su cuenta.`,
+          "",
+          quien,
+          `Era ${when}`,
+          ...(que ? [que] : []),
+          ...(appointment.cancelReason ? ["", `Motivo: ${appointment.cancelReason}`] : []),
+          "",
+          "Ese horario te queda libre.",
+          ...cierre,
+        ],
+      };
+
+    // Los dos de movimiento dicen sólo el horario NUEVO, por el mismo motivo
+    // que el mail de la clienta: nombrar el viejo invita a confundir cuál vale.
+    // Acá además el viejo ya no existe en la base cuando esto se arma.
+    case "rescheduled":
+      return {
+        subject: `Turno movido — ${appointment.clientName}`,
+        lines: [
+          `Hola ${pro}, se movió un turno de tu agenda.`,
+          "",
+          quien,
+          `Queda ${when}`,
+          ...(que ? [que] : []),
+          ...cierre,
+        ],
+      };
+
+    case "client-rescheduled":
+      return {
+        subject: `Turno movido por la clienta — ${appointment.clientName}`,
+        lines: [
+          `Hola ${pro}, te movieron un turno: lo cambió la clienta desde su cuenta.`,
+          "",
+          quien,
+          `Queda ${when}`,
+          ...(que ? [que] : []),
+          ...cierre,
+        ],
+      };
+  }
+}
+
 /** Un turno que ya pasó y sigue abierto, para el resumen de abajo. */
 export type TurnoVencido = {
   id: string;
