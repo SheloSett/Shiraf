@@ -168,7 +168,7 @@ function limiteDe(ctx: Ctx): number {
  */
 const FORMA_DE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function porIdOSlug(clave: string): { id: string } | { slug: string } {
+export function porIdOSlug(clave: string): { id: string } | { slug: string } {
   return FORMA_DE_UUID.test(clave) ? { id: clave } : { slug: clave };
 }
 

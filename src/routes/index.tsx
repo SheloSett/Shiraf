@@ -19,6 +19,7 @@ import { imageUrl } from "@/lib/cloudinary";
 import { buildWhatsappUrl } from "@/lib/contact";
 import { lista, renglones, texto } from "@/lib/contenido";
 import { useContenido } from "@/hooks/useContenido";
+import { urlDe } from "@/lib/seo";
 import { formatMoney } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/")({
@@ -35,7 +36,21 @@ export const Route = createFileRoute("/")({
         property: "og:description",
         content: "Tratamientos faciales, corporales y aparatología. Reservá tu turno online.",
       },
+      { property: "og:url", content: urlDe("/") },
     ],
+    /**
+     * El `canonical` de esta página, y de acá en más el de cada una.
+     *
+     * Es el que se había descartado en el root —ver el comentario largo allá—:
+     * puesto arriba lo heredan todas las páginas y cada ficha de tratamiento
+     * termina declarándose copia de la portada. Puesto acá, ruta por ruta,
+     * cada una dice su propia dirección, que es lo que un canonical significa.
+     *
+     * Sirve para lo mismo que el redirect del www: que una página a la que se
+     * puede llegar por más de una dirección —con `?utm_source=` de una campaña,
+     * por ejemplo— cuente como una sola en vez de como varias parecidas.
+     */
+    links: [{ rel: "canonical", href: urlDe("/") }],
   }),
   component: Home,
 });

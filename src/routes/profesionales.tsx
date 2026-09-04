@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import type { RtaProfesionalesConDetalle } from "@/lib/api-tipos";
 import { texto } from "@/lib/contenido";
 import { useContenido } from "@/hooks/useContenido";
+import { urlDe } from "@/lib/seo";
 import { agruparPorDia, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/profesionales")({
@@ -25,7 +26,10 @@ export const Route = createFileRoute("/profesionales")({
         property: "og:description",
         content: "Especialidades, tratamientos y horarios de atención del equipo de Shiraf.",
       },
+      { property: "og:url", content: urlDe("/profesionales") },
     ],
+    // Su propia dirección, no la de la portada. El motivo, en index.tsx.
+    links: [{ rel: "canonical", href: urlDe("/profesionales") }],
   }),
   component: ProfessionalsPage,
 });

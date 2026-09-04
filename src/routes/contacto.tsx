@@ -18,6 +18,7 @@ import type { RtaServicios } from "@/lib/api-tipos";
 import { buildWhatsappUrl } from "@/lib/contact";
 import { lista, texto } from "@/lib/contenido";
 import { useContenido } from "@/hooks/useContenido";
+import { urlDe } from "@/lib/seo";
 
 export const Route = createFileRoute("/contacto")({
   head: () => ({
@@ -33,7 +34,10 @@ export const Route = createFileRoute("/contacto")({
         property: "og:description",
         content: "Consultanos por WhatsApp. Dirección, horarios y cómo llegar.",
       },
+      { property: "og:url", content: urlDe("/contacto") },
     ],
+    // Su propia dirección, no la de la portada. El motivo, en index.tsx.
+    links: [{ rel: "canonical", href: urlDe("/contacto") }],
   }),
   component: ContactPage,
 });

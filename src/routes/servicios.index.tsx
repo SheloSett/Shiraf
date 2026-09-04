@@ -9,6 +9,7 @@ import type { RtaServicios } from "@/lib/api-tipos";
 import { imageUrl } from "@/lib/cloudinary";
 import { texto } from "@/lib/contenido";
 import { useContenido } from "@/hooks/useContenido";
+import { urlDe } from "@/lib/seo";
 import { aSlug, formatMoney, precioYDuracion } from "@/lib/shiraf";
 import { cn } from "@/lib/utils";
 
@@ -53,7 +54,10 @@ export const Route = createFileRoute("/servicios/")({
         property: "og:description",
         content: "Conocé todos los tratamientos faciales, corporales y de aparatología de Shiraf.",
       },
+      { property: "og:url", content: urlDe("/servicios") },
     ],
+    // Su propia dirección, no la de la portada. El motivo, en index.tsx.
+    links: [{ rel: "canonical", href: urlDe("/servicios") }],
   }),
   component: ServicesPage,
 });

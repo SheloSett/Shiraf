@@ -8,6 +8,8 @@ import { OrganicRule } from "@/components/organic-rule";
 import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { cabeceraDelTratamiento } from "@/lib/catalogo.functions";
+import { recortar, tratamientoLd, urlDe } from "@/lib/seo";
 import type { RtaProfesionalesConHorarios, RtaServicio } from "@/lib/api-tipos";
 import { imageUrl, videoPosterUrl, videoUrl } from "@/lib/cloudinary";
 import { agruparPorDia, aSlug, formatMoney, soloHoraYMinutos, WEEKDAYS } from "@/lib/shiraf";
@@ -21,16 +23,84 @@ import { agruparPorDia, aSlug, formatMoney, soloHoraYMinutos, WEEKDAYS } from "@
 // publico.controller.ts), así que un enlace viejo con el id abre esta misma
 // pantalla: lo que venga por acá se le pasa al servidor tal cual.
 export const Route = createFileRoute("/servicios/$slug")({
-  head: () => ({
-    meta: [
-      { title: "Tratamiento — Shiraf" },
-      {
-        name: "description",
-        content:
-          "Detalle del tratamiento: en qué consiste, cuánto dura, quién lo realiza y cómo reservar tu turno en Shiraf.",
-      },
-    ],
-  }),
+  /**
+   * El nombre del tratamiento, para el `<head>`.
+   *
+   * Corre en el servidor antes de renderizar, que es la única forma de que el
+   * título esté en el HTML servido. Lo que dibuja la pantalla sigue viniendo
+   * del `useQuery` de más abajo, sin cambios: ver `catalogo.functions.ts`.
+   *
+   * ⚠️ El catch no se puede sacar. Un loader que tira no deja la ficha sin
+   * título: deja la pantalla de error, y por un dato que sólo sirve para el
+   * buscador. Sin cabecera, el `<head>` cae al texto genérico —el mismo que
+   * había hasta ahora— y la ficha se dibuja igual.
+   *
+   * ── POR QUÉ DEVUELVE `pudoLeerse` Y NO SÓLO LA CABECERA ─────────────────
+   *
+   * Porque "este tratamiento no existe" y "no se pudo preguntar" terminan los
+   * dos sin cabecera, y de ahí abajo se toma una decisión que no es la misma
+   * para los dos casos: si no existe, la página lleva `noindex`.
+   *
+   * Sin la distinción, un rato de base caída haría que TODAS las fichas se
+   * sirvan pidiéndole a Google que las saque, y volver de eso no es inmediato:
+   * hay que esperar a que las vuelva a rastrear una por una.
+   */
+  loader: async ({ params }) => {
+    try {
+      return { cabecera: await cabeceraDelTratamiento({ data: params.slug }), pudoLeerse: true };
+    } catch (error) {
+      console.error("[seo] La ficha queda con el título genérico:", error);
+      return { cabecera: null, pudoLeerse: false };
+    }
+  },
+  head: ({ params, loaderData }) => {
+    const cabecera = loaderData?.cabecera ?? null;
+
+    // Un tratamiento que la base dice que no existe. Pasa de verdad y no es un
+    // error: el slug SE REGENERA cuando cambia el nombre (ver schema.prisma),
+    // así que renombrar un tratamiento deja viva su dirección anterior, que
+    // responde 200 con una pantalla de "no está disponible". Sin esta línea,
+    // Google la indexa y la muestra en los resultados.
+    //
+    // Va sólo cuando la base contestó. Si no se pudo leer, la página no se
+    // toca: ver el comentario del loader.
+    const noExiste = loaderData?.pudoLeerse === true && cabecera === null;
+    // El slug de la base y no el de la URL: quien entra con el UUID —un enlace
+    // viejo, ver el comentario de arriba— declara como dirección buena la
+    // legible, y Google cuenta las visitas de las dos en una sola página.
+    const ruta = `/servicios/${cabecera?.slug ?? params.slug}`;
+    const url = urlDe(ruta);
+
+    const titulo = cabecera ? `${cabecera.nombre} — Shiraf` : "Tratamiento — Shiraf";
+    const descripcion = cabecera?.descripcion
+      ? recortar(cabecera.descripcion)
+      : "Detalle del tratamiento: en qué consiste, cuánto dura, quién lo realiza y cómo reservar tu turno en Shiraf.";
+
+    return {
+      meta: [
+        { title: titulo },
+        { name: "description", content: descripcion },
+        // Sin estos dos, la vista previa de WhatsApp de una ficha muestra el
+        // título del sitio entero: el root los define y todo lo hereda.
+        { property: "og:title", content: titulo },
+        { property: "og:description", content: descripcion },
+        { property: "og:url", content: url },
+        ...(noExiste ? [{ name: "robots", content: "noindex, follow" }] : []),
+      ],
+      // Una página que le pide a Google que la saque no le declara además cuál
+      // es su dirección buena: son dos instrucciones que se contradicen.
+      links: noExiste ? [] : [{ rel: "canonical", href: url }],
+      scripts: cabecera
+        ? [
+            tratamientoLd({
+              nombre: cabecera.nombre,
+              descripcion,
+              ruta,
+            }),
+          ]
+        : [],
+    };
+  },
   component: ServiceDetail,
 });
 

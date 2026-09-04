@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { WhatsappFab } from "@/components/whatsapp-fab";
 import { CONTACT } from "@/lib/contact";
+import { fichaDelSitio } from "@/lib/seo";
 import { obtenerContenido } from "@/lib/contenido.functions";
 import type { ContenidoDelSitio } from "@/lib/contenido";
 
@@ -112,7 +113,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
    * panel no espera nada, porque después de guardar invalida el router a mano.
    */
   staleTime: 5 * 60 * 1000,
-  head: () => ({
+  head: ({ loaderData }) => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
@@ -187,6 +188,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: "https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400..700&family=Karla:wght@300;400;500;600;700&display=swap",
       },
     ],
+    /**
+     * La ficha del negocio para los buscadores. Ver `seo.ts` para el qué y el
+     * por qué; acá va sólo el motivo de que esté en el root.
+     *
+     * Va acá porque los datos que necesita —dirección, teléfono, horarios,
+     * redes— son los del `loader` de esta misma ruta, que ya los trae para el
+     * pie de página. Ninguna otra ruta los tiene sin pedirlos de nuevo.
+     *
+     * Que la hereden también /admin y /mi-cuenta no molesta: esas rutas están
+     * fuera de robots.txt y nadie las indexa.
+     */
+    scripts: [fichaDelSitio(loaderData)],
   }),
   shellComponent: RootShell,
   component: RootComponent,
