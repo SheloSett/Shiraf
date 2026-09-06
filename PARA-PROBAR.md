@@ -18,8 +18,10 @@ puedan sacar turnos, y que si alguien ya tenía uno, el panel avise.
 
 ### Qué hay
 
-- Sección nueva en el menú: **Configuración**, pegada a Accesos, con dos
-  subsecciones adentro: **Días cerrados** (nueva) y **Contenido del sitio**
+- Sección nueva en el menú: **Configuración**, al fondo del menú y pegada al
+  pie donde está la cuenta (la primera versión la tenía entre Productos y
+  Accesos; la dueña pidió bajarla), con dos subsecciones adentro: **Días
+  cerrados** (nueva) y **Contenido del sitio**
   (que se mudó ahí desde el menú principal; `/admin/contenido` redirige a la
   dirección nueva). Tocar «Configuración» abre una portada con una tarjeta
   por subsección. Cada una pide lo suyo: Días cerrados, «Gestionar turnos» (no
