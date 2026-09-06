@@ -230,11 +230,42 @@ const nav = [
   //     access: "admin",
   //     children: [],
   //   },
+  // 5/9/2026, más tarde — Configuración estuvo acá, entre Productos y Accesos,
+  // unas horas. La dueña la vio en producción y pidió bajarla al fondo del
+  // menú, pegada al pie donde está la cuenta. Ahora es la ÚLTIMA entrada de
+  // esta lista (después de Accesos), y el menú la manda al fondo con `mt-auto`.
+  // La entrada queda comentada y no borrada por la regla de este repo:
+  //
+  //   {
+  //     to: "/admin/configuracion",
+  //     label: "Configuración",
+  //     icon: Settings,
+  //     exact: true,
+  //     access: "panel",
+  //     children: SECCIONES_DE_CONFIGURACION.map((s) => ({
+  //       to: s.to,
+  //       label: s.label,
+  //       access: s.access,
+  //     })),
+  //   },
+  {
+    to: "/admin/accesos",
+    label: "Accesos",
+    icon: ShieldCheck,
+    exact: false,
+    access: "admin",
+    children: [],
+  },
   {
     // Lo que el centro decide una vez y vale para todo (5/9/2026): qué días no
     // se abre, qué dice el sitio. Por ahora esas dos; lo que siga entra acá.
-    // Va donde estaba «Contenido del sitio», pegada a Accesos, por lo mismo
-    // que aquélla: es de la familia de lo que se decide, no de lo que se hace.
+    //
+    // ⚠️ Tiene que ser la ÚLTIMA de la lista. Va al fondo del menú, pegada al
+    // pie donde está la cuenta y separada de las secciones del negocio por el
+    // espacio que sobre: es lo que se decide una vez, no lo que se usa todo el
+    // día. Lo pidió la dueña mirando la primera versión, que la tenía entre
+    // Productos y Accesos. Quién la manda al fondo es el `mt-auto` del menú, y
+    // eso sólo funciona si en el DOM viene última.
     //
     // Las subsecciones piden accesos DISTINTOS —Días cerrados, `appointments`;
     // Contenido, `admin`— y por eso cada una declara el suyo (la lista vive en
@@ -255,14 +286,6 @@ const nav = [
       label: s.label,
       access: s.access,
     })),
-  },
-  {
-    to: "/admin/accesos",
-    label: "Accesos",
-    icon: ShieldCheck,
-    exact: false,
-    access: "admin",
-    children: [],
   },
 ] as const;
 
@@ -436,7 +459,13 @@ function AdminLayout() {
             SHIRAF
           </span>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-col lg:overflow-visible">
+        {/* 5/9/2026 — `lg:flex-1`: en escritorio el menú ocupa todo el alto que
+            queda entre el logo y el pie, para que Configuración pueda irse al
+            fondo con un `mt-auto` (ver el envoltorio de cada sección, abajo).
+            Sin esto el menú mide lo que miden sus entradas y no hay "fondo" al
+            que mandarla. className vieja:
+            "flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-col lg:overflow-visible" */}
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-1 lg:flex-col lg:overflow-visible">
           {visibleNav.map((item) => {
             const active = item.exact
               ? location.pathname === item.to
@@ -448,8 +477,24 @@ function AdminLayout() {
             // decisión manda sobre la automática.
             const open = openSections[item.to] ?? sectionActive;
 
+            // Configuración va al FONDO del menú, pegada al pie donde está la
+            // cuenta y separada de las secciones del negocio por el espacio que
+            // sobre y una línea (pedido de la dueña, 5/9/2026): es lo que se
+            // decide una vez, no lo que se usa todo el día. Sólo en escritorio:
+            // en el celular el menú es una tira horizontal, el envoltorio es
+            // `contents` (no pinta nada) y ahí simplemente va última. className
+            // vieja, la misma para todas: "contents lg:block"
+            const alFondo = item.to === "/admin/configuracion";
+
             return (
-              <div key={item.to} className="contents lg:block">
+              <div
+                key={item.to}
+                className={
+                  alFondo
+                    ? "contents lg:mt-auto lg:block lg:border-t lg:border-primary-foreground/10 lg:pt-3"
+                    : "contents lg:block"
+                }
+              >
                 {/* El link y la flechita van en la misma fila pero separados:
                     tocar el nombre navega, tocar la flecha sólo despliega. Si
                     fuera un botón solo, no se podría entrar a "Servicios". */}
