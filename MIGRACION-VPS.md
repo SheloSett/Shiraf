@@ -202,9 +202,10 @@ ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose logs app --since 10m | gre
 
 ### Paso 5 — El corte
 
-Requisitos antes de empezar: el paso 4 salió bien, y el **TTL del registro A
-de shiraf.com.ar está bajado a 300** desde al menos un día antes (se hace en
-el panel del DNS; ver «DNS» abajo). Elegir un momento de poco uso.
+Requisitos antes de empezar: el paso 4 salió bien, y tener abierto el panel
+de Cloudflare en DNS → Records de shiraf.com.ar (el TTL ya es 300 por la nube
+gris; ver «DNS» abajo). Elegir un momento de poco uso: el sitio no responde
+unos minutos entre 5a y 5f.
 
 **5a. Frenar la app del viejo.** Desde acá el sitio no responde (nginx da 502)
 hasta el 5f. Con la base de 9 MB son unos minutos:
@@ -295,15 +296,27 @@ ssh shelo@82.25.74.242 "docker ps --filter name=shiraf-backup --format '{{.Names
 
 ## DNS
 
-**Pendiente saber dónde se administran los tres dominios `.com.ar`** (NIC
-Argentina delega a algún servidor de DNS: puede ser el panel de Hostinger, el
-del registrador, o Cloudflare). El padre ya apuntó los suyos al VPS nuevo, así
-que casi seguro es el mismo panel. Hace falta para:
+Resuelto el 6/9/2026: los tres dominios están registrados en **NIC Argentina**
+y delegados a **Cloudflare** (`natasha.ns.cloudflare.com`, `scott.ns.cloudflare.com`).
+Comprobado con `nslookup` contra 1.1.1.1:
 
-1. Bajar el TTL de los registros A a 300 **un día antes** de cada corte.
-2. Cambiar el A y el `www` en el corte.
-3. Si alguno pasa por Cloudflare, el plan cambia: ver «Si en vez de nginx va
-   Cloudflare» en `DOCKER.md`.
+| Dominio                                | Resuelve a      | Nube             |
+| -------------------------------------- | --------------- | ---------------- |
+| shiraf.com.ar y www                    | `177.7.59.16`   | gris (sólo DNS)  |
+| manhattannegociosinmobiliarios.com.ar  | `177.7.59.16`   | gris (sólo DNS)  |
+| igwtstore.com.ar                       | `104.21.88.135` | **naranja** (pasa por Cloudflare) |
+
+Consecuencias:
+
+- **Shiraf y manhattan**: con nube gris Cloudflare usa TTL «Auto» = 300 s, así
+  que no hay que bajar nada un día antes. El corte se hace cambiando los
+  registros A de `shiraf.com.ar` y `www` a `82.25.74.242` en el panel de
+  Cloudflare (DNS → Records → Edit), **dejando la nube gris**. Aplica en
+  segundos.
+- **igwtstore**: pasa por Cloudflare, así que cuando le toque hay que seguir
+  «Si en vez de nginx va Cloudflare» de `DOCKER.md` adaptado a Caddy:
+  `TRUST_PROXY=cloudflare` en su configuración y el origen cerrado a lo que
+  no venga de Cloudflare. Y en el corte, cambiar el A sin tocar la nube.
 
 ---
 
