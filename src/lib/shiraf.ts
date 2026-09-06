@@ -511,7 +511,54 @@ export const TOLERANCIA_MINUTOS = 10;
  *
  * Cuando el centro decida, esto es una sola línea.
  */
-export const ALLOW_OVERTIME = false;
+// export const ALLOW_OVERTIME = false;
+
+/**
+ * Cuántos minutos después de su hora de salida puede terminar el ÚLTIMO turno
+ * del día. En 0 no se desborda nunca.
+ *
+ * ── EL CENTRO RESPONDIÓ (6/9/2026): HASTA MEDIA HORA ──────────────────────
+ *
+ * Esta es la respuesta a la pregunta que arriba quedó pendiente desde el
+ * 17/8/2026. Llegó por dos quejas de la dueña, y las dos eran el mismo caso —
+ * una profesional de 14:30 a 17:30:
+ *
+ *   Lifting de pestañas (30 + 10):  14:30 15:10 15:50 16:30, termina 17:00.
+ *                                   Quedan 30 minutos muertos.
+ *   Radiofrecuencia facial (60 + 10):  14:30 15:40, termina 16:40.
+ *                                   Quedan 50 minutos muertos.
+ *
+ * Lo que hay que entender de esos números es que el turno que falta NO ENTRA:
+ * 30 minutos libres no alcanzan para un lifting que arranca 17:10 (termina
+ * 17:40), y 50 no alcanzan para una radiofrecuencia de 60 que arranca 16:50
+ * (termina 17:50). No había nada que arreglar en el cálculo — para que esos
+ * turnos existan, la profesional tiene que salir más tarde. Eso es lo que el
+ * centro decidió aceptar.
+ *
+ * ── POR QUÉ UN NÚMERO Y NO EL `true` QUE ESTABA PREVISTO ──────────────────
+ *
+ * Porque el booleano no sabe distinguir "un ratito más" de "casi una hora",
+ * que es justo lo que dice el comentario de `ALLOW_OVERTIME` acá arriba: en
+ * `true` el desborde lo acota la DURACIÓN del tratamiento, así que una sesión
+ * larga reservada al filo dejaría a la profesional una hora tarde, y la reservó
+ * una clienta sola desde el sitio — cuando el centro se entera ya está
+ * comprometido y hay que llamarla para cancelar.
+ *
+ * Con un tope, los dos casos que la dueña pidió entran (10 y 20 minutos tarde)
+ * y el de la depilación de 90 al filo sigue sin ofrecerse. Los 30 los eligió
+ * ella; 20 era el mínimo que resolvía los dos.
+ *
+ * ⚠️ ESTE NÚMERO SE LEE EN DOS LADOS y los dos tienen que moverse juntos: acá,
+ * para ofrecer el horario, y en `exigirQueEntreEnLaAgenda`
+ * (server/services/turnos.service.ts), que es quien lo deja entrar. Si sólo se
+ * cambiara acá, el sitio ofrecería un horario que al confirmar rebota con
+ * "Ese horario está fuera de la agenda de la profesional".
+ *
+ * El desborde vale ÚNICAMENTE al cierre del día, nunca en un corte del medio:
+ * estirarse a las 14:00 cuando la profesional trabaja 11–14 y 14:30–17:30 no es
+ * quedarse un rato más, es comerle el almuerzo. Eso lo aplica `buildSlots`.
+ */
+export const MAX_OVERTIME_MINUTES = 30;
 
 /**
  * Los horarios que se le pueden ofrecer a alguien para un tratamiento.
@@ -613,11 +660,27 @@ export function buildSlots(
   for (const window of windows) {
     for (const gap of freeGaps(window, blocked)) {
       // Sólo el hueco que llega hasta la hora de salida puede desbordar. Contra
-      // otro turno no hay desborde posible: ese tiempo es de otra clienta.
-      const canOverrun = ALLOW_OVERTIME && gap.to === closing;
+      // otro turno no hay desborde posible: ese tiempo es de otra clienta, y
+      // contra un corte del medio tampoco: ése es su almuerzo.
+      //
+      // Antes: `const canOverrun = ALLOW_OVERTIME && gap.to === closing;`
+      const limite = gap.to === closing ? gap.to + MAX_OVERTIME_MINUTES * MINUTE : gap.to;
 
       for (let start = gap.from; ; start += step) {
-        const fits = canOverrun ? start < gap.to : start + tratamiento.minutos * MINUTE <= gap.to;
+        /*
+         * Dos condiciones, y las dos hacen falta.
+         *
+         * EMPEZAR dentro del horario: sin esto, un tratamiento corto con el
+         * tope en 30 se podría ofrecer a las 17:35 — después de que la
+         * profesional se fue— y terminaría "a tiempo" igual.
+         *
+         * TERMINAR antes del límite: es el tope de desborde. Con
+         * MAX_OVERTIME_MINUTES en 0, `limite` es `gap.to` y esta línea dice
+         * exactamente lo que decía la vieja rama de `canOverrun` en false.
+         *
+         * Antes: `canOverrun ? start < gap.to : start + minutos <= gap.to`
+         */
+        const fits = start < gap.to && start + tratamiento.minutos * MINUTE <= limite;
         if (!fits) break;
         // Los horarios ya pasados no se ofrecen, ni siquiera los de esta mañana
         // cuando se mira el día de hoy a la tarde.

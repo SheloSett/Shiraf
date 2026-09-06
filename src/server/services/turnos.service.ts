@@ -1,4 +1,4 @@
-import { estaAusente } from "@/lib/shiraf";
+import { estaAusente, MAX_OVERTIME_MINUTES } from "@/lib/shiraf";
 import { prisma } from "@/server/db";
 // 5/9/2026 — se suma `fechaDesdeTexto`, que necesita `hoyEnElCentro()` (abajo).
 // El import viejo queda comentado y no borrado por la regla de este repo.
@@ -412,14 +412,65 @@ async function exigirQueEntreEnLaAgenda(
     throw new ErrorDeRegla("Ese horario está fuera de la agenda de la profesional.");
   }
 
-  const entra = await prisma.professional_schedules.findFirst({
-    where: {
-      professional_id: profesionalId,
-      weekday: desde.diaDeLaSemana,
-      start_time: { lte: comoHora(desde.minutosDelDia) },
-      end_time: { gte: comoHora(hasta.minutosDelDia) },
-    },
-    select: { id: true },
+  /*
+   * ── EL ÚLTIMO TURNO DEL DÍA PUEDE PASARSE UN RATO ───────────────────────
+   *
+   * Antes esto era un `findFirst` que le pedía a Postgres un tramo con
+   * `start_time <= inicio AND end_time >= fin`, o sea: el turno tenía que
+   * terminar DENTRO del horario, sin excepción.
+   *
+   *   const entra = await prisma.professional_schedules.findFirst({
+   *     where: {
+   *       professional_id: profesionalId,
+   *       weekday: desde.diaDeLaSemana,
+   *       start_time: { lte: comoHora(desde.minutosDelDia) },
+   *       end_time: { gte: comoHora(hasta.minutosDelDia) },
+   *     },
+   *     select: { id: true },
+   *   });
+   *
+   * Desde el 6/9/2026 el centro acepta que el último turno del día termine
+   * hasta `MAX_OVERTIME_MINUTES` después de la hora de salida, y esta es la
+   * mitad de esa regla que DEJA ENTRAR el turno. La otra mitad —la que lo
+   * ofrece— está en `buildSlots`. Las dos leen la misma constante a propósito:
+   * si sólo se moviera la de allá, el sitio ofrecería un horario que acá
+   * rebotaría con este mismo error, y la clienta lo vería fallar recién al
+   * confirmar.
+   *
+   * El desborde vale sólo contra el CIERRE del día. Contra un corte del medio
+   * no: una profesional de 11–14 y 14:30–17:30 que se estira a las 14 no se
+   * está quedando un rato más, está perdiendo el almuerzo. Por eso se traen
+   * todos los tramos del día y se mira cuál es el último, en vez de preguntar
+   * tramo por tramo.
+   *
+   * Esto no le aplica al centro: `validarTurno` ni siquiera llama acá cuando
+   * quien carga el turno tiene el permiso `appointments` — el panel puede
+   * registrar cualquier horario, y está explicado más arriba.
+   */
+  const tramosDelDia = await prisma.professional_schedules.findMany({
+    where: { professional_id: profesionalId, weekday: desde.diaDeLaSemana },
+    select: { start_time: true, end_time: true },
+  });
+
+  // `@db.Time` llega como un Date en el 1/1/1970 UTC: es la vuelta de
+  // `comoHora`, que sigue abajo porque la sigue usando quien la use.
+  const enMinutos = (t: Date) => t.getUTCHours() * 60 + t.getUTCMinutes();
+  const cierre = Math.max(0, ...tramosDelDia.map((t) => enMinutos(t.end_time)));
+
+  const entra = tramosDelDia.some((tramo) => {
+    const abre = enMinutos(tramo.start_time);
+    const cierra = enMinutos(tramo.end_time);
+
+    // Tiene que EMPEZAR adentro del tramo. Sin esta segunda condición, un
+    // tratamiento corto se colaría empezando después de la hora de salida y
+    // terminando igual dentro del tope.
+    if (abre > desde.minutosDelDia || desde.minutosDelDia >= cierra) return false;
+
+    // Lo normal: termina adentro.
+    if (cierra >= hasta.minutosDelDia) return true;
+
+    // Y si no, sólo se le perdona al último tramo del día.
+    return cierra === cierre && hasta.minutosDelDia <= cierre + MAX_OVERTIME_MINUTES;
   });
 
   if (!entra) {
