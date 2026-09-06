@@ -118,6 +118,34 @@ Ya no hace falta el `crear-admin.sql`: las 4 cuentas se cargaron con el seed,
 conservando sus UUID originales. Para una cuenta nueva con rol admin, hoy es un
 `UPDATE` en `user_roles` desde `npm run studio`.
 
+### Los días que el centro no abre (5/9/2026)
+
+Un feriado no es de una profesional: es de todas. Hasta ahora había que
+cargarlo ficha por ficha, con `professional_absences`. Ahora es una tabla
+propia, y una sección del panel:
+
+| Pieza                                          | Qué hace                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `center_closures` en `schema.prisma`           | Un rango de días, extremos incluidos. El porqué de no reusar las ausencias está ahí |
+| `exigirQueElCentroAbra()` en `turnos.service`  | El candado. Corre adentro de `validarTurno`, así tapa reservar Y "cambiar el turno" |
+| `disponibilidad()` en `reservar.controller`    | Los mezcla con las ausencias: para los calendarios es lo mismo, ese día se tacha    |
+| `cierres.service` / `cierres.controller`       | La lista, el alta, la baja, y los turnos que quedaron en pie adentro de cada cierre |
+| `/admin/dias-cerrados`                         | La pantalla. Permiso `appointments`, no `team`: ver `PERMISOS.md`                   |
+
+Dos decisiones que conviene tener presentes:
+
+- **Cerrar un día no cancela nada solo.** Los turnos que ya estaban dados son
+  clientas con la confirmación por mail en la mano; se muestran al guardar,
+  quedan en rojo en la lista y se cuentan en el menú hasta que alguien los
+  reprograme o cancele uno por uno. Es la misma decisión que se tomó para las
+  ausencias el 31/8.
+- **El centro sí puede cargar un turno un día cerrado**, desde el panel, igual
+  que puede cargarlo fuera de horario. El calendario se lo muestra en gris; la
+  excepción a mano sigue existiendo. El candado es sólo para quien reserva
+  desde el sitio.
+
+Como toda columna nueva, pide `db:sync` en la base local y en la del VPS.
+
 ## 3. El bug de la doble reserva (resuelto)
 
 Vale entenderlo porque no era obvio.
