@@ -400,11 +400,22 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       31/8/2026: `professional_absences`, un rango de días por profesional que se
       carga desde su ficha en Accesos. Lo hacen cumplir `buildSlots` en la
       pantalla y `exigirQueEntreEnLaAgenda` en el servidor.
-- [ ] **Feriados del centro** — los que valen para TODAS, no para una. Hoy hay
+- [x] ~~**Feriados del centro** — los que valen para TODAS, no para una. Hoy hay
       que cargar el 25 de diciembre profesional por profesional, y una que se
       agregue después nace sin él. Es la misma tabla con `professional_id`
       nullable, o una propia; conviene decidirlo antes de que haya muchas filas
-      cargadas a mano.
+      cargadas a mano.~~ Hecho el 5/9/2026, en la rama `trabajo/dias-cerrados`:
+      tabla **propia**, `center_closures` (el porqué de no reusar las ausencias
+      está escrito en el esquema). Se carga desde **Configuración → Días
+      cerrados** en el panel —Configuración también es nueva: agrupa eso y
+      «Contenido del sitio»—, con permiso `appointments`. Lo hace cumplir
+      `exigirQueElCentroAbra` en `validarTurno` —así tapa la reserva y el
+      "cambiar el turno" de la clienta a la vez— y los calendarios lo reciben
+      mezclado con las ausencias en `/api/reservar/disponibilidad`. Los turnos
+      que ya estaban dados esos días **no se cancelan solos**: se muestran al
+      guardar, quedan marcados en rojo en la lista y se cuentan en el menú
+      hasta que alguien los reprograme o cancele uno por uno. Cómo probarlo:
+      [`PARA-PROBAR.md`](PARA-PROBAR.md).
 
 ## ✅ Tanda 3 — los 5 bugs medianos, hechos (16/8/2026)
 

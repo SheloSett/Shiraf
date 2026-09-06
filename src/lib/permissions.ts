@@ -183,12 +183,23 @@ export type AccessRequirement = Permission | "admin" | "panel" | "own_agenda";
  * base ('clients_notes' y 'stock_costs') sí llegaba a ver el dato.
  *
  * El orden no importa: ninguna ruta es prefijo de otra.
+ *
+ * 5/9/2026 — dejó de ser cierto para una: `/admin/configuracion` es prefijo de
+ * sus subsecciones, así que va DESPUÉS de ellas. Ver la nota en esa fila.
  */
 const ADMIN_ROUTES = [
   { path: "/admin/turnos", access: "appointments" },
   // Los recordatorios de mañana para mandar por WhatsApp. Es la agenda de un día
   // mirada de otra forma, así que pide lo mismo que verla.
   { path: "/admin/avisos", access: "appointments" },
+  // Los días que el centro no abre. Pide lo mismo que Turnos y no `team` como
+  // las ausencias de una profesional: cerrar el centro es una decisión de
+  // agenda, y los turnos que deja en pie los resuelve quien gestiona turnos.
+  //
+  // Se mudó adentro de Configuración el mismo día que nació (5/9/2026). La
+  // ruta vieja ya no existe; queda comentada por la regla de este repo:
+  //   { path: "/admin/dias-cerrados", access: "appointments" },
+  { path: "/admin/configuracion/dias-cerrados", access: "appointments" },
   { path: "/admin/servicios", access: "catalog" },
   { path: "/admin/categorias-servicios", access: "catalog" },
   { path: "/admin/profesionales", access: "team" },
@@ -207,6 +218,20 @@ const ADMIN_ROUTES = [
   // Igual estaría cubierto por el fail-closed de más abajo; se declara para que
   // la respuesta esté escrita y no dependa de un default.
   { path: "/admin/contenido", access: "admin" },
+  // 5/9/2026 — Contenido se mudó adentro de Configuración. La fila de arriba
+  // se queda porque /admin/contenido sigue existiendo, sólo para redirigir a
+  // la dirección nueva (por si quedó en algún marcador).
+  { path: "/admin/configuracion/contenido", access: "admin" },
+  // La portada de Configuración. Pide «panel» y no un permiso porque sus
+  // subsecciones piden accesos distintos entre sí: la portada muestra las
+  // tarjetas que la persona puede abrir, y cada subsección exige lo suyo en
+  // su propia fila, más arriba.
+  //
+  // ⚠️ Va DESPUÉS de sus subsecciones a propósito: `requiredAccessFor` se queda
+  // con la primera fila que coincida, y ésta coincide por prefijo con las dos
+  // de arriba. Puesta antes, Contenido pasaría a pedir «panel» y cualquiera
+  // del centro entraría a tocar el sitio.
+  { path: "/admin/configuracion", access: "panel" },
   // Su contraseña, no el negocio: no depende de ninguna casilla.
   { path: "/admin/cuenta", access: "panel" },
   // Sus propios turnos. Tampoco depende de una casilla: depende de que la ficha

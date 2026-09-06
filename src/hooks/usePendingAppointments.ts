@@ -72,3 +72,21 @@ export function usePendingAppointments(enabled = true) {
 export function useUnassignedAppointments(enabled = true) {
   return useContadores(enabled).data?.sinProfesional ?? 0;
 }
+
+/**
+ * Cuántos turnos siguen en pie en días que el centro cerró.
+ *
+ * Es de la misma familia que el de arriba y por el mismo motivo existe como
+ * número en el menú: cerrar un día no cancela nada solo —esos turnos son
+ * clientas con la confirmación en la mano—, así que quedan esperando que
+ * alguien los reprograme o los cancele uno por uno. Hasta entonces, la clienta
+ * va a llegar un día en que no hay nadie.
+ *
+ * Sale del mismo endpoint que los otros dos, así que se refresca con ellos:
+ * cada vez que se toca un turno, y cada minuto.
+ *
+ * @param enabled igual que arriba.
+ */
+export function useAppointmentsOnClosedDays(enabled = true) {
+  return useContadores(enabled).data?.enDiasCerrados ?? 0;
+}

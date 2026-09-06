@@ -12,13 +12,19 @@ import {
   BellRing,
   CalendarCheck,
   CalendarDays,
+  // 5/9/2026 — CalendarOff y FileText eran los íconos de «Días cerrados» y de
+  // «Contenido del sitio» como secciones sueltas. Las dos se mudaron adentro
+  // de Configuración, y sus íconos ahora salen de SECCIONES_DE_CONFIGURACION.
+  // Quedan comentados y no borrados por la regla de este repo.
+  // CalendarOff,
   ChevronDown,
   ClipboardList,
-  FileText,
+  // FileText,
   LayoutDashboard,
   LineChart,
   LogOut,
   Package,
+  Settings,
   ShieldCheck,
   Sparkles,
   UserCog,
@@ -29,7 +35,15 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { apiPost } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
-import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
+// 5/9/2026 — se suma el contador de los turnos en días cerrados. La línea vieja
+// queda comentada por la regla de este repo.
+// import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
+import {
+  useAppointmentsOnClosedDays,
+  usePendingAppointments,
+  useUnassignedAppointments,
+} from "@/hooks/usePendingAppointments";
+import { SECCIONES_DE_CONFIGURACION } from "@/lib/configuracion";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
 import { puedeEntrarAlPanel } from "@/lib/sesion";
 
@@ -135,13 +149,36 @@ const nav = [
     access: "appointments",
     children: [],
   },
+  // 5/9/2026 — «Días cerrados» nació como sección propia, acá, cerrando el
+  // bloque de la agenda. El mismo día la dueña pidió una sección Configuración
+  // que la agrupe con «Contenido del sitio», así que se mudó ahí abajo (y su
+  // ruta pasó a /admin/configuracion/dias-cerrados). La entrada queda comentada
+  // y no borrada por la regla de este repo.
+  //
+  //   {
+  //     // Los días que el centro no abre: feriados, vacaciones de todo el equipo.
+  //     // Cierra el bloque de la agenda —Calendario, Turnos, Avisos— porque es
+  //     // parte de la misma decisión: qué días se puede reservar. Pide lo mismo
+  //     // que Turnos y no `team`, como las ausencias de una profesional: lo que
+  //     // deja en pie lo resuelve quien gestiona turnos.
+  //     to: "/admin/dias-cerrados",
+  //     label: "Días cerrados",
+  //     icon: CalendarOff,
+  //     exact: false,
+  //     access: "appointments",
+  //     children: [],
+  //   },
   {
     to: "/admin/servicios",
     label: "Servicios",
     icon: Sparkles,
     exact: false,
     access: "catalog",
-    children: [{ to: "/admin/categorias-servicios", label: "Categorías" }],
+    // 5/9/2026 — cada subsección declara su acceso, porque en Configuración
+    // (más abajo) piden accesos distintos entre sí y el menú las filtra de a
+    // una. Acá piden lo mismo que la sección. La línea vieja, comentada:
+    //   children: [{ to: "/admin/categorias-servicios", label: "Categorías" }],
+    children: [{ to: "/admin/categorias-servicios", label: "Categorías", access: "catalog" }],
   },
   {
     to: "/admin/profesionales",
@@ -175,17 +212,49 @@ const nav = [
     icon: Package,
     exact: false,
     access: "stock",
-    children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
+    // Ídem Servicios: la subsección declara su acceso. La línea vieja:
+    //   children: [{ to: "/admin/categorias-productos", label: "Categorías" }],
+    children: [{ to: "/admin/categorias-productos", label: "Categorías", access: "stock" }],
   },
+  // 5/9/2026 — «Contenido del sitio» se mudó adentro de Configuración, acá
+  // abajo, y su ruta pasó a /admin/configuracion/contenido (la vieja redirige).
+  // La entrada queda comentada y no borrada por la regla de este repo.
+  //
+  //   {
+  //     // Los textos y las fotos del sitio público. Va pegada a Accesos porque es
+  //     // de la misma familia: las dos cosas que no se delegan con una casilla.
+  //     to: "/admin/contenido",
+  //     label: "Contenido del sitio",
+  //     icon: FileText,
+  //     exact: false,
+  //     access: "admin",
+  //     children: [],
+  //   },
   {
-    // Los textos y las fotos del sitio público. Va pegada a Accesos porque es
-    // de la misma familia: las dos cosas que no se delegan con una casilla.
-    to: "/admin/contenido",
-    label: "Contenido del sitio",
-    icon: FileText,
-    exact: false,
-    access: "admin",
-    children: [],
+    // Lo que el centro decide una vez y vale para todo (5/9/2026): qué días no
+    // se abre, qué dice el sitio. Por ahora esas dos; lo que siga entra acá.
+    // Va donde estaba «Contenido del sitio», pegada a Accesos, por lo mismo
+    // que aquélla: es de la familia de lo que se decide, no de lo que se hace.
+    //
+    // Las subsecciones piden accesos DISTINTOS —Días cerrados, `appointments`;
+    // Contenido, `admin`— y por eso cada una declara el suyo (la lista vive en
+    // SECCIONES_DE_CONFIGURACION, compartida con la portada). La sección se
+    // muestra si la persona puede abrir al menos una, y sólo se le dibujan las
+    // que puede: ver visibleNav. La portada (/admin/configuracion) pide
+    // «panel» y hace el mismo filtro con sus tarjetas.
+    //
+    // `exact: true` como Servicios y Productos: adentro de una subsección se
+    // resalta la subsección, no la sección — que igual queda desplegada.
+    to: "/admin/configuracion",
+    label: "Configuración",
+    icon: Settings,
+    exact: true,
+    access: "panel",
+    children: SECCIONES_DE_CONFIGURACION.map((s) => ({
+      to: s.to,
+      label: s.label,
+      access: s.access,
+    })),
   },
   {
     to: "/admin/accesos",
@@ -263,9 +332,31 @@ function AdminLayout() {
   // Turnos que se van a atender y no tienen a quién. Es trabajo pendiente del
   // centro, no un aviso: si nadie los resuelve, ese día no hay profesional.
   const unassignedCount = useUnassignedAppointments(can("appointments"));
+  // Turnos dados en días que después el centro cerró. Es de la misma familia
+  // que el de arriba: la clienta tiene la confirmación y ese día no va a haber
+  // nadie. Sale del mismo endpoint, así que se refresca con los otros dos.
+  const closedDaysCount = useAppointmentsOnClosedDays(can("appointments"));
 
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
-  const visibleNav = nav.filter((item) => allows(item.access));
+  //
+  // 5/9/2026 — una sección cuyas subsecciones piden accesos distintos
+  // (Configuración) se muestra sólo si la persona puede abrir AL MENOS UNA:
+  // sin esto, una profesional que sólo tiene su agenda vería un «Configuración»
+  // vacío. Y adentro se le dibujan sólo las que puede. Se filtra acá y no al
+  // dibujar, para que el resto del menú siga leyendo `item.children` sin tener
+  // que preguntarse nada. La línea vieja, comentada por la regla de este repo:
+  //
+  //   const visibleNav = nav.filter((item) => allows(item.access));
+  const visibleNav = nav
+    .filter(
+      (item) =>
+        allows(item.access) &&
+        (item.children.length === 0 || item.children.some((child) => allows(child.access))),
+    )
+    .map((item) => ({
+      ...item,
+      children: item.children.filter((child) => allows(child.access)),
+    }));
 
   // Guard de la sección abierta. Va acá y no en cada ruta hija porque todas
   // renderizan dentro de este <Outlet />: en un solo lugar no hay forma de
@@ -405,6 +496,37 @@ function AdminLayout() {
                         )}
                       </span>
                     )}
+                    {/* El contador de Días cerrados (5/9/2026). Rojo, como el
+                        de sin profesional y por lo mismo: un turno dado en un
+                        día que después se cerró es una clienta que va a llegar
+                        y no va a encontrar a nadie. No se resuelve solo y no
+                        salta a la vista en ninguna otra pantalla, así que se
+                        ve desde todas.
+
+                        Desde que «Días cerrados» vive adentro de Configuración,
+                        el número va sobre «Configuración» mientras la sección
+                        está PLEGADA —que es como se la ve desde cualquier otra
+                        pantalla— y sobre la subsección cuando está desplegada
+                        (más abajo, en las hijas). Lo de antes, cuando era una
+                        sección propia, comentado por la regla de este repo:
+
+                        {item.to === "/admin/dias-cerrados" && closedDaysCount > 0 && (
+                          <span
+                            title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
+                            className="ml-auto min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                          >
+                            {closedDaysCount > 99 ? "99+" : closedDaysCount}
+                          </span>
+                        )}
+                    */}
+                    {item.to === "/admin/configuracion" && closedDaysCount > 0 && !open && (
+                      <span
+                        title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
+                        className="ml-auto min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                      >
+                        {closedDaysCount > 99 ? "99+" : closedDaysCount}
+                      </span>
+                    )}
                   </Link>
 
                   {item.children.length > 0 && (
@@ -459,6 +581,18 @@ function AdminLayout() {
                               }`}
                             >
                               {child.label}
+                              {/* El número de Días cerrados cuando la sección
+                                  está desplegada; plegada, va sobre
+                                  «Configuración» (arriba). */}
+                              {child.to === "/admin/configuracion/dias-cerrados" &&
+                                closedDaysCount > 0 && (
+                                  <span
+                                    title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
+                                    className="ml-2 inline-block min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                                  >
+                                    {closedDaysCount > 99 ? "99+" : closedDaysCount}
+                                  </span>
+                                )}
                             </Link>
                           );
                         })}

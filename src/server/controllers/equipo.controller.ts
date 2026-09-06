@@ -10,7 +10,14 @@ import {
 import { PERMISSION_VALUES, type Permission } from "@/lib/permissions";
 import { diaConTramosSuperpuestos, estaAusente, WEEKDAYS } from "@/lib/shiraf";
 import { comoFecha, comoHora, fechaDesdeTexto, horaDesdeTexto } from "@/server/serializar";
-import { enHoraDelCentro, nombreDelTratamiento } from "@/server/services/turnos.service";
+// 5/9/2026 — `hoyEnElCentro` se mudó a turnos.service (ver abajo). El import
+// viejo queda comentado por la regla de este repo.
+// import { enHoraDelCentro, nombreDelTratamiento } from "@/server/services/turnos.service";
+import {
+  enHoraDelCentro,
+  hoyEnElCentro,
+  nombreDelTratamiento,
+} from "@/server/services/turnos.service";
 import type {
   RtaAusenciaGuardada,
   RtaEmpleadas,
@@ -44,10 +51,17 @@ type HorarioAGuardar = { id?: string; weekday: number; start_time: Date; end_tim
  * de Buenos Aires el servidor —que en el contenedor corre en UTC— ya está en
  * el día siguiente, y una ausencia que empieza hoy se dejaría de mostrar unas
  * horas antes de tiempo.
+ *
+ * 5/9/2026 — SE MUDÓ a turnos.service.ts, exportada, y de ahí se importa
+ * arriba. La pasaron a necesitar también los cierres del centro
+ * (cierres.service.ts), y "hoy" tiene que ser el mismo día en las dos listas:
+ * escrita dos veces, un día una de las dos se corrige y la otra no. Queda
+ * comentada y no borrada por la regla de este repo.
+ *
+ *   function hoyEnElCentro(): Date {
+ *     return fechaDesdeTexto(enHoraDelCentro(new Date()).fecha) ?? new Date();
+ *   }
  */
-function hoyEnElCentro(): Date {
-  return fechaDesdeTexto(enHoraDelCentro(new Date()).fecha) ?? new Date();
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lectura

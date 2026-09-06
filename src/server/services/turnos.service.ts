@@ -1,6 +1,9 @@
 import { estaAusente } from "@/lib/shiraf";
 import { prisma } from "@/server/db";
-import { comoFecha } from "@/server/serializar";
+// 5/9/2026 — se suma `fechaDesdeTexto`, que necesita `hoyEnElCentro()` (abajo).
+// El import viejo queda comentado y no borrado por la regla de este repo.
+// import { comoFecha } from "@/server/serializar";
+import { comoFecha, fechaDesdeTexto } from "@/server/serializar";
 import { ErrorDeAcceso, puede, type Acceso } from "@/server/services/authz.service";
 
 /**
@@ -326,6 +329,21 @@ export async function validarTurno(
     throw new ErrorDeRegla("No se puede reservar un turno en el pasado.");
   }
 
+  /*
+   * ── Y QUE EL CENTRO ABRA ESE DÍA (5/9/2026) ──────────────────────────────
+   *
+   * Va ANTES de mirar a la profesional a propósito: un feriado no es "esa
+   * profesional no atiende", es que no atiende nadie, y quien reserva merece
+   * leer eso y no un mensaje que la mande a probar con otra.
+   *
+   * Sólo a quien reserva desde el sitio. El centro puede cargar un turno un día
+   * cerrado igual que puede cargarlo fuera de horario o un día que la
+   * profesional avisó que no viene: es su excepción, la carga a sabiendas, y
+   * la pantalla se lo muestra en gris antes. Es la misma línea que dibuja
+   * `exigirQueEntreEnLaAgenda` para las otras dos reglas.
+   */
+  if (!esCentro) await exigirQueElCentroAbra(turno.starts_at);
+
   if (turno.professional_id === null) {
     // El centro puede dejarlo sin asignar y resolverlo después.
     if (esCentro) return validado;
@@ -426,8 +444,19 @@ async function exigirQueEntreEnLaAgenda(
     // existe porque "vencido" se había escrito dos veces y se separaron.
     where: {
       professional_id: profesionalId,
-      starts_on: { lte: fin },
-      ends_on: { gte: inicio },
+      // 5/9/2026 — el corte se ensancha un día de cada lado. Así como estaba
+      // se le escapaba el turno de la noche: `starts_on` y `ends_on` son
+      // medianoche UTC del día, y un turno de las 22:00 de Buenos Aires ya es
+      // la 01:00 UTC del día siguiente, así que `ends_on >= inicio` daba falso
+      // para una ausencia de ese mismo día y la reserva pasaba. Es el mismo
+      // margen que `turnosDentroDe` en equipo.controller tiene desde el
+      // principio, y por el mismo motivo. Quien decide sigue siendo
+      // `estaAusente`, abajo, sobre la fecha ya pasada a hora del centro.
+      //
+      //   starts_on: { lte: fin },
+      //   ends_on: { gte: inicio },
+      starts_on: { lte: new Date(fin.getTime() + UN_DIA) },
+      ends_on: { gte: new Date(inicio.getTime() - UN_DIA) },
     },
     select: { starts_on: true, ends_on: true },
   });
@@ -439,6 +468,44 @@ async function exigirQueEntreEnLaAgenda(
 
   if (ausente) {
     throw new ErrorDeRegla("Esa profesional no atiende ese día.");
+  }
+}
+
+const UN_DIA = 24 * 60 * 60 * 1000;
+
+/**
+ * Que el centro abra ese día. Ver `center_closures` en el esquema.
+ *
+ * Es el candado de los días cerrados para todas —feriados, vacaciones de todo
+ * el equipo—, y es el que importa: los calendarios ya no ofrecen esos días,
+ * pero eso es comodidad, y un POST armado a mano no pasa por ninguna pantalla.
+ * Lo llama `validarTurno`, así que cubre la reserva de la clienta Y el
+ * "cambiar el turno" desde su cuenta, que también pasa por ahí.
+ *
+ * Mira sólo el día en que EMPIEZA el turno, pasado a hora del centro. Un turno
+ * que cruce la medianoche lo corta `exigirQueEntreEnLaAgenda` igual, y para
+ * una clienta nunca llega hasta acá con esa forma.
+ *
+ * El corte grueso sobra un día de cada lado por lo mismo que se explica arriba
+ * en las ausencias; quien decide es `estaAusente`, que es LA definición de "ese
+ * día no se atiende" y no hay otra.
+ */
+async function exigirQueElCentroAbra(inicio: Date): Promise<void> {
+  const tapan = await prisma.center_closures.findMany({
+    where: {
+      starts_on: { lte: new Date(inicio.getTime() + UN_DIA) },
+      ends_on: { gte: new Date(inicio.getTime() - UN_DIA) },
+    },
+    select: { starts_on: true, ends_on: true },
+  });
+
+  const cerrado = estaAusente(
+    enHoraDelCentro(inicio).fecha,
+    tapan.map((c) => ({ starts_on: comoFecha(c.starts_on), ends_on: comoFecha(c.ends_on) })),
+  );
+
+  if (cerrado) {
+    throw new ErrorDeRegla("El centro está cerrado ese día.");
   }
 }
 
@@ -472,6 +539,23 @@ export function enHoraDelCentro(instante: Date): HoraDelCentro {
   const diaDeLaSemana = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(dia);
 
   return { fecha, diaDeLaSemana, minutosDelDia: hh * 60 + mm };
+}
+
+/**
+ * Hoy, como día del almanaque del centro, en la forma de un `@db.Date`.
+ *
+ * `new Date()` a secas serviría casi siempre y fallaría de noche: a las 22:30
+ * de Buenos Aires el servidor —que en el contenedor corre en UTC— ya está en
+ * el día siguiente, y una ausencia o un cierre que empiezan hoy se dejarían de
+ * mostrar unas horas antes de tiempo.
+ *
+ * Vivía adentro de equipo.controller.ts como función privada. Se mudó acá el
+ * 5/9/2026, al lado de `enHoraDelCentro` de la que sale, porque lo pasaron a
+ * necesitar también los cierres del centro y "hoy" tiene que ser el mismo día
+ * en las dos listas.
+ */
+export function hoyEnElCentro(): Date {
+  return fechaDesdeTexto(enHoraDelCentro(new Date()).fecha) ?? new Date();
 }
 
 /**

@@ -176,6 +176,13 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // Los días que el centro no abre: feriados, vacaciones de todo el equipo.
+      if (pathname.startsWith("/api/cierres")) {
+        const { cierresRouter } = await import("./server/routes/cierres.routes");
+        const respuesta = await cierresRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
