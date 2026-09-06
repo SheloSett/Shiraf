@@ -130,7 +130,8 @@ propia, y una sección del panel:
 | `exigirQueElCentroAbra()` en `turnos.service`  | El candado. Corre adentro de `validarTurno`, así tapa reservar Y "cambiar el turno" |
 | `disponibilidad()` en `reservar.controller`    | Los mezcla con las ausencias: para los calendarios es lo mismo, ese día se tacha    |
 | `cierres.service` / `cierres.controller`       | La lista, el alta, la baja, y los turnos que quedaron en pie adentro de cada cierre |
-| `/admin/dias-cerrados`                         | La pantalla. Permiso `appointments`, no `team`: ver `PERMISOS.md`                   |
+| `/admin/configuracion/dias-cerrados`           | La pantalla. Permiso `appointments`, no `team`: ver `PERMISOS.md`                   |
+| `/admin/configuracion`                         | **Configuración**, sección nueva del menú que agrupa esto y «Contenido del sitio» (que se mudó a `/admin/configuracion/contenido`; la URL vieja redirige). Las subsecciones viven en `src/lib/configuracion.ts` |
 
 Dos decisiones que conviene tener presentes:
 

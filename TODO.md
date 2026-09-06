@@ -406,8 +406,9 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       nullable, o una propia; conviene decidirlo antes de que haya muchas filas
       cargadas a mano.~~ Hecho el 5/9/2026, en la rama `trabajo/dias-cerrados`:
       tabla **propia**, `center_closures` (el porqué de no reusar las ausencias
-      está escrito en el esquema). Se carga desde la sección nueva «Días
-      cerrados» del panel, con permiso `appointments`. Lo hace cumplir
+      está escrito en el esquema). Se carga desde **Configuración → Días
+      cerrados** en el panel —Configuración también es nueva: agrupa eso y
+      «Contenido del sitio»—, con permiso `appointments`. Lo hace cumplir
       `exigirQueElCentroAbra` en `validarTurno` —así tapa la reserva y el
       "cambiar el turno" de la clienta a la vez— y los calendarios lo reciben
       mezclado con las ausencias en `/api/reservar/disponibilidad`. Los turnos

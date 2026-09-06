@@ -18,11 +18,17 @@ puedan sacar turnos, y que si alguien ya tenía uno, el panel avise.
 
 ### Qué hay
 
-- Sección nueva en el panel: **Días cerrados**, después de Avisos. Pide
-  «Gestionar turnos» (no «Gestionar profesionales», como las ausencias: el
-  porqué está en `src/server/PERMISOS.md`). Se carga Desde/Hasta —un día solo
-  dejando «Hasta» vacío— y un motivo opcional; abajo, la lista de los cierres
-  por venir, cada uno con «Reabrir».
+- Sección nueva en el menú: **Configuración**, pegada a Accesos, con dos
+  subsecciones adentro: **Días cerrados** (nueva) y **Contenido del sitio**
+  (que se mudó ahí desde el menú principal; `/admin/contenido` redirige a la
+  dirección nueva). Tocar «Configuración» abre una portada con una tarjeta
+  por subsección. Cada una pide lo suyo: Días cerrados, «Gestionar turnos» (no
+  «Gestionar profesionales», como las ausencias: el porqué está en
+  `src/server/PERMISOS.md`); Contenido, la dueña. Quien no pueda abrir ninguna
+  no ve la sección.
+- **Días cerrados** se carga Desde/Hasta —un día solo dejando «Hasta» vacío— y
+  un motivo opcional; abajo, la lista de los cierres por venir, cada uno con
+  «Reabrir».
 - Desde que se guarda, la clienta **no puede reservar ese día** (rebota con «El
   centro está cerrado ese día») ni moverse un turno ahí desde «Mi cuenta». Los
   calendarios —/reservar, «Nuevo turno», reprogramar, sesión siguiente— lo
@@ -63,12 +69,19 @@ comprobaciones, todas OK:
 - **La pantalla en el navegador.** El formulario, el diálogo de «quedan
   turnos», el rojo de la lista y el número del menú están escritos siguiendo el
   patrón de Profesionales, pero nadie los abrió todavía. Es lo primero:
-  1. Entrar como dueña, ir a **Días cerrados**, cerrar un día que tenga un
-     turno confirmado. Tiene que salir el diálogo «Cerrado — pero quedan
-     turnos esos días» con ese turno.
+  0. Entrar como dueña: en el menú tiene que estar **Configuración** con
+     «Días cerrados» y «Contenido del sitio» adentro, y la portada con las dos
+     tarjetas. Como Micaela (sin ser dueña) sólo tiene que verse «Días
+     cerrados»; como Camila (sin accesos) la sección no tiene que aparecer.
+     Escribir `/admin/contenido` a mano tiene que llevar a
+     `/admin/configuracion/contenido`.
+  1. Ir a **Configuración → Días cerrados**, cerrar un día que tenga un turno
+     confirmado. Tiene que salir el diálogo «Cerrado — pero quedan turnos esos
+     días» con ese turno.
   2. Cerrarlo. La fila del cierre tiene que quedar con borde rojo, el turno
-     listado adentro con «Ver turno», y el menú con un **1** rojo al lado de
-     «Días cerrados».
+     listado adentro con «Ver turno», y el menú con un **1** rojo: al lado de
+     «Días cerrados» con la sección desplegada, y al lado de «Configuración»
+     cuando está plegada (que es como se ve desde las demás pantallas).
   3. Entrar a «Ver turno», reprogramarlo a otro día, volver: la fila tiene que
      quedar limpia («Sin turnos dados esos días») y el número del menú irse.
   4. «Nuevo turno» con ese día: el calendario lo muestra en gris; con «Cargar
