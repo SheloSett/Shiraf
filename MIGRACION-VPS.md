@@ -79,7 +79,7 @@ creería la IP a nadie.
 `01-preparar-vps-nuevo.sh` corrió bien. nginx quedó deshabilitado a mano
 (`sudo systemctl disable --now nginx`).
 
-### Paso 2 — Clonar el repo y traer lo que el repo no tiene
+### Paso 2 — Clonar el repo y traer lo que el repo no tiene ✅ (6/9/2026)
 
 **2a. El código**, en el nuevo. Se clona `main`, que desde el 6/9/2026 ya
 tiene el modo `docker` del limitador (la rama `migracion-vps` se mezcló):
@@ -129,7 +129,7 @@ ssh shelo@82.25.74.242 "sudo cp ~/shiraf.caddy /srv/proxy/sites/shiraf.caddy && 
 Tiene que terminar en `RECARGADO`. Los sitios del padre no se cortan con un
 reload.
 
-### Paso 3 — Construir la imagen en el nuevo
+### Paso 3 — Construir la imagen en el nuevo ✅ (6/9/2026)
 
 Tarda varios minutos y no toca ninguna base. Conviene hacerlo ahora y no en
 medio del corte:
@@ -138,7 +138,12 @@ medio del corte:
 ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose build 2>&1 | tail -5"
 ```
 
-### Paso 4 — Ensayo: copia de la base y sitio andando en el nuevo, sin tocar el DNS
+### Paso 4 — Ensayo: copia de la base y sitio andando en el nuevo, sin tocar el DNS ✅ (6/9/2026)
+
+> Resultado: volcado restaurado sin errores, `migrate` en sync con las reglas
+> verificadas, `shiraf-app` en la red `edge`, y la huella de los conteos
+> igual en los dos servidores (`de38e64c27ec`). El sitio abrió en
+> https://shiraf.82-25-74-242.sslip.io con certificado válido.
 
 El objetivo es ver el sitio completo en el nuevo, con los datos reales,
 mientras el viejo sigue sirviendo a todo el mundo. Lo que se restaure acá se
