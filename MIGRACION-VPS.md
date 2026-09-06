@@ -200,7 +200,14 @@ aviso de que quedó apagado):
 ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose logs app --since 10m | grep -iE 'limiter|error' ; echo '(sin lineas = bien)'"
 ```
 
-### Paso 5 — El corte
+### Paso 5 — El corte ✅ (6/9/2026, 13:51 a 13:58 hora argentina)
+
+> Hecho: app vieja frenada 13:51, volcado final de 21 KB, restaurado en el
+> nuevo sin errores, huella `de38e64c27ec` igual en los dos lados, registro A
+> cambiado en Cloudflare (el `www` es un CNAME al principal, no hubo que
+> tocarlo), `shiraf-dominio.caddy` cargado, certificado emitido en el primer
+> intento. https://shiraf.com.ar respondía desde el nuevo a las 13:58. Siete
+> minutos sin sitio en total.
 
 Requisitos antes de empezar: el paso 4 salió bien, y tener abierto el panel
 de Cloudflare en DNS → Records de shiraf.com.ar (el TTL ya es 300 por la nube
