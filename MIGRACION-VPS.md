@@ -81,12 +81,11 @@ creería la IP a nadie.
 
 ### Paso 2 — Clonar el repo y traer lo que el repo no tiene
 
-**2a. El código**, en el nuevo. Se clona la rama `migracion-vps`, que es la
-que tiene el modo `docker` del limitador; cuando se mezcle a `main` se cambia
-con `git checkout main && git pull`:
+**2a. El código**, en el nuevo. Se clona `main`, que desde el 6/9/2026 ya
+tiene el modo `docker` del limitador (la rama `migracion-vps` se mezcló):
 
 ```powershell
-ssh shelo@82.25.74.242 "git clone -b migracion-vps https://github.com/SheloSett/Shiraf.git ~/shiraf && cd ~/shiraf && git log --oneline -1"
+ssh shelo@82.25.74.242 "git clone https://github.com/SheloSett/Shiraf.git ~/shiraf && cd ~/shiraf && git log --oneline -1"
 ```
 
 **2b. El `.env`** (secretos: pasa por tu máquina y no por el repo), y un
@@ -281,8 +280,6 @@ ssh shelo@82.25.74.242 "docker ps --filter name=shiraf-backup --format '{{.Names
   durante dos semanas. Ni `down -v`, ni `volume rm`, ni borrar la carpeta.
 - A la semana: `ssh shelo@82.25.74.242 "ls -la ~/shiraf/backups/daily"` tiene
   que mostrar archivos nuevos cada día.
-- Cuando `migracion-vps` se mezcle a `main`: en el nuevo,
-  `cd ~/shiraf && git checkout main && git pull && docker compose up -d --build`.
 - Cuando estén los tres sitios en el nuevo y pasen las dos semanas: se da de
   baja el viejo desde el panel de Hostinger, se borra
   `C:\Users\shelo\migracion-vps`, y se actualizan `DOCKER.md`, `TODO.md` y
