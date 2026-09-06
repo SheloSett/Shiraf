@@ -73,7 +73,41 @@ function Calendar({
             : "[&>svg]:text-muted-foreground flex h-8 items-center gap-1 rounded-md pl-2 pr-1 text-sm [&>svg]:size-3.5",
           defaultClassNames.caption_label,
         ),
-        table: "w-full border-collapse",
+        /*
+         * ── POR QUÉ ESTO NO ES UNA TABLA AUNQUE SEAN <table>/<tbody>/<tr> ──
+         *
+         * react-day-picker arma el mes con etiquetas de tabla de verdad:
+         * <table> → <thead>/<tbody> → <tr> → <td>. Pero todo el diseño de acá
+         * abajo es flex: `week` y `weekdays` son `flex`, y cada día es
+         * `w-full` para repartirse la fila en siete.
+         *
+         * Mezclar las dos cosas —filas `display:flex` colgando de un <tbody>
+         * que sigue siendo `display:table-row-group`— obliga al navegador a
+         * inventar cajas de tabla anónimas alrededor de cada fila, y WebKit
+         * (el Safari de los iPhone) calcula mal la altura de ese híbrido:
+         * pinta las seis semanas bien espaciadas pero le informa al contenedor
+         * una altura de tres y media. Resultado en el teléfono: el recuadro del
+         * calendario cerraba a la mitad y las últimas semanas quedaban por
+         * fuera, encimadas con el texto de abajo. Chrome lo tolera, así que en
+         * la compu no se veía.
+         *
+         * La solución es que la tabla no se comporte como tabla: con `flex` en
+         * el <table>, el <thead> y el <tbody> pasan a ser ítems flex y el
+         * navegador los "blockifica" —`table-header-group` y
+         * `table-row-group` computan a `block`—, así que no queda ninguna caja
+         * de tabla anónima y la altura vuelve a ser la suma de las filas.
+         *
+         * La semántica no se pierde: react-day-picker pone `role="grid"` y
+         * `role="gridcell"` a mano, y un rol explícito le gana al implícito que
+         * el cambio de `display` se lleva puesto. El `role="row"` de las filas
+         * sí había que reponerlo, y va más abajo en el componente `Week`.
+         */
+        // Antes: `table: "w-full border-collapse"`. Esa clave no existe en la
+        // v9 de react-day-picker —la tabla se llama `month_grid`—, así que la
+        // línea no se aplicaba a nada: el <table> quedaba sin ninguna clase.
+        // table: "w-full border-collapse",
+        month_grid: cn("flex w-full flex-col", defaultClassNames.month_grid),
+        weeks: cn("flex w-full flex-col", defaultClassNames.weeks),
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
           "text-muted-foreground flex-1 select-none rounded-md text-[0.8rem] font-normal",
@@ -120,6 +154,12 @@ function Calendar({
           return <ChevronDownIcon className={cn("size-4", className)} {...props} />;
         },
         DayButton: CalendarDayButton,
+        // Con el <tbody> blockificado (ver `month_grid` arriba), los <tr>
+        // pierden el rol `row` que traían por ser fila de tabla. Se lo ponemos
+        // a mano para que el `role="grid"` siga teniendo filas adentro. El
+        // `week` se saca de las props porque no es un atributo del DOM, igual
+        // que hace el componente original.
+        Week: ({ week, ...props }) => <tr role="row" {...props} />,
         WeekNumber: ({ children, ...props }) => {
           return (
             <td {...props}>
