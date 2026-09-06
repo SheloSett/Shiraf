@@ -186,12 +186,19 @@ Si no podés venir, avisanos así liberamos el horario.`,
   // sería inventar palabras para cumplir una regla.
   "new-request": {
     nombre: "centro_turno_nuevo",
-    cuerpo: `Entró un turno por el sitio y espera confirmación.
+    // 6/9/2026 — decía "espera confirmación" y "Confirmalo desde el panel".
+    // El turno ya entra confirmado; lo que queda es mirarlo. Mismo cambio que
+    // en el mail (`buildCenterMessage`, caso "new-request").
+    //
+    // ⚠️ El texto de una plantilla aprobada por Meta NO se puede editar desde
+    // acá: hay que volver a mandarla a aprobación con este cuerpo, o el envío
+    // sale con el texto viejo. Ver el archivo de plantillas del panel.
+    cuerpo: `Entró un turno por el sitio y ya está confirmado.
 
 {{1}}
 Turno {{2}} para {{3}}.
 
-Confirmalo desde el panel: ${CONTACT.siteUrl}/admin/turnos`,
+Miralo desde el panel: ${CONTACT.siteUrl}/admin/turnos?estado=sin-ver`,
     params: (a) => [quienEs(a), cuando(a), queCosa(a)],
   },
 

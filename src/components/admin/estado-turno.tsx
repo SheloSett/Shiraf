@@ -15,8 +15,11 @@ import { cn } from "@/lib/utils";
  * color sin volver a leer. Ver \`appointmentTone\` en admin.index.tsx.
  */
 const TONO: Record<EstadoVisible, string> = {
-  // Dorado: espera una respuesta del centro.
-  pending: "border-gold/40 bg-gold/15 text-foreground",
+  // 6/9/2026 — se fue «Pendiente»: la clienta reserva y el turno queda
+  // confirmado en el acto, así que ya no hay nada esperando respuesta del
+  // centro. El dorado no quedó libre: ahora marca las filas SIN VER de la
+  // lista de turnos, que es lo que heredó la bandeja de entrada.
+  // pending: "border-gold/40 bg-gold/15 text-foreground",
   // Oliva claro: está todo bien, el turno viene.
   confirmed: "border-primary/30 bg-primary/10 text-foreground",
   // Oliva cargado, el único tono medio: cerrado, no hay nada que hacer.

@@ -457,6 +457,13 @@ export type TurnoDelPanel = {
   starts_at: string;
   status: string;
   duration_minutes: number;
+  /**
+   * Nadie del centro abrió todavía la ficha de este turno.
+   *
+   * Es lo que quedó de la pestaña «Pendiente»: el aviso de que entró algo
+   * nuevo. La lista lo marca en dorado y la pestaña «Sin ver» los junta.
+   */
+  sin_ver: boolean;
   client_notes: string | null;
   client_id: string | null;
   guest_name: string | null;

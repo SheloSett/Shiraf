@@ -577,7 +577,9 @@ export async function borrarClienta(ctx: Ctx) {
   const porVenir = await prisma.appointments.count({
     where: {
       client_id: id,
-      status: { in: ["pending", "confirmed"] },
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // status: { in: ["pending", "confirmed"] },
+      status: { in: ["confirmed"] },
       starts_at: { gt: new Date() },
     },
   });

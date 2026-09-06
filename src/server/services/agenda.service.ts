@@ -139,7 +139,9 @@ export async function miAgenda(userId: string, dias = 30): Promise<TurnoDeMiAgen
   const turnos = await prisma.appointments.findMany({
     where: {
       professional_id: fichaId,
-      status: { in: ["pending", "confirmed"] },
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // status: { in: ["pending", "confirmed"] },
+      status: { in: ["confirmed"] },
       starts_at: { lt: hasta },
     },
     orderBy: { starts_at: "asc" },
@@ -241,7 +243,9 @@ export async function horariosOcupados(
   const turnos = await prisma.appointments.findMany({
     where: {
       professional_id: profesionalId,
-      status: { in: ["pending", "confirmed"] },
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // status: { in: ["pending", "confirmed"] },
+      status: { in: ["confirmed"] },
       starts_at: { gte: desde, lt: hasta },
       ...(excluirId ? { id: { not: excluirId } } : {}),
     },

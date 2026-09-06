@@ -86,6 +86,54 @@ ALTER TABLE "appointments"
   CHECK (service_id IS NOT NULL OR btrim(coalesce(service_name, '')) <> '');
 
 
+-- ── 1.1 quater  El estado «pendiente» ya no existe ──────────────────────────
+--
+-- Pedido del centro (6/9/2026): la clienta reserva y el turno queda confirmado
+-- en el acto. Nadie tiene que aceptar nada.
+--
+-- ── POR QUÉ UN CHECK Y NO SACAR EL VALOR DEL ENUM ──────────────────────────
+--
+-- Sacar un valor de un enum de Postgres obliga a recrear el tipo, y el `db push`
+-- que corre el contenedor `migrate` va SIN `--accept-data-loss`: fallaría, y con
+-- él la cadena de arranque —la app no levanta si `migrate` no termina bien—.
+-- El CHECK consigue lo mismo donde importa: ninguna fila puede tener ese estado
+-- nunca más, venga de la app, de un import o de una corrección a mano. El valor
+-- queda muerto adentro del tipo, sin que nada lo pueda escribir.
+--
+-- ⚠️ Por eso `pending` SIGUE en el enum de `schema.prisma`. Si lo sacás de ahí,
+-- el próximo `db push` va a intentar recrear el tipo y romper el deploy.
+
+-- El relleno va primero, igual que el de `service_name` de arriba, y por el
+-- mismo motivo: con turnos en «pendiente» el CHECK no se podría crear. Los que
+-- había quedan confirmados, que es exactamente lo que el centro quiere que sean.
+-- Idempotente: después de la primera corrida no hay ninguno que actualizar.
+UPDATE appointments SET status = 'confirmed' WHERE status = 'pending';
+
+ALTER TABLE "appointments" DROP CONSTRAINT IF EXISTS appointments_status_not_pending;
+ALTER TABLE "appointments"
+  ADD CONSTRAINT appointments_status_not_pending
+  CHECK (status <> 'pending');
+
+
+-- ── 1.1 quinquies  Lo que el centro todavía no miró ─────────────────────────
+--
+-- `seen_at` reemplaza a la pestaña «Pendiente» como bandeja de entrada: hasta
+-- que «Pendiente» existió, el número en dorado del panel era lo que avisaba que
+-- habían entrado reservas nuevas. Ahora eso lo dice esta columna — vacía cuando
+-- reservó la clienta, con fecha cuando el turno lo cargó el centro (que no
+-- necesita avisarse a sí mismo) o cuando alguien abrió la ficha.
+--
+-- El relleno tiene un corte FIJO a propósito, y no un `WHERE seen_at IS NULL`
+-- a secas: esto corre en CADA push, así que sin el corte, cada deploy marcaría
+-- como vistas las reservas nuevas que todavía no vio nadie — el número volvería
+-- a cero solo y el centro se perdería turnos. Con la fecha fija, sólo alcanza a
+-- lo que ya existía cuando esto se estrenó, y es idempotente para siempre.
+UPDATE appointments
+   SET seen_at = created_at
+ WHERE seen_at IS NULL
+   AND created_at < TIMESTAMPTZ '2026-09-06 00:00:00-03';
+
+
 -- ── 1.2 Dos clientas no pueden reservar el mismo horario ────────────────────
 -- ESTE ES EL IMPORTANTE. Si esto se hiciera en código —"fijate si está libre" y
 -- después "insertá"— dos reservas que llegan juntas leen las dos que está libre

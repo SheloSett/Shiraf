@@ -178,7 +178,9 @@ export async function turnosProximos(ctx: Ctx) {
 
   const filas = await prisma.appointments.groupBy({
     by: ["professional_id"],
-    where: { status: { in: ["pending", "confirmed"] }, starts_at: { gte: new Date() } },
+    // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+    // where: { status: { in: ["pending", "confirmed"] }, starts_at: { gte: new Date() } },
+    where: { status: { in: ["confirmed"] }, starts_at: { gte: new Date() } },
     _count: { _all: true },
   });
 
@@ -654,7 +656,9 @@ async function turnosDentroDe(
   const candidatos = await prisma.appointments.findMany({
     where: {
       professional_id: profesionalId,
-      status: { in: ["pending", "confirmed"] },
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // status: { in: ["pending", "confirmed"] },
+      status: { in: ["confirmed"] },
       starts_at: {
         gte: new Date(desde.getTime() - UN_DIA),
         lt: new Date(hasta.getTime() + 2 * UN_DIA),

@@ -35,7 +35,8 @@ import type {
  * después los `profiles` de los que tenían cuenta. Acá es un include.
  */
 
-const ESTADOS = ["pending", "confirmed", "completed", "cancelled"] as const;
+// Antes: `["pending", "confirmed", "completed", "cancelled"]`.
+const ESTADOS = ["confirmed", "completed", "cancelled"] as const;
 
 function estadoDe(valor: string | null): appointment_status | null {
   return ESTADOS.includes(valor as (typeof ESTADOS)[number]) ? (valor as appointment_status) : null;
@@ -151,8 +152,15 @@ export async function listar(ctx: Ctx) {
   if (!todos && !estado) return json({ error: "Falta el estado." }, 400);
 
   const soloSinProfesional = ctx.url.searchParams.get("sinProfesional") === "1";
+  /*
+   * «Sin ver» no es un estado y por eso no viaja en `estado`: es un recorte que
+   * se cruza con cualquiera de ellos. La pestaña lo pide como
+   * `?estado=todos&sinVer=1`, igual que el cartel de los turnos sin profesional
+   * pide `sinProfesional=1`.
+   */
+  const soloSinVer = ctx.url.searchParams.get("sinVer") === "1";
 
-  const turnos = await turnosVisibles(estado, soloSinProfesional);
+  const turnos = await turnosVisibles(estado, soloSinProfesional, soloSinVer);
   const yaAgendadas = await sesionesYaAgendadas(turnos);
 
   return json({
@@ -161,6 +169,9 @@ export async function listar(ctx: Ctx) {
       starts_at: t.starts_at.toISOString(),
       status: t.status,
       duration_minutes: t.duration_minutes,
+      // Sólo si está sin ver: la fecha exacta no la usa ninguna pantalla, y un
+      // booleano deja claro que lo único que importa es si alguien lo abrió.
+      sin_ver: t.seen_at === null,
       client_notes: t.client_notes,
       client_id: t.client_id,
       guest_name: t.guest_name,
@@ -217,6 +228,9 @@ const SELECT_FILA_DEL_LISTADO = {
   professional_id: true,
   client_notes: true,
   created_at: true,
+  // Lo que reemplazó a la pestaña «Pendiente»: la pantalla marca en dorado las
+  // filas que nadie del centro abrió todavía. Ver `seen_at` en el esquema.
+  seen_at: true,
   ...DATOS_DE_LA_PERSONA,
   // `session_interval_days` sale del catálogo y no del turno: es con lo
   // que se propone la fecha de la próxima sesión, y si el centro cambia el
@@ -283,6 +297,7 @@ type FilaDelListado = Prisma.appointmentsGetPayload<{ select: typeof SELECT_FILA
 async function turnosVisibles(
   estado: appointment_status | null,
   soloSinProfesional: boolean,
+  soloSinVer = false,
 ): Promise<FilaDelListado[]> {
   const orderBy = [{ created_at: "desc" as const }, { starts_at: "desc" as const }];
 
@@ -292,6 +307,7 @@ async function turnosVisibles(
         sessions_total: { lte: 1 },
         ...(estado ? { status: estado } : {}),
         ...(soloSinProfesional ? sinQuienLoAtienda() : {}),
+        ...(soloSinVer ? { seen_at: null } : {}),
       },
       orderBy,
       select: SELECT_FILA_DEL_LISTADO,
@@ -319,7 +335,9 @@ async function turnosVisibles(
 
   const representativas: FilaDelListado[] = [];
   for (const sesiones of porSerie.values()) {
-    const abiertas = sesiones.filter((s) => s.status === "pending" || s.status === "confirmed");
+    // Antes: `s.status === "pending" || s.status === "confirmed"`. Con
+    // pendiente fuera, una sesión abierta es una confirmada y nada más.
+    const abiertas = sesiones.filter((s) => s.status === "confirmed");
     /*
      * De las abiertas, la más avanzada — y no la primera que aparezca.
      *
@@ -336,6 +354,7 @@ async function turnosVisibles(
 
     if (estado && elegida.status !== estado) continue;
     if (soloSinProfesional && !cumpleSinProfesional(elegida)) continue;
+    if (soloSinVer && elegida.seen_at !== null) continue;
     representativas.push(elegida);
   }
 
@@ -431,9 +450,21 @@ export async function pendientes() {
   //
   //   const [total, sinProfesional] = await Promise.all([
   const [total, sinProfesional, enDiasCerrados] = await Promise.all([
-    prisma.appointments.count({ where: { status: "pending" } }),
+    /*
+     * Antes: `count({ where: { status: "pending" } })`.
+     *
+     * Este número es el que va en dorado al lado de la pestaña, y era el único
+     * aviso de «entró algo nuevo». Con «pendiente» afuera lo dice `seen_at`.
+     *
+     * Se cuentan sólo los confirmados: un turno que la clienta reservó y
+     * canceló ella misma antes de que nadie lo abriera ya no es trabajo para
+     * el centro, y de esa cancelación se avisa por su propio mail.
+     */
+    prisma.appointments.count({ where: { status: "confirmed", seen_at: null } }),
     prisma.appointments.count({
-      where: { ...sinQuienLoAtienda(), status: { in: ["pending", "confirmed"] } },
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // where: { ...sinQuienLoAtienda(), status: { in: ["pending", "confirmed"] } },
+      where: { ...sinQuienLoAtienda(), status: { in: ["confirmed"] } },
     }),
     cuantosTurnosEnDiasCerrados(),
   ]);
@@ -498,10 +529,40 @@ export async function detalle(ctx: Ctx) {
       series_id: true,
       session_number: true,
       sessions_total: true,
+      seen_at: true,
     },
   });
 
   if (!t) return json({ error: "Ese turno no existe." }, 404);
+
+  /*
+   * Abrir la ficha es «verlo»: acá se apaga el número en dorado del menú.
+   *
+   * ── POR QUÉ ACÁ Y NO CON UN BOTÓN «MARCAR COMO VISTO» ──────────────────
+   *
+   * Porque un botón que hay que apretar para bajar un contador termina sin
+   * apretarse, y el número deja de significar algo. Abrir la ficha es el
+   * momento en que alguien del centro efectivamente miró el turno, y es la
+   * única acción que no hay que acordarse de hacer.
+   *
+   * Esta ruta pide el permiso `appointments`, así que quien llega hasta acá es
+   * del centro. La clienta mira sus turnos por `/mi-cuenta`, que es otro
+   * controlador y no toca esta columna — si no, la clienta apagaría sola el
+   * aviso que el centro todavía no vio.
+   *
+   * Se escribe sólo si estaba en NULL: sin ese `if`, cada vez que alguien
+   * abriera la ficha habría un UPDATE al pedo, y además se pisaría la fecha
+   * de la PRIMERA vez, que es la que tiene algún valor.
+   *
+   * No se espera el resultado a propósito. Que la ficha tarde más, o peor, que
+   * no se pueda abrir porque falló un UPDATE de contabilidad, sería cambiar
+   * algo que importa por algo que no.
+   */
+  if (t.seen_at === null) {
+    prisma.appointments
+      .update({ where: { id }, data: { seen_at: new Date() } })
+      .catch((e: Error) => console.error("[turnos] no se pudo marcar como visto:", e.message));
+  }
 
   const sesiones = await sesionesDeLaSerie(t);
 
@@ -750,7 +811,9 @@ export async function borrar(ctx: Ctx) {
   const { count } = await prisma.appointments.deleteMany({
     where: {
       id,
-      OR: [{ status: { notIn: ["pending", "confirmed"] } }, { starts_at: { lte: new Date() } }],
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // OR: [{ status: { notIn: ["pending", "confirmed"] } }, { starts_at: { lte: new Date() } }],
+      OR: [{ status: { notIn: ["confirmed"] } }, { starts_at: { lte: new Date() } }],
     },
   });
 
@@ -1022,6 +1085,10 @@ export async function crear(ctx: Ctx) {
       professional_id: typeof profesionalId === "string" ? profesionalId : null,
       starts_at,
       status: "confirmed",
+      // Lo carga el centro, así que nace visto: el contador de «sin ver» está
+      // para las reservas que entran por la web, no para lo que el propio
+      // centro acaba de escribir.
+      seen_at: new Date(),
       client_notes: textoODefault(ctx.body["client_notes"]),
       ...validado,
     },
@@ -1179,6 +1246,10 @@ export async function agendarSiguienteSesion(ctx: Ctx) {
       // Confirmado, igual que cualquier turno que carga el centro: lo esta
       // acordando con la clienta en el mostrador.
       status: "confirmed",
+      // Lo carga el centro, así que nace visto: el contador de «sin ver» está
+      // para las reservas que entran por la web, no para lo que el propio
+      // centro acaba de escribir.
+      seen_at: new Date(),
       series_id: serie,
       client_notes: textoODefault(ctx.body["client_notes"]),
       ...validado,
@@ -1359,7 +1430,9 @@ export async function profesionalesParaElTurno(ctx: Ctx) {
   const ocupadas = await prisma.appointments.findMany({
     where: {
       professional_id: { in: candidatas.map((c) => c.id) },
-      status: { in: ["pending", "confirmed"] },
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // status: { in: ["pending", "confirmed"] },
+      status: { in: ["confirmed"] },
       id: { not: turno.id },
       starts_at: { gte: desde, lt: termina },
     },

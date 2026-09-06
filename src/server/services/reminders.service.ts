@@ -43,9 +43,18 @@ import { yaVencio } from "@/lib/shiraf";
  * mañana, y si un día no corrió, la del día siguiente no puede arreglarlo —
  * pero tampoco manda un recordatorio a destiempo, que es peor.
  *
- * Los pendientes quedan afuera a propósito: un turno sin confirmar no es un
- * turno, y recordarle a alguien que venga a algo que el centro todavía no
- * aceptó es prometer un horario que puede no existir.
+ * ── ESTE PÁRRAFO SE CUMPLIÓ SOLO (6/9/2026) ───────────────────────────────
+ *
+ * Decía: «Los pendientes quedan afuera a propósito: un turno sin confirmar no
+ * es un turno, y recordarle a alguien que venga a algo que el centro todavía no
+ * aceptó es prometer un horario que puede no existir.»
+ *
+ * Sigue siendo verdad y ya no hace nada: el estado «pendiente» no existe más.
+ * La consecuencia es la que importa y conviene tenerla escrita — ANTES una
+ * reserva que el centro no confirmaba se quedaba sin recordatorio para siempre,
+ * y la clienta se enteraba el día del turno o no se enteraba. Hoy toda reserva
+ * nace confirmada, así que todas reciben el aviso del día anterior sin que
+ * nadie tenga que hacer nada.
  */
 
 /** Argentina no tiene horario de verano desde 2009, así que el offset es fijo. */
@@ -268,7 +277,9 @@ async function avisarDeLosVencidos(): Promise<void> {
   // Tipada y no inferida: sin el tipo, TypeScript lee ["pending","confirmed"]
   // como string[] y Prisma espera el enum de la columna.
   const where: Prisma.appointmentsWhereInput = {
-    status: { in: ["pending", "confirmed"] },
+    // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+    // status: { in: ["pending", "confirmed"] },
+    status: { in: ["confirmed"] },
     // Corte grueso, sólo para no traer el futuro: lo fino —que haya TERMINADO,
     // no que haya empezado— depende de `starts_at` y `duration_minutes` juntas,
     // y eso Prisma no lo sabe expresar sin bajar a SQL crudo. Se afina abajo, con

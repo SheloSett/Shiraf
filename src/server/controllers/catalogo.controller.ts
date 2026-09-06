@@ -441,7 +441,9 @@ export async function borrar(ctx: Ctx) {
   try {
     await prisma.$transaction(async (tx) => {
       porVenir = await tx.appointments.count({
-        where: { service_id: id, status: { in: ["pending", "confirmed"] } },
+        // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+        // where: { service_id: id, status: { in: ["pending", "confirmed"] } },
+        where: { service_id: id, status: { in: ["confirmed"] } },
       });
       // Se corta la transacción tirando: así el borrado no llega a pasar y no
       // hay dos caminos que puedan quedar desincronizados.

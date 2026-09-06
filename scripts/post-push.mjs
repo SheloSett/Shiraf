@@ -44,7 +44,11 @@ try {
   const { rows } = await cliente.query(`
     SELECT
       (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal)                              AS triggers,
-      (SELECT count(*) FROM pg_constraint WHERE conname IN ('appointments_identifies_someone', 'appointments_names_its_service')) AS checks,
+      -- Antes eran dos: 'appointments_identifies_someone' y
+      -- 'appointments_names_its_service'. El tercero
+      -- ('appointments_status_not_pending', 6/9/2026) es el que hace que el
+      -- estado «pendiente» no pueda existir. Ver reglas.sql.
+      (SELECT count(*) FROM pg_constraint WHERE conname IN ('appointments_identifies_someone', 'appointments_names_its_service', 'appointments_status_not_pending')) AS checks,
       (SELECT count(*) FROM pg_indexes
         WHERE schemaname = 'public' AND indexdef ILIKE '%WHERE%')                            AS indices_parciales,
       (SELECT count(*) FROM pg_proc p
@@ -54,13 +58,13 @@ try {
   const r = rows[0];
 
   console.log(
-    `[post-push] triggers: ${r.triggers}/3 | CHECK: ${r.checks}/2 | ` +
+    `[post-push] triggers: ${r.triggers}/3 | CHECK: ${r.checks}/3 | ` +
       `indices parciales: ${r.indices_parciales}/4 | normalize_phone: ${r.normalize_phone}/1`,
   );
 
   const faltan =
     Number(r.triggers) < 3 ||
-    Number(r.checks) < 2 ||
+    Number(r.checks) < 3 ||
     Number(r.indices_parciales) < 4 ||
     Number(r.normalize_phone) < 1;
 

@@ -440,13 +440,19 @@ function MyAgenda() {
                               minutos={row.appointment_minutes}
                               now={ahora}
                             />
-                          ) : (
+                          ) : /* 6/9/2026 — acá iba una chapita «sin confirmar»
+                               sobre los turnos en pendiente. Se fue con el
+                               estado: hoy todo lo que la profesional ve en lo
+                               que viene está confirmado, así que la chapita
+                               estaría en todas las filas y no diría nada.
+
                             row.appointment_state === "pending" && (
                               <Badge variant="outline" className="font-normal text-[10px]">
                                 sin confirmar
                               </Badge>
                             )
-                          )}
+                            */
+                          null}
                         </div>
 
                         <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">

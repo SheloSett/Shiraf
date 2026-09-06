@@ -114,7 +114,9 @@ export async function turnosEnDiasCerrados(
 
   const candidatos = await prisma.appointments.findMany({
     where: {
-      status: { in: ["pending", "confirmed"] },
+      // Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+      // status: { in: ["pending", "confirmed"] },
+      status: { in: ["confirmed"] },
       starts_at: { gte: new Date() },
       // Una ventana por cierre y no una sola de punta a punta: entre el
       // feriado de diciembre y las vacaciones de marzo hay dos meses de turnos

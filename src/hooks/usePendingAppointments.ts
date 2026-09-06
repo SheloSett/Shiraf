@@ -15,7 +15,7 @@ import type { RtaPendientes } from "@/lib/api-tipos";
  * y el resultado sería un menú donde un contador está al día y el otro no.
  *
  * Va como hook y no como consulta suelta porque los muestran varios lugares —el
- * menú lateral, la pestaña "Pendiente", el cartel de Turnos— y así ninguno tiene
+ * menú lateral, la pestaña "Sin ver", el cartel de Turnos— y así ninguno tiene
  * que acordarse de los detalles de abajo.
  */
 function useContadores(enabled: boolean) {
@@ -37,12 +37,23 @@ function useContadores(enabled: boolean) {
 }
 
 /**
- * Cuántos turnos están esperando respuesta.
+ * Cuántos turnos entraron por la web que nadie del centro miró todavía.
  *
- * Un turno pedido por la web nace "pendiente" y se queda ahí hasta que alguien
- * del centro lo confirma o lo cancela. Antes no había forma de enterarse sin
- * entrar a Turnos y mirar: este número existe para que la espera se vea desde
- * cualquier pantalla del panel.
+ * ── EL NOMBRE QUEDÓ VIEJO, EL NÚMERO CAMBIÓ DE SIGNIFICADO (6/9/2026) ─────
+ *
+ * Contaba los turnos en "pendiente": los que habían entrado por la web y
+ * esperaban que alguien del centro los aceptara. Ese estado dejó de existir —la
+ * clienta reserva y el turno queda confirmado en el acto—, pero el número hacía
+ * DOS trabajos y sólo uno se pidió que desapareciera. El otro era avisar «entró
+ * algo nuevo», y sin reemplazo el centro se quedaba sin bandeja de entrada.
+ *
+ * Así que hoy cuenta los turnos confirmados con `seen_at` en NULL: nadie abrió
+ * la ficha. Se apaga solo al abrirla, no hay que marcar nada.
+ *
+ * El nombre del hook y del archivo se dejan como están a propósito: los importan
+ * cuatro pantallas y renombrarlos sería un cambio de superficie en el mismo
+ * movimiento que ya toca la base, el panel y los mails. Vale la pena hacerlo,
+ * pero solo y en su propio commit.
  *
  * Lo que se cuenta es lo mismo que la persona puede ver en la tabla de Turnos:
  * el endpoint pide el permiso `appointments`.

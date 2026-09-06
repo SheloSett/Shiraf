@@ -237,7 +237,8 @@ function FichaDelTurno() {
    * derecho el turno de mañana le libera el horario al centro y la deja
    * viniendo igual, sin que nadie le haya dicho nada.
    */
-  const seBorra = !((estado === "pending" || estado === "confirmed") && todaviaNoEmpezo);
+  // Antes: `(estado === "pending" || estado === "confirmed") && todaviaNoEmpezo`.
+  const seBorra = !(estado === "confirmed" && todaviaNoEmpezo);
 
   const aviso = estado ? NOTIFIES[estado] : undefined;
   const whatsapp = aviso ? appointmentWhatsappUrl(aviso, toNotifiable(t)) : null;
@@ -487,10 +488,16 @@ function FichaDelTurno() {
           <div className="mt-5 flex flex-wrap gap-2">
             {(
               [
+                // «Confirmar» queda, pero ya casi no se usa: los turnos nacen
+                // confirmados. Sirve para reabrir uno que se canceló por error.
                 ["confirmed", "Confirmar"],
                 ["completed", "Marcar realizado"],
                 ["cancelled", "Cancelar el turno"],
-                ["pending", "Volver a pendiente"],
+                // 6/9/2026 — «Volver a pendiente» se fue con el estado. Era la
+                // red de seguridad del botón «Confirmar» de la lista, que se
+                // fue en el mismo movimiento: si se confirmaba de más, esto lo
+                // devolvía. Sin pendiente no hay a dónde volver.
+                // ["pending", "Volver a pendiente"],
               ] as const
             )
               .filter(([otro]) => otro !== estado)
@@ -606,9 +613,8 @@ function FichaDelTurno() {
 
           {/* Reasignar sólo tiene sentido sobre un turno que se va a atender. Uno
               cerrado no se mueve de profesional: ya pasó. */}
-          {(estado === "pending" || estado === "confirmed") && (
-            <CambiarProfesional turnoId={t.id} actual={t.professionals} />
-          )}
+          {/* Antes: `estado === "pending" || estado === "confirmed"`. */}
+          {estado === "confirmed" && <CambiarProfesional turnoId={t.id} actual={t.professionals} />}
 
           {/* ── SACARLO DE LA AGENDA PARA SIEMPRE ────────────────────────
               Abajo de todo, detrás de una línea y con el botón en gris: es la

@@ -57,7 +57,9 @@ import { yaVencio } from "@/lib/shiraf";
 const REALIZADOS = ["completed"] as const;
 
 /** Estados de un turno que todavía va a pasar. */
-const ABIERTOS = ["pending", "confirmed"] as const;
+// Antes: ["pending", "confirmed"]. Un turno abierto ahora es sólo el confirmado.
+// const ABIERTOS = ["pending", "confirmed"] as const;
+const ABIERTOS = ["confirmed"] as const;
 
 /**
  * Cuántas visitas hacen a una clienta "habitual", para la lista de en riesgo.

@@ -110,25 +110,43 @@ export const Route = createFileRoute("/_authenticated/admin/turnos")({
  * `todos` viaja tal cual a la API, que lo entiende como "no filtres por estado".
  * Ver `listar` en turnos.controller.ts.
  */
-const FILTERS = ["pending", "confirmed", "completed", "cancelled"] as const;
+// Antes: `["pending", "confirmed", "completed", "cancelled"]`.
+const FILTERS = ["confirmed", "completed", "cancelled"] as const;
 type Status = (typeof FILTERS)[number];
+
+/**
+ * «Sin ver» no es un estado, y por eso es su propio valor y no uno de FILTERS.
+ *
+ * Ocupa el lugar exacto que tenía «Pendiente» —segunda, después de «Todos», y
+ * es la única con número— porque hace el trabajo que ese estado hacía además
+ * de significar «el centro no lo aceptó todavía»: avisar que entraron reservas
+ * nuevas. Lo que cambió es el criterio: antes era un estado que alguien tenía
+ * que sacar a mano, ahora es «nadie del centro abrió esta ficha».
+ *
+ * Se cruza con los estados en vez de excluirlos, así que viaja aparte a la API:
+ * `?estado=todos&sinVer=1`.
+ */
+const SIN_VER = "sin-ver";
 
 // «Todos» va PRIMERA, y no al final después de los cuatro estados: es la que se
 // abre cuando no se está buscando nada en particular, y las otras cuatro son
 // recortes de ésa. Leída de izquierda a derecha, la fila va de lo más amplio a
 // lo más específico.
-const PESTANAS = ["todos", ...FILTERS] as const;
+// Antes: `["todos", ...FILTERS]`, donde FILTERS empezaba con «Pendiente».
+const PESTANAS = ["todos", SIN_VER, ...FILTERS] as const;
 type Pestana = (typeof PESTANAS)[number];
 
 /** El estado, o `todos`; null si es cualquier otra cosa. */
 function aPestana(valor: unknown): Pestana | null {
   if (valor === "todos") return "todos";
+  if (valor === SIN_VER) return SIN_VER;
   return toStatus(valor);
 }
 
 /** Los carteles de las pestañas. `STATUS_LABEL` no conoce a «Todos». */
 const ETIQUETA_DE_PESTANA: Record<Pestana, string> = {
-  pending: STATUS_LABEL["pending"] ?? "Pendiente",
+  // pending: STATUS_LABEL["pending"] ?? "Pendiente",   ← se fue el 6/9/2026
+  [SIN_VER]: "Sin ver",
   confirmed: STATUS_LABEL["confirmed"] ?? "Confirmado",
   completed: STATUS_LABEL["completed"] ?? "Realizado",
   cancelled: STATUS_LABEL["cancelled"] ?? "Cancelado",
@@ -266,7 +284,9 @@ function AdminAppointments() {
 
   // El mismo número que muestra el menú lateral: react-query comparte la
   // consulta, así que estar en esta pantalla no la pide dos veces.
-  const pendingCount = usePendingAppointments();
+  // Antes se llamaba `pendingCount` y contaba los turnos en «Pendiente». Hoy
+  // el mismo endpoint devuelve los que nadie del centro abrió todavía.
+  const sinVerCount = usePendingAppointments();
   // Los turnos que se van a atender y no tienen a quién. Mismo número que el
   // punto rojo del menú: react-query comparte la consulta.
   const unassignedCount = useUnassignedAppointments();
@@ -280,7 +300,11 @@ function AdminAppointments() {
     queryFn: async () =>
       (
         await api<RtaTurnos>(
-          `/api/turnos?estado=${filter}${soloSinProfesional ? "&sinProfesional=1" : ""}`,
+          // «Sin ver» no es un estado: se pide como «todos los estados, pero
+          // sólo los que nadie abrió». Ver SIN_VER acá arriba.
+          `/api/turnos?estado=${filter === SIN_VER ? "todos" : filter}` +
+            `${filter === SIN_VER ? "&sinVer=1" : ""}` +
+            `${soloSinProfesional ? "&sinProfesional=1" : ""}`,
         )
       ).turnos,
   });
@@ -500,7 +524,7 @@ function AdminAppointments() {
             </p>
           </div>
           {soloSinProfesional ? (
-            <Button variant="outline" onClick={() => setFilter("pending")}>
+            <Button variant="outline" onClick={() => setFilter("todos")}>
               Ver todos los turnos
             </Button>
           ) : (
@@ -521,9 +545,9 @@ function AdminAppointments() {
           {PESTANAS.map((f) => (
             <TabsTrigger key={f} value={f} className="gap-2">
               {ETIQUETA_DE_PESTANA[f]}
-              {f === "pending" && pendingCount > 0 && (
+              {f === SIN_VER && sinVerCount > 0 && (
                 <span className="min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums">
-                  {pendingCount > 99 ? "99+" : pendingCount}
+                  {sinVerCount > 99 ? "99+" : sinVerCount}
                 </span>
               )}
             </TabsTrigger>
@@ -577,7 +601,8 @@ function AdminAppointments() {
               // botones, y desde la lista no se deshacen. Viven en «Ver turno»,
               // que además es la única pantalla que puede corregir un turno ya
               // cerrado. Nada quedó sin lugar: todo se hace ahí.
-              const seCancela = estado === "pending" || estado === "confirmed";
+              // Antes: `estado === "pending" || estado === "confirmed"`.
+              const seCancela = estado === "confirmed";
 
               // ── «CONFIRMAR» VUELVE A LA TABLA (26/8/2026) ─────────────────
               //
@@ -595,7 +620,22 @@ function AdminAppointments() {
               // lo obvio— y si igual se erra, «Ver turno» lo devuelve a
               // pendiente. Es el mismo trato que ya tiene «Cancelar», que
               // tampoco se deshace desde acá.
-              const seConfirma = estado === "pending";
+              /*
+               * ── Y «CONFIRMAR» SE VA OTRA VEZ (6/9/2026) ─────────────────
+               *
+               * Todo el párrafo de acá arriba describe una acción que ya no
+               * existe. El centro pidió que la clienta reserve y el turno quede
+               * confirmado solo, así que no hay nada que confirmar: el estado
+               * en el que este botón aparecía —«Pendiente»— dejó de existir.
+               *
+               * Se deja escrito porque es la segunda vez que este botón entra y
+               * sale de esta tabla, y las dos veces lo decidió el centro. Si
+               * algún día vuelve a hacer falta una revisión antes de dar por
+               * bueno un turno, acá está por qué se había puesto y con qué
+               * cuidados.
+               *
+               * const seConfirma = estado === "pending";
+               */
 
               // Borrar es lo contrario de cancelar, y por eso los dos botones
               // nunca aparecen juntos: mientras el turno todavía se puede
@@ -605,7 +645,8 @@ function AdminAppointments() {
               //
               // El servidor lo rechaza igual, con el motivo escrito; acá se
               // esconde para no ofrecer algo que va a fallar.
-              const seBorra = estado !== "pending" && estado !== "confirmed";
+              // Antes: `estado !== "pending" && estado !== "confirmed"`.
+              const seBorra = estado !== "confirmed";
 
               return (
                 <TableRow
@@ -619,6 +660,25 @@ function AdminAppointments() {
                   <TableCell className="whitespace-nowrap">{formatDateTime(a.starts_at)}</TableCell>
                   <TableCell>
                     <span className="flex items-center gap-2">
+                      {/* El punto dorado de «sin ver»: nadie del centro abrió
+                        todavía la ficha de este turno.
+
+                        Va acá, pegado al nombre, y no como un fondo en toda la
+                        fila: el fondo dorado suave ya significa otra cosa —«a
+                        este turno viniste desde el calendario»— y dos dorados
+                        distintos en la misma tabla no se pueden distinguir.
+
+                        Un punto y no una chapita con texto: es una marca que
+                        van a ver todos los días y que desaparece sola al abrir
+                        el turno. Una palabra más en cada fila la ensucia. El
+                        `title` la explica para quien no la reconozca. */}
+                      {a.sin_ver && (
+                        <span
+                          title="Todavía no lo abrió nadie del centro"
+                          aria-label="Sin ver"
+                          className="h-2 w-2 shrink-0 rounded-full bg-gold"
+                        />
+                      )}
                       {a.person.name}
                       {/* Marcar la invitada evita que se la busque en Clientes y
                         no aparezca: no tiene ficha porque no tiene cuenta. */}
@@ -770,6 +830,9 @@ function AdminAppointments() {
                         Usa el mismo `setStatus` que el diálogo de cancelar, así
                         que el mail a la clienta y el botón «Avisar» del toast
                         salen igual que desde la ficha. */}
+                      {/* El botón «Confirmar» vivía acá. Se fue con el estado
+                        «Pendiente» el 6/9/2026 — ver `seConfirma` arriba.
+
                       {seConfirma && (
                         <Button
                           size="sm"
@@ -785,7 +848,7 @@ function AdminAppointments() {
                         >
                           <Check className="mr-2 h-4 w-4" /> Confirmar
                         </Button>
-                      )}
+                      )} */}
 
                       {/* Agendar la sesión que sigue.
                         Aparece sólo cuando hay una que agendar: tratamiento de

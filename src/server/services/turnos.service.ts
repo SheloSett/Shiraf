@@ -105,7 +105,9 @@ export function exigirAlcanceDeClienta(
     if (cambio.status !== "cancelled") {
       throw new ErrorDeAcceso("Sólo el centro puede confirmar o cerrar un turno.");
     }
-    if (actual.status !== "pending" && actual.status !== "confirmed") {
+    // Antes: `actual.status !== "pending" && actual.status !== "confirmed"`.
+    // Lo cancelable es lo que sigue en pie, que ahora es sólo lo confirmado.
+    if (actual.status !== "confirmed") {
       throw new ErrorDeRegla("Este turno ya no se puede cancelar.");
     }
   }

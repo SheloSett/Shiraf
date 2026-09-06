@@ -113,6 +113,18 @@ enum app_permission {
 }
 
 enum appointment_status {
+  /// ⚠️ MUERTO desde el 6/9/2026. No lo saques de acá.
+  ///
+  /// El centro pidió que la clienta reserve y el turno quede confirmado en el
+  /// acto, así que ya nada escribe este estado: el `@default` de abajo es
+  /// `confirmed` y el CHECK `appointments_status_not_pending` de
+  /// `prisma/sql/reglas.sql` impide que ninguna fila lo tenga.
+  ///
+  /// Sigue declarado porque sacar un valor de un enum de Postgres obliga a
+  /// recrear el tipo, y el `db push` del contenedor `migrate` corre sin
+  /// `--accept-data-loss`: borrarlo de acá rompe el arranque de la app. El
+  /// CHECK ya consigue lo que importa —que no exista ninguna fila así—, y el
+  /// valor queda inerte adentro del tipo.
   pending
   confirmed
   completed
@@ -606,9 +618,31 @@ model appointments {
   session_number   Int      @default(1)
   sessions_total   Int      @default(1)
 
-  status       appointment_status @default(pending)
+  // Antes: `@default(pending)`. La reserva de la clienta no seteaba estado y
+  // caía acá, que era el único lugar donde nacía un turno en pendiente. Ver el
+  // comentario del enum, arriba.
+  status       appointment_status @default(confirmed)
   client_notes String?
   admin_notes  String?
+
+  /**
+   * Cuándo alguien del centro vio este turno por primera vez. NULL = sin ver.
+   *
+   * Es lo que quedó en lugar de la pestaña «Pendiente». Ese estado hacía dos
+   * trabajos a la vez y sólo uno se pidió que desapareciera: decía «el centro
+   * todavía no aceptó esto» —lo que se va— y también «entró algo nuevo que no
+   * miraste» —el número en dorado del panel, que es la bandeja de entrada y sin
+   * un reemplazo se perdía—.
+   *
+   * Nace NULL cuando reserva la clienta, y con fecha cuando el turno lo carga
+   * el centro: no tiene sentido avisarle de algo que acaba de escribir. Se
+   * completa al abrir la ficha.
+   *
+   * Las filas anteriores al 6/9/2026 quedaron con `seen_at = created_at` — todo
+   * lo viejo cuenta como visto, o el contador arrancaba con el historial entero
+   * adentro. El relleno está en `reglas.sql` y tiene el porqué del corte fijo.
+   */
+  seen_at      DateTime?          @db.Timestamptz(6)
 
   /**
    * Por qué se canceló, escrito por quien lo canceló.

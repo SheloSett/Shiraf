@@ -9,7 +9,13 @@ export const WEEKDAYS = [
 ] as const;
 
 export const STATUS_LABEL: Record<string, string> = {
-  pending: "Pendiente",
+  // 6/9/2026 — «Pendiente» se fue: la clienta reserva y el turno queda
+  // confirmado en el acto. La etiqueta queda comentada y no borrada porque este
+  // Record se indexa con el `status` crudo de la base; si algún día apareciera
+  // una fila vieja con ese estado —no debería, lo prohíbe el CHECK
+  // `appointments_status_not_pending`—, acá se vería el hueco y no un cartel
+  // equivocado.
+  // pending: "Pendiente",
   confirmed: "Confirmado",
   completed: "Realizado",
   cancelled: "Cancelado",
@@ -24,7 +30,8 @@ export const STATUS_LABEL: Record<string, string> = {
  * falta lo otro: el enlace lleva el estado en la URL y el router exige que sea
  * uno de los cuatro, no un string suelto.
  */
-export const STATUSES = ["pending", "confirmed", "completed", "cancelled"] as const;
+// Antes: `["pending", "confirmed", "completed", "cancelled"]`.
+export const STATUSES = ["confirmed", "completed", "cancelled"] as const;
 export type AppointmentStatus = (typeof STATUSES)[number];
 
 /**
@@ -55,7 +62,7 @@ export function toStatus(value: unknown): AppointmentStatus | null {
 export type EstadoVisible = AppointmentStatus | "overdue";
 
 export const ESTADO_VISIBLE_LABEL: Record<EstadoVisible, string> = {
-  pending: "Pendiente",
+  // pending: "Pendiente",   ← ver STATUS_LABEL
   confirmed: "Confirmado",
   completed: "Realizado",
   cancelled: "Cancelado",
@@ -88,9 +95,14 @@ export function estadoVisible(
   now: number | null,
 ): EstadoVisible {
   const guardado = toStatus(turno.status);
-  if (!guardado) return "pending";
+  // Antes el respaldo era "pending", que era el estado con el que nacía un
+  // turno. Ahora nacen confirmados, así que ése es el que menos miente cuando
+  // el `status` que llegó no es ninguno de los conocidos.
+  if (!guardado) return "confirmed";
 
-  const abierto = guardado === "pending" || guardado === "confirmed";
+  // Antes: `guardado === "pending" || guardado === "confirmed"`. Con pendiente
+  // fuera, «abierto» y «confirmado» pasaron a ser lo mismo.
+  const abierto = guardado === "confirmed";
   if (abierto && now !== null && yaVencio(turno.startsAt, turno.minutos, now)) return "overdue";
 
   return guardado;
@@ -199,7 +211,8 @@ export function quienAtiende(
   now: number | null,
 ): QuienAtiende {
   const estado = estadoVisible(turno, now);
-  const seArregla = estado === "pending" || estado === "confirmed";
+  // Antes: `estado === "pending" || estado === "confirmed"`.
+  const seArregla = estado === "confirmed";
 
   if (profesional?.is_active) return { caso: "asignada", nombre: profesional.full_name };
   if (profesional) return { caso: "desactivada", nombre: profesional.full_name, seArregla };

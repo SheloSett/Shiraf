@@ -102,8 +102,9 @@ function appointmentTone(
     case "confirmed":
       return { pastilla: "bg-primary/10 text-foreground", secundario: SECUNDARIO, aviso: AVISO };
 
-    case "pending":
-      return { pastilla: "bg-gold/15 text-foreground", secundario: SECUNDARIO, aviso: AVISO };
+    // Se fue con el estado. Ver el comentario de TONO en estado-turno.tsx.
+    // case "pending":
+    //   return { pastilla: "bg-gold/15 text-foreground", secundario: SECUNDARIO, aviso: AVISO };
   }
 }
 
@@ -343,13 +344,16 @@ function AdminCalendar() {
       </div>
 
       {/* La leyenda tenía tres entradas para cuatro estados: faltaba "Realizado",
-          que hasta ahora no se pintaba distinto. Van las cuatro más "Vencido",
-          que no es un estado de la base sino el cruce de pendiente/confirmado
-          con la hora ya pasada — por eso es la única sin STATUS_LABEL. */}
+          que hasta ahora no se pintaba distinto. Van los tres que quedaron más
+          "Vencido", que no es un estado de la base sino un turno confirmado con
+          la hora ya pasada — por eso es el único sin STATUS_LABEL.
+
+          6/9/2026 — la entrada de "Pendiente" se fue con el estado:
+
+          <span className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm bg-gold/40" /> {STATUS_LABEL["pending"]}
+          </span> */}
       <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-        <span className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-sm bg-gold/40" /> {STATUS_LABEL["pending"]}
-        </span>
         <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-primary/25" /> {STATUS_LABEL["confirmed"]}
         </span>

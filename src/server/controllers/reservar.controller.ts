@@ -182,6 +182,19 @@ export async function reservar(ctx: Ctx) {
     starts_at,
   });
 
+  /*
+   * El turno NACE CONFIRMADO, y sin `seen_at`.
+   *
+   * Ninguna de las dos cosas se escribe acá: las pone el esquema. El `status`
+   * cae en `@default(confirmed)` —desde el 6/9/2026, cuando el centro pidió que
+   * reservar por el sitio no necesitara que nadie aceptara nada— y `seen_at`
+   * queda en NULL, que es exactamente lo que hace que este turno aparezca en la
+   * pestaña «Sin ver» del panel.
+   *
+   * Es el único lugar del código donde un turno nace sin ver. Los dos altas del
+   * panel (`turnos.controller`) escriben `seen_at` a mano: el centro no tiene
+   * que avisarse de lo que acaba de cargar él mismo.
+   */
   const creado = await prisma.appointments.create({
     data: {
       client_id: ctx.user!.id,

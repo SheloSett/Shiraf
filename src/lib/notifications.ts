@@ -23,10 +23,11 @@ export type AppointmentEvent =
   /**
    * La clienta acaba de reservar por el sitio. Va a ELLA.
    *
-   * No confirma nada —el turno nace pendiente— y por eso el texto es cuidadoso:
-   * dice que el pedido llegó y que falta que el centro lo confirme. Sin este
-   * aviso, reservar terminaba en un toast que desaparecía en cinco segundos y
-   * la clienta se quedaba sin ningún papel de lo que había pedido.
+   * Confirma el turno, desde el 6/9/2026: reservar por el sitio ES la
+   * confirmación, y este mail es el comprobante. Antes decía que el pedido
+   * había llegado y que faltaba que el centro lo aceptara, porque el turno
+   * nacía pendiente. Sin este aviso, reservar terminaba en un toast que
+   * desaparecía en cinco segundos y la clienta se quedaba sin ningún papel.
    */
   | "requested"
   /** El centro pasó el turno a confirmado. Va a la clienta. */
@@ -37,7 +38,7 @@ export type AppointmentEvent =
   | "rescheduled"
   /** Día previo. Va a la clienta. */
   | "reminder"
-  /** Entró una reserva por el sitio y espera confirmación. Va al centro. */
+  /** Entró una reserva por el sitio, ya confirmada. Va al centro Y a la profesional. */
   | "new-request"
   /**
    * La clienta canceló su propio turno desde «Mi cuenta». Va AL CENTRO.
@@ -193,21 +194,43 @@ export function buildAppointmentMessage(
       : null;
 
   switch (event) {
-    // Lo primero que la clienta recibe, y el único mail que llega sin que nadie
-    // del centro haya hecho nada. Dice tres cosas y ninguna sobra: qué pidió,
-    // que TODAVÍA NO está confirmado, y la tolerancia.
+    /*
+     * Lo primero que la clienta recibe, y el único mail que llega sin que nadie
+     * del centro haya hecho nada.
+     *
+     * ── 6/9/2026: ESTE MAIL DECÍA LO CONTRARIO ─────────────────────────────
+     *
+     * Decía "Recibimos tu pedido" y "Todavía no está confirmado: lo revisamos y
+     * te avisamos". Era cierto mientras un turno nacía en «pendiente» y alguien
+     * del centro lo tenía que aceptar. Desde que la clienta reserva y el turno
+     * queda confirmado en el acto, ese texto la dejaba esperando una segunda
+     * respuesta que ya no va a llegar nunca — y peor, dudando de si tiene que
+     * ir.
+     *
+     * Queda como evento aparte de "confirmed" aunque digan casi lo mismo: éste
+     * lo dispara la clienta sobre su propio turno y el otro lo manda el centro.
+     * Esa diferencia es la que sostiene los permisos de `notifyAppointment`, y
+     * unificarlos sería dejar que cualquiera con cuenta le haga llegar a otra un
+     * "tu turno quedó confirmado" firmado por Shiraf.
+     *
+     * El texto anterior:
+     *
+     *   subject: "Recibimos tu pedido de turno en Shiraf",
+     *   `Recibimos tu pedido de turno ${when}.`,
+     *   "Todavía no está confirmado: lo revisamos y te avisamos por este mismo medio.",
+     */
     case "requested":
       return {
-        subject: "Recibimos tu pedido de turno en Shiraf",
+        subject: "Tu turno en Shiraf quedó reservado",
         lines: [
           `Hola ${who}, te escribimos de Shiraf.`,
           "",
-          `Recibimos tu pedido de turno ${when}.`,
+          `Tu turno ${when} quedó reservado y confirmado.`,
           ...(what ? [what] : []),
           ...(sesion ? [sesion] : []),
           ...(avisoDeSerie ? [avisoDeSerie] : []),
           "",
-          "Todavía no está confirmado: lo revisamos y te avisamos por este mismo medio.",
+          "No hace falta que hagas nada más. Si no vas a poder venir, avisanos.",
           "",
           `Te esperamos en ${place}.`,
           tolerancia,
@@ -328,17 +351,23 @@ export function buildAppointmentMessage(
         ],
       };
 
+    /*
+     * 6/9/2026 — decía "Nuevo turno pendiente", "está esperando confirmación" y
+     * "Confirmalo desde el panel". Ya no hay nada que confirmar: el turno entró
+     * confirmado. Lo que sí sigue habiendo es algo para MIRAR, y a eso apunta
+     * ahora — a la pestaña «Sin ver», que es donde cae.
+     */
     case "new-request":
       return {
-        subject: `Nuevo turno pendiente — ${appointment.clientName}`,
+        subject: `Turno nuevo — ${appointment.clientName}`,
         lines: [
-          "Entró un turno por el sitio y está esperando confirmación.",
+          "Entró un turno por el sitio y ya está confirmado.",
           "",
           `${appointment.clientName}${appointment.clientPhone ? ` · ${appointment.clientPhone}` : ""}`,
           `Turno ${when}`,
           ...(what ? [what] : []),
           "",
-          `Confirmalo desde el panel: ${CONTACT.siteUrl}/admin/turnos`,
+          `Miralo desde el panel: ${CONTACT.siteUrl}/admin/turnos?estado=sin-ver`,
         ],
       };
   }
@@ -423,18 +452,23 @@ export function buildProfessionalMessage(
   const cierre = ["", `Tu agenda: ${agenda}`];
 
   switch (event) {
+    /*
+     * 6/9/2026 — decía "Turno nuevo para confirmar" y "Todavía está pendiente:
+     * lo confirma el centro". Ese mail la dejaba sin saber si contar con el
+     * horario: le avisaba de algo que todavía podía no pasar. Ahora la reserva
+     * ya es el turno, así que el condicional se va —"Sería" pasa a "Queda"— y
+     * el mail dice lo único que ella necesita: tenés esto en la agenda.
+     */
     case "new-request":
       return {
-        subject: `Turno nuevo para confirmar — ${appointment.clientName}`,
+        subject: `Turno nuevo — ${appointment.clientName}`,
         lines: [
           `Hola ${pro}, te reservaron un turno por el sitio.`,
           "",
           quien,
-          `Sería ${when}`,
+          `Queda ${when}`,
           ...(que ? [que] : []),
           ...(sesion ? [sesion] : []),
-          "",
-          "Todavía está pendiente: lo confirma el centro.",
           ...cierre,
         ],
       };
