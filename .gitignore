@@ -103,4 +103,5 @@ inventario-vps-viejo.txt
 inventario-sudo.txt
 # El complemento de compose del VPS nuevo (red edge del Caddy). La copia buena
 # está en scripts/migracion/; acá se ignora para que un pull no lo pise.
-docker-compose.override.yml
+/docker-compose.override.yml
+inventario-vps-nuevo.txt

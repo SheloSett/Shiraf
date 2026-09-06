@@ -1,0 +1,24 @@
+# Complemento de producción para el VPS NUEVO. Se copia a ~/shiraf/ con este
+# mismo nombre y Docker Compose lo carga solo, encima de docker-compose.yml,
+# cada vez que se hace `docker compose up` sin `-f`.
+#
+# Une la app a la red `edge`, que es la del Caddy de /srv/proxy: así Caddy
+# llega a `shiraf-app:3000` por nombre, sin que el puerto salga del host. La
+# red la creó el proxy y ya existe (`external`), acá sólo se usa.
+#
+# ¿Por qué no va dentro de docker-compose.yml? Porque `external: true` corta
+# el arranque si la red no existe, y en la máquina de desarrollo y en el VPS
+# viejo no existe. Va aparte y NO en el repo: el nombre está en .gitignore y
+# la copia buena vive en scripts/migracion/.
+#
+# El `ports` de 127.0.0.1:3000 del compose principal queda (compose no puede
+# quitarlo desde acá). No molesta: es loopback y sirve para un curl local.
+services:
+  app:
+    networks:
+      - default
+      - edge
+
+networks:
+  edge:
+    external: true
