@@ -3,6 +3,7 @@ import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
 import { miAgenda, miHistorial, vincularTurnosDeInvitada } from "@/server/services/agenda.service";
 import { accesoDe } from "@/server/services/authz.service";
+import { cuantosTurnosEnDiasCerrados } from "@/server/services/cierres.service";
 import { nombreDelTratamiento, validarTurno } from "@/server/services/turnos.service";
 import { tomorrowInBuenosAires } from "@/server/services/reminders.service";
 import { comoNumero } from "@/server/serializar";
@@ -421,13 +422,23 @@ async function sesionesYaAgendadas(
  * arreglan asignando a nadie.
  */
 export async function pendientes() {
-  const [total, sinProfesional] = await Promise.all([
+  // 5/9/2026 — se suma el tercer número: los turnos que quedaron en pie en
+  // días que el centro cerró. Va en este mismo endpoint y no en uno propio
+  // porque el menú ya lo consulta cada minuto y lo invalida cada vez que se
+  // toca un turno: un contador aparte tendría su propio reloj y el menú
+  // mostraría un número al día y otro atrasado. Las líneas viejas quedan
+  // comentadas por la regla de este repo.
+  //
+  //   const [total, sinProfesional] = await Promise.all([
+  const [total, sinProfesional, enDiasCerrados] = await Promise.all([
     prisma.appointments.count({ where: { status: "pending" } }),
     prisma.appointments.count({
       where: { ...sinQuienLoAtienda(), status: { in: ["pending", "confirmed"] } },
     }),
+    cuantosTurnosEnDiasCerrados(),
   ]);
-  return json({ total, sinProfesional } satisfies RtaPendientes);
+  //   return json({ total, sinProfesional } satisfies RtaPendientes);
+  return json({ total, sinProfesional, enDiasCerrados } satisfies RtaPendientes);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

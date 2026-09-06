@@ -510,6 +510,51 @@ model professional_absences {
   @@index([professional_id, starts_on, ends_on])
 }
 
+// Los días que el centro NO abre, para todas las profesionales a la vez.
+//
+// `professional_absences` es "esta profesional no viene"; esto es "no viene
+// nadie": un feriado, las vacaciones de todo el equipo, un arreglo en el local.
+// Hasta el 5/9/2026 el 25 de diciembre había que cargarlo profesional por
+// profesional, y una que entrara al equipo después nacía sin él.
+//
+// ── POR QUÉ UNA TABLA Y NO `professional_id` NULLABLE EN LAS AUSENCIAS ──────
+//
+// Era la otra salida que anotaba TODO.md, y se descartó por tres cosas:
+//
+//   · Todas las consultas de ausencias entran por profesional —el índice de
+//     arriba lo dice— y una fila "de nadie" habría que recordarla en cada
+//     `where` con un OR. El día que alguien se lo olvide, ese feriado deja de
+//     valer para una profesional sin que nada avise.
+//   · La FK con ON DELETE CASCADE no significa nada en una fila sin dueña.
+//   · Piden permisos distintos: las ausencias son de la ficha (`team`); cerrar
+//     el centro es una decisión de agenda (`appointments`), porque lo que deja
+//     atrás —los turnos que ya estaban dados esos días— lo resuelve quien
+//     gestiona turnos. Ver cierres.controller.ts.
+//
+// El resto es igual que en las ausencias, y por lo mismo: un RANGO con los dos
+// extremos incluidos (del 24/12 al 2/1 son diez días cerrados, no nueve), DATE
+// y no TIMESTAMPTZ (un día cerrado es un día del almanaque del centro), y el
+// motivo opcional e interno.
+//
+// Lo hace cumplir `exigirQueElCentroAbra` en turnos.service.ts. Los calendarios
+// de pantalla también los conocen —viajan mezclados con las ausencias en
+// /api/reservar/disponibilidad—, pero eso es comodidad, no candado. El centro
+// puede cargar un turno un día cerrado igual que puede cargarlo fuera de
+// horario: es su excepción, y la carga a sabiendas.
+model center_closures {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  starts_on  DateTime @db.Date
+  ends_on    DateTime @db.Date
+  // Para que la dueña se acuerde de por qué. Interno, igual que en las
+  // ausencias: no sale en ningún mail ni en el sitio público.
+  reason     String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  // La única consulta que existe es "hay algún cierre que tape este día, o
+  // esta ventana de días".
+  @@index([starts_on, ends_on])
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Turnos
 // ─────────────────────────────────────────────────────────────────────────────

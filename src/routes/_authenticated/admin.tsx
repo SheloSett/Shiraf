@@ -12,6 +12,7 @@ import {
   BellRing,
   CalendarCheck,
   CalendarDays,
+  CalendarOff,
   ChevronDown,
   ClipboardList,
   FileText,
@@ -29,7 +30,14 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { apiPost } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
-import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
+// 5/9/2026 — se suma el contador de los turnos en días cerrados. La línea vieja
+// queda comentada por la regla de este repo.
+// import { usePendingAppointments, useUnassignedAppointments } from "@/hooks/usePendingAppointments";
+import {
+  useAppointmentsOnClosedDays,
+  usePendingAppointments,
+  useUnassignedAppointments,
+} from "@/hooks/usePendingAppointments";
 import { permissionLabel, requiredAccessFor } from "@/lib/permissions";
 import { puedeEntrarAlPanel } from "@/lib/sesion";
 
@@ -131,6 +139,19 @@ const nav = [
     to: "/admin/avisos",
     label: "Avisos",
     icon: BellRing,
+    exact: false,
+    access: "appointments",
+    children: [],
+  },
+  {
+    // Los días que el centro no abre: feriados, vacaciones de todo el equipo.
+    // Cierra el bloque de la agenda —Calendario, Turnos, Avisos— porque es
+    // parte de la misma decisión: qué días se puede reservar. Pide lo mismo
+    // que Turnos y no `team`, como las ausencias de una profesional: lo que
+    // deja en pie lo resuelve quien gestiona turnos.
+    to: "/admin/dias-cerrados",
+    label: "Días cerrados",
+    icon: CalendarOff,
     exact: false,
     access: "appointments",
     children: [],
@@ -263,6 +284,10 @@ function AdminLayout() {
   // Turnos que se van a atender y no tienen a quién. Es trabajo pendiente del
   // centro, no un aviso: si nadie los resuelve, ese día no hay profesional.
   const unassignedCount = useUnassignedAppointments(can("appointments"));
+  // Turnos dados en días que después el centro cerró. Es de la misma familia
+  // que el de arriba: la clienta tiene la confirmación y ese día no va a haber
+  // nadie. Sale del mismo endpoint, así que se refresca con los otros dos.
+  const closedDaysCount = useAppointmentsOnClosedDays(can("appointments"));
 
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
   const visibleNav = nav.filter((item) => allows(item.access));
@@ -403,6 +428,20 @@ function AdminLayout() {
                             {pendingCount > 99 ? "99+" : pendingCount}
                           </span>
                         )}
+                      </span>
+                    )}
+                    {/* El contador de Días cerrados (5/9/2026). Rojo, como el
+                        de sin profesional y por lo mismo: un turno dado en un
+                        día que después se cerró es una clienta que va a llegar
+                        y no va a encontrar a nadie. No se resuelve solo y no
+                        salta a la vista en ninguna otra pantalla, así que se
+                        ve desde todas. */}
+                    {item.to === "/admin/dias-cerrados" && closedDaysCount > 0 && (
+                      <span
+                        title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
+                        className="ml-auto min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                      >
+                        {closedDaysCount > 99 ? "99+" : closedDaysCount}
                       </span>
                     )}
                   </Link>

@@ -189,6 +189,10 @@ const ADMIN_ROUTES = [
   // Los recordatorios de mañana para mandar por WhatsApp. Es la agenda de un día
   // mirada de otra forma, así que pide lo mismo que verla.
   { path: "/admin/avisos", access: "appointments" },
+  // Los días que el centro no abre. Pide lo mismo que Turnos y no `team` como
+  // las ausencias de una profesional: cerrar el centro es una decisión de
+  // agenda, y los turnos que deja en pie los resuelve quien gestiona turnos.
+  { path: "/admin/dias-cerrados", access: "appointments" },
   { path: "/admin/servicios", access: "catalog" },
   { path: "/admin/categorias-servicios", access: "catalog" },
   { path: "/admin/profesionales", access: "team" },

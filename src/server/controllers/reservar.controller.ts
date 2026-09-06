@@ -2,6 +2,7 @@ import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
 import { ausenciasDe, horariosOcupados } from "@/server/services/agenda.service";
 import { accesoDe } from "@/server/services/authz.service";
+import { cierresDelCentro } from "@/server/services/cierres.service";
 import { validarTurno } from "@/server/services/turnos.service";
 import { comoFecha, comoHora } from "@/server/serializar";
 import type { RtaDisponibilidad } from "@/lib/api-tipos";
@@ -87,7 +88,11 @@ export async function disponibilidad(ctx: Ctx) {
         )
       : hasta;
 
-  const [horarios, ocupados, ausencias] = await Promise.all([
+  // 5/9/2026 — se suman los días que el centro no abre, con la misma ventana
+  // que las ausencias: los necesita el calendario del mes igual que a ellas.
+  // La línea vieja queda comentada por la regla de este repo.
+  //   const [horarios, ocupados, ausencias] = await Promise.all([
+  const [horarios, ocupados, ausencias, cierres] = await Promise.all([
     prisma.professional_schedules.findMany({
       where: { professional_id: profesionalId },
       select: { weekday: true, start_time: true, end_time: true },
@@ -95,6 +100,7 @@ export async function disponibilidad(ctx: Ctx) {
     }),
     horariosOcupados(profesionalId, desde, hasta, excluir ?? undefined),
     ausenciasDe(profesionalId, desde, hastaAusencias),
+    cierresDelCentro(desde, hastaAusencias),
   ]);
 
   return json({
@@ -108,7 +114,24 @@ export async function disponibilidad(ctx: Ctx) {
       duration_minutes: o.minutos,
       buffer_minutes: o.margen,
     })),
-    ausencias: ausencias.map((a) => ({
+    /*
+     * Las ausencias de la profesional Y los días que el centro no abre, en la
+     * misma lista (5/9/2026).
+     *
+     * Mezclados a propósito. Los cuatro lugares que leen esto —`buildSlots`, el
+     * calendario del mes, el selector del panel y el diálogo con el que la
+     * clienta se mueve el turno— hacen con cada tramo exactamente lo mismo:
+     * tachar el día. Ninguno necesita saber si es que ella no viene o que no
+     * viene nadie. Un campo aparte habría obligado a tocar los cuatro para
+     * concatenar dos listas, y el que se olvidara seguiría ofreciendo el
+     * feriado como disponible.
+     *
+     * El día que una pantalla necesite distinguirlos —para decir "el centro
+     * está cerrado" en vez de "no atiende"—, ahí se gana el campo propio.
+     *
+     *   ausencias: ausencias.map((a) => ({
+     */
+    ausencias: [...ausencias, ...cierres].map((a) => ({
       starts_on: comoFecha(a.empiezaEl),
       ends_on: comoFecha(a.terminaEl),
     })),

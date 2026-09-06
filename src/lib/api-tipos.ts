@@ -631,8 +631,73 @@ export type RtaTurnoEnDetalle = { turno: TurnoEnDetalle };
  * atender y no tienen a quién — ni asignada, ni una que siga atendiendo. El
  * segundo es trabajo pendiente del centro, no un aviso: hasta que no se
  * resuelva, ese día no hay nadie para atender a la clienta.
+ *
+ * `enDiasCerrados` (5/9/2026) es de la misma familia que `sinProfesional`: los
+ * turnos que ya estaban dados en días que después el centro cerró. La clienta
+ * tiene la confirmación en la mano y ese día no va a haber nadie; hasta que
+ * alguien lo reprograme o lo cancele, sigue contando.
  */
-export type RtaPendientes = { total: number; sinProfesional: number };
+// La forma vieja, comentada por la regla de este repo:
+//   export type RtaPendientes = { total: number; sinProfesional: number };
+export type RtaPendientes = { total: number; sinProfesional: number; enDiasCerrados: number };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Días cerrados del centro
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un tramo en que el centro no abre, con los dos extremos incluidos.
+ *
+ * Misma forma que `AusenciaDeAgenda` y por lo mismo: fechas "YYYY-MM-DD" y no
+ * instantes, porque un día cerrado es un día del almanaque del centro. Ver
+ * `center_closures`.
+ */
+export type CierreDelCentro = {
+  id: string;
+  starts_on: string;
+  ends_on: string;
+  /** Interno: no sale en ningún mail ni en el sitio público. */
+  reason: string | null;
+};
+
+/**
+ * Un turno que quedó en pie adentro de un día cerrado.
+ *
+ * Trae el teléfono a propósito, que `RtaAusenciaGuardada` no trae: esta lista
+ * existe para llamar a cada clienta y avisarle, y el permiso que abre la
+ * pantalla —`appointments`— ya arrastra la ficha con el teléfono. Ahorrarle el
+ * viaje a la ficha es el sentido de la lista.
+ */
+export type TurnoEnDiaCerrado = {
+  id: string;
+  starts_at: string;
+  status: string;
+  /** El nombre de la clienta, o el de la invitada que cargó el centro. */
+  quien: string;
+  telefono: string | null;
+  tratamiento: string;
+  /** Con quién estaba dado. Null si el centro lo cargó sin asignar. */
+  profesional: string | null;
+};
+
+/**
+ * Los cierres por venir, cada uno con lo que le quedó adentro.
+ *
+ * `turnos_en_pie` vacío es el caso normal. Cuando no lo está, es trabajo
+ * pendiente: esos turnos se dieron antes de cerrar el día y nadie los tocó.
+ */
+export type RtaCierres = {
+  cierres: (CierreDelCentro & { turnos_en_pie: TurnoEnDiaCerrado[] })[];
+};
+
+/**
+ * Lo que vuelve al cerrar un día. El cierre SE GUARDA igual, y `turnos_en_pie`
+ * es el aviso: ver `RtaAusenciaGuardada`, que es la misma decisión.
+ */
+export type RtaCierreGuardado = {
+  cierre: CierreDelCentro;
+  turnos_en_pie: TurnoEnDiaCerrado[];
+};
 
 export type TurnoDelCalendario = {
   id: string;
@@ -801,6 +866,11 @@ export type RtaDisponibilidad = {
    * Van aparte de `schedules` a propósito: el horario semanal sigue diciendo
    * que trabaja los martes, y esto es la excepción que lo tapa. Mezclarlos haría
    * imposible distinguir "ese día no trabaja nunca" de "ese día no viene".
+   *
+   * 5/9/2026 — acá vienen TAMBIÉN los días que el centro no abre para nadie
+   * (`center_closures`), sin distinguirlos. Para quien está eligiendo horario
+   * son lo mismo: ese día se tacha. El porqué de no darles un campo propio
+   * está en `disponibilidad()`, en reservar.controller.ts.
    */
   ausencias: { starts_on: string; ends_on: string }[];
 };

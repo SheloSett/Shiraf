@@ -206,3 +206,29 @@ No eran policies pero hacían lo mismo, y también hay que portarlos.
 > El chequeo es: al escribir `professionals.user_id`, `exigirAdmin()`. No alcanza
 > con `exigirPermiso(acceso, "team")` — `team` es justamente lo que tiene quien
 > haría el abuso.
+
+---
+
+## Días cerrados del centro — `center_closures` (tabla nueva, 5/9/2026)
+
+No estaba entre las 39: la tabla no existía en Supabase, así que no hay policy
+vieja de la cual copiar. El candado se decidió con el criterio del resto del
+archivo y queda anotado acá para que la auditoría ruta por ruta siga cerrando:
+son **3 endpoints más** sobre los 61.
+
+| ✔   | Ruta / regla                                             | Quién                                                                      | Dónde queda                                                              |
+| --- | -------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| ✅  | `GET /api/cierres`, `POST /api/cierres`, `DELETE /api/cierres/:id` | Permiso `appointments`                                                     | cierres.routes (middleware) · cierres.controller                          |
+| ✅  | Qué días están cerrados, para elegir horario             | **Sin permiso**, sólo "de tal día a tal día" y nunca el motivo — como `schedules public` | reservar.controller → disponibilidad, mezclados con las ausencias |
+| ✅  | Que una clienta no reserve ni se mueva a un día cerrado  | Regla de `validarTurno`; el centro está exento, como con las ausencias     | turnos.service → exigirQueElCentroAbra                                   |
+
+> ### Por qué `appointments` y no `team`, como las ausencias
+>
+> Las ausencias de una profesional son parte de su ficha, como sus horarios, y
+> por eso piden `team`. Cerrar el centro entero es una decisión de agenda: lo
+> que deja atrás —los turnos que ya estaban dados esos días— lo tiene que
+> resolver quien puede reprogramarlos y cancelarlos, y ésa es la gente con
+> `appointments`. Pedir `team` dejaría la pantalla en manos de alguien que ve
+> el problema y no lo puede tocar. Y `GET /api/cierres` devuelve esos turnos
+> con nombre y teléfono, que es exactamente lo que `appointments` autoriza a
+> ver (arrastra `clients_contact`, ver `read profiles`).
