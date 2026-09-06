@@ -21,7 +21,12 @@ import { api, apiDelete, apiPost } from "@/lib/api";
 import type { RtaCierreGuardado, RtaCierres, TurnoEnDiaCerrado } from "@/lib/api-tipos";
 import { formatDateTime, STATUS_LABEL, toDateKey } from "@/lib/shiraf";
 
-export const Route = createFileRoute("/_authenticated/admin/dias-cerrados")({
+// 5/9/2026 — nació en /admin/dias-cerrados y el mismo día se mudó adentro de
+// Configuración (el archivo se renombró a admin.configuracion.dias-cerrados).
+// La ruta la fija el nombre del archivo; esta cadena tiene que coincidir. La
+// línea vieja queda comentada por la regla de este repo.
+//   export const Route = createFileRoute("/_authenticated/admin/dias-cerrados")({
+export const Route = createFileRoute("/_authenticated/admin/configuracion/dias-cerrados")({
   head: () => ({
     meta: [{ title: "Días cerrados — Panel Shiraf" }],
   }),
@@ -166,7 +171,10 @@ function DiasCerrados() {
   return (
     <div>
       <div>
-        <p className="text-eyebrow text-muted-foreground">Agenda</p>
+        {/* Decía «Agenda» cuando era una sección propia del menú. Ahora vive
+            adentro de Configuración y la línea chica dice de dónde cuelga:
+            <p className="text-eyebrow text-muted-foreground">Agenda</p> */}
+        <p className="text-eyebrow text-muted-foreground">Configuración</p>
         <h1 className="mt-3 font-display text-4xl text-foreground">Días cerrados</h1>
       </div>
 

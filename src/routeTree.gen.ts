@@ -32,13 +32,15 @@ import { Route as AuthenticatedAdminClientesRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminContenidoRouteImport } from './routes/_authenticated/admin.contenido'
 import { Route as AuthenticatedAdminCuentaRouteImport } from './routes/_authenticated/admin.cuenta'
 import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin.dashboard'
-import { Route as AuthenticatedAdminDiasCerradosRouteImport } from './routes/_authenticated/admin.dias-cerrados'
 import { Route as AuthenticatedAdminMetricasRouteImport } from './routes/_authenticated/admin.metricas'
 import { Route as AuthenticatedAdminMiAgendaRouteImport } from './routes/_authenticated/admin.mi-agenda'
 import { Route as AuthenticatedAdminProductosRouteImport } from './routes/_authenticated/admin.productos'
 import { Route as AuthenticatedAdminProfesionalesRouteImport } from './routes/_authenticated/admin.profesionales'
 import { Route as AuthenticatedAdminServiciosRouteImport } from './routes/_authenticated/admin.servicios'
 import { Route as AuthenticatedAdminTurnosRouteImport } from './routes/_authenticated/admin.turnos'
+import { Route as AuthenticatedAdminConfiguracionIndexRouteImport } from './routes/_authenticated/admin.configuracion.index'
+import { Route as AuthenticatedAdminConfiguracionContenidoRouteImport } from './routes/_authenticated/admin.configuracion.contenido'
+import { Route as AuthenticatedAdminConfiguracionDiasCerradosRouteImport } from './routes/_authenticated/admin.configuracion.dias-cerrados'
 import { Route as AuthenticatedAdminTurnosIdRouteImport } from './routes/_authenticated/admin.turnos_.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -163,12 +165,6 @@ const AuthenticatedAdminDashboardRoute =
     path: '/dashboard',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedAdminDiasCerradosRoute =
-  AuthenticatedAdminDiasCerradosRouteImport.update({
-    id: '/dias-cerrados',
-    path: '/dias-cerrados',
-    getParentRoute: () => AuthenticatedAdminRoute,
-  } as any)
 const AuthenticatedAdminMetricasRoute =
   AuthenticatedAdminMetricasRouteImport.update({
     id: '/metricas',
@@ -205,6 +201,24 @@ const AuthenticatedAdminTurnosRoute =
     path: '/turnos',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminConfiguracionIndexRoute =
+  AuthenticatedAdminConfiguracionIndexRouteImport.update({
+    id: '/configuracion/',
+    path: '/configuracion/',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminConfiguracionContenidoRoute =
+  AuthenticatedAdminConfiguracionContenidoRouteImport.update({
+    id: '/configuracion/contenido',
+    path: '/configuracion/contenido',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminConfiguracionDiasCerradosRoute =
+  AuthenticatedAdminConfiguracionDiasCerradosRouteImport.update({
+    id: '/configuracion/dias-cerrados',
+    path: '/configuracion/dias-cerrados',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminTurnosIdRoute =
   AuthenticatedAdminTurnosIdRouteImport.update({
     id: '/turnos_/$id',
@@ -234,7 +248,6 @@ export interface FileRoutesByFullPath {
   '/admin/contenido': typeof AuthenticatedAdminContenidoRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
-  '/admin/dias-cerrados': typeof AuthenticatedAdminDiasCerradosRoute
   '/admin/metricas': typeof AuthenticatedAdminMetricasRoute
   '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
@@ -242,7 +255,10 @@ export interface FileRoutesByFullPath {
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
+  '/admin/configuracion/contenido': typeof AuthenticatedAdminConfiguracionContenidoRoute
+  '/admin/configuracion/dias-cerrados': typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
   '/admin/turnos/$id': typeof AuthenticatedAdminTurnosIdRoute
+  '/admin/configuracion/': typeof AuthenticatedAdminConfiguracionIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -264,7 +280,6 @@ export interface FileRoutesByTo {
   '/admin/contenido': typeof AuthenticatedAdminContenidoRoute
   '/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
-  '/admin/dias-cerrados': typeof AuthenticatedAdminDiasCerradosRoute
   '/admin/metricas': typeof AuthenticatedAdminMetricasRoute
   '/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/admin/productos': typeof AuthenticatedAdminProductosRoute
@@ -272,7 +287,10 @@ export interface FileRoutesByTo {
   '/admin/servicios': typeof AuthenticatedAdminServiciosRoute
   '/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
+  '/admin/configuracion/contenido': typeof AuthenticatedAdminConfiguracionContenidoRoute
+  '/admin/configuracion/dias-cerrados': typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
   '/admin/turnos/$id': typeof AuthenticatedAdminTurnosIdRoute
+  '/admin/configuracion': typeof AuthenticatedAdminConfiguracionIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -298,7 +316,6 @@ export interface FileRoutesById {
   '/_authenticated/admin/contenido': typeof AuthenticatedAdminContenidoRoute
   '/_authenticated/admin/cuenta': typeof AuthenticatedAdminCuentaRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
-  '/_authenticated/admin/dias-cerrados': typeof AuthenticatedAdminDiasCerradosRoute
   '/_authenticated/admin/metricas': typeof AuthenticatedAdminMetricasRoute
   '/_authenticated/admin/mi-agenda': typeof AuthenticatedAdminMiAgendaRoute
   '/_authenticated/admin/productos': typeof AuthenticatedAdminProductosRoute
@@ -306,7 +323,10 @@ export interface FileRoutesById {
   '/_authenticated/admin/servicios': typeof AuthenticatedAdminServiciosRoute
   '/_authenticated/admin/turnos': typeof AuthenticatedAdminTurnosRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
+  '/_authenticated/admin/configuracion/contenido': typeof AuthenticatedAdminConfiguracionContenidoRoute
+  '/_authenticated/admin/configuracion/dias-cerrados': typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
   '/_authenticated/admin/turnos_/$id': typeof AuthenticatedAdminTurnosIdRoute
+  '/_authenticated/admin/configuracion/': typeof AuthenticatedAdminConfiguracionIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -332,7 +352,6 @@ export interface FileRouteTypes {
     | '/admin/contenido'
     | '/admin/cuenta'
     | '/admin/dashboard'
-    | '/admin/dias-cerrados'
     | '/admin/metricas'
     | '/admin/mi-agenda'
     | '/admin/productos'
@@ -340,7 +359,10 @@ export interface FileRouteTypes {
     | '/admin/servicios'
     | '/admin/turnos'
     | '/admin/'
+    | '/admin/configuracion/contenido'
+    | '/admin/configuracion/dias-cerrados'
     | '/admin/turnos/$id'
+    | '/admin/configuracion/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -362,7 +384,6 @@ export interface FileRouteTypes {
     | '/admin/contenido'
     | '/admin/cuenta'
     | '/admin/dashboard'
-    | '/admin/dias-cerrados'
     | '/admin/metricas'
     | '/admin/mi-agenda'
     | '/admin/productos'
@@ -370,7 +391,10 @@ export interface FileRouteTypes {
     | '/admin/servicios'
     | '/admin/turnos'
     | '/admin'
+    | '/admin/configuracion/contenido'
+    | '/admin/configuracion/dias-cerrados'
     | '/admin/turnos/$id'
+    | '/admin/configuracion'
   id:
     | '__root__'
     | '/'
@@ -395,7 +419,6 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/contenido'
     | '/_authenticated/admin/cuenta'
     | '/_authenticated/admin/dashboard'
-    | '/_authenticated/admin/dias-cerrados'
     | '/_authenticated/admin/metricas'
     | '/_authenticated/admin/mi-agenda'
     | '/_authenticated/admin/productos'
@@ -403,7 +426,10 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/servicios'
     | '/_authenticated/admin/turnos'
     | '/_authenticated/admin/'
+    | '/_authenticated/admin/configuracion/contenido'
+    | '/_authenticated/admin/configuracion/dias-cerrados'
     | '/_authenticated/admin/turnos_/$id'
+    | '/_authenticated/admin/configuracion/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -581,13 +607,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminDashboardRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/admin/dias-cerrados': {
-      id: '/_authenticated/admin/dias-cerrados'
-      path: '/dias-cerrados'
-      fullPath: '/admin/dias-cerrados'
-      preLoaderRoute: typeof AuthenticatedAdminDiasCerradosRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
     '/_authenticated/admin/metricas': {
       id: '/_authenticated/admin/metricas'
       path: '/metricas'
@@ -630,6 +649,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTurnosRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/configuracion/': {
+      id: '/_authenticated/admin/configuracion/'
+      path: '/configuracion'
+      fullPath: '/admin/configuracion/'
+      preLoaderRoute: typeof AuthenticatedAdminConfiguracionIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/configuracion/contenido': {
+      id: '/_authenticated/admin/configuracion/contenido'
+      path: '/configuracion/contenido'
+      fullPath: '/admin/configuracion/contenido'
+      preLoaderRoute: typeof AuthenticatedAdminConfiguracionContenidoRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/configuracion/dias-cerrados': {
+      id: '/_authenticated/admin/configuracion/dias-cerrados'
+      path: '/configuracion/dias-cerrados'
+      fullPath: '/admin/configuracion/dias-cerrados'
+      preLoaderRoute: typeof AuthenticatedAdminConfiguracionDiasCerradosRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/turnos_/$id': {
       id: '/_authenticated/admin/turnos_/$id'
       path: '/turnos/$id'
@@ -649,7 +689,6 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminContenidoRoute: typeof AuthenticatedAdminContenidoRoute
   AuthenticatedAdminCuentaRoute: typeof AuthenticatedAdminCuentaRoute
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
-  AuthenticatedAdminDiasCerradosRoute: typeof AuthenticatedAdminDiasCerradosRoute
   AuthenticatedAdminMetricasRoute: typeof AuthenticatedAdminMetricasRoute
   AuthenticatedAdminMiAgendaRoute: typeof AuthenticatedAdminMiAgendaRoute
   AuthenticatedAdminProductosRoute: typeof AuthenticatedAdminProductosRoute
@@ -657,7 +696,10 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminServiciosRoute: typeof AuthenticatedAdminServiciosRoute
   AuthenticatedAdminTurnosRoute: typeof AuthenticatedAdminTurnosRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+  AuthenticatedAdminConfiguracionContenidoRoute: typeof AuthenticatedAdminConfiguracionContenidoRoute
+  AuthenticatedAdminConfiguracionDiasCerradosRoute: typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
   AuthenticatedAdminTurnosIdRoute: typeof AuthenticatedAdminTurnosIdRoute
+  AuthenticatedAdminConfiguracionIndexRoute: typeof AuthenticatedAdminConfiguracionIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
@@ -671,7 +713,6 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminContenidoRoute: AuthenticatedAdminContenidoRoute,
   AuthenticatedAdminCuentaRoute: AuthenticatedAdminCuentaRoute,
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
-  AuthenticatedAdminDiasCerradosRoute: AuthenticatedAdminDiasCerradosRoute,
   AuthenticatedAdminMetricasRoute: AuthenticatedAdminMetricasRoute,
   AuthenticatedAdminMiAgendaRoute: AuthenticatedAdminMiAgendaRoute,
   AuthenticatedAdminProductosRoute: AuthenticatedAdminProductosRoute,
@@ -679,7 +720,13 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminServiciosRoute: AuthenticatedAdminServiciosRoute,
   AuthenticatedAdminTurnosRoute: AuthenticatedAdminTurnosRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+  AuthenticatedAdminConfiguracionContenidoRoute:
+    AuthenticatedAdminConfiguracionContenidoRoute,
+  AuthenticatedAdminConfiguracionDiasCerradosRoute:
+    AuthenticatedAdminConfiguracionDiasCerradosRoute,
   AuthenticatedAdminTurnosIdRoute: AuthenticatedAdminTurnosIdRoute,
+  AuthenticatedAdminConfiguracionIndexRoute:
+    AuthenticatedAdminConfiguracionIndexRoute,
 }
 
 const AuthenticatedAdminRouteWithChildren =
