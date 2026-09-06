@@ -84,12 +84,30 @@ const porMail = new Map<string, Registro>();
  *       abierto, cualquiera saltea Cloudflare y manda su propio
  *       `CF-Connecting-IP`. Con esta opción hay que cerrarle el firewall a todo
  *       lo que no venga de los rangos de Cloudflare, o volvemos al principio.
+ *
+ *   "docker"  (agregado el 6/9/2026, para el VPS nuevo)
+ *       El proxy es OTRO CONTENEDOR en la misma red de Docker: en el VPS nuevo
+ *       la puerta de entrada es un Caddy (`/srv/proxy`, red `edge`) que le
+ *       habla a `shiraf-app:3000` por esa red. Ahí la conexión no entra por
+ *       loopback sino desde una IP privada de Docker (172.16/12, 10/8 o
+ *       192.168/16), así que "loopback" no le creería el header a nadie y
+ *       todo el centro caería en un mismo balde: la IP del contenedor de Caddy.
+ *
+ *       Se lee `X-Real-IP`, que el archivo del sitio en Caddy escribe con
+ *       `{remote_host}` —la IP del socket del lado de Caddy, que PISA lo que
+ *       venga—, y sólo si la conexión entró desde una IP privada.
+ *
+ *       ⚠️ Lo que esto confía es la red interna de Docker: otro contenedor
+ *       del mismo servidor podría pegarle a `shiraf-app:3000` con un
+ *       `X-Real-IP` inventado. Hoy los únicos que están en esa red son el
+ *       Caddy y los sitios de la familia; no es internet. Si algún día la
+ *       red `edge` la comparte un tercero, esto se revisa.
  */
-type QueHayAdelante = "none" | "loopback" | "cloudflare";
+type QueHayAdelante = "none" | "loopback" | "cloudflare" | "docker";
 
 function queHayAdelante(): QueHayAdelante {
   const valor = process.env["TRUST_PROXY"];
-  if (valor === "loopback" || valor === "cloudflare") return valor;
+  if (valor === "loopback" || valor === "cloudflare" || valor === "docker") return valor;
   // Cualquier otra cosa —vacía, sin definir, mal escrita— cae en el más
   // desconfiado. Un typo tiene que dejar el limitador de más y no de menos.
   return "none";
@@ -112,6 +130,22 @@ function ipDelSocket(ctx: Ctx): string | undefined {
 function esLoopback(ip: string | undefined): boolean {
   if (!ip) return false;
   return ip === "::1" || ip.startsWith("127.") || ip.startsWith("::ffff:127.");
+}
+
+/**
+ * Una IP privada (RFC 1918): la de otro contenedor de Docker en la misma
+ * máquina. Es lo que ve la app cuando el proxy es un contenedor y no nginx en
+ * el host. Los rangos son 10.0.0.0/8, 172.16.0.0/12 y 192.168.0.0/16, con o
+ * sin el prefijo `::ffff:` que Node le pone a las IPv4 en un socket dual.
+ */
+function esRedPrivada(ip: string | undefined): boolean {
+  if (!ip) return false;
+  const v4 = ip.startsWith("::ffff:") ? ip.slice("::ffff:".length) : ip;
+  if (v4.startsWith("10.") || v4.startsWith("192.168.")) return true;
+  const m = /^172\.(\d{1,3})\./.exec(v4);
+  if (!m) return false;
+  const segundo = Number(m[1]);
+  return segundo >= 16 && segundo <= 31;
 }
 
 /** Ya se avisó que el contador por IP está apagado. Una vez por arranque. */
@@ -144,6 +178,15 @@ function claveDeQuienLlama(ctx: Ctx): string | null {
       // `socket` sin definir es desarrollo, donde no hay nginx del que
       // desconfiar.
       if (esLoopback(socket) || socket === undefined) {
+        const real = ctx.req.headers.get("x-real-ip");
+        if (real) return real.trim();
+      }
+      break;
+    }
+    case "docker": {
+      // Sólo si el pedido vino de una IP privada es que lo puso el Caddy de
+      // la red de Docker. Igual que arriba, `socket` sin definir es desarrollo.
+      if (esRedPrivada(socket) || socket === undefined) {
         const real = ctx.req.headers.get("x-real-ip");
         if (real) return real.trim();
       }

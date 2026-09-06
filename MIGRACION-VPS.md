@@ -9,20 +9,16 @@ el ecommerce último porque hay que ordenarlo antes (ver al final).
 | IP     | `177.7.59.16` (srv1745446) | `82.25.74.242` (Hostinger KVM 4) |
 | Entrar | `ssh shelo@177.7.59.16`    | `ssh shelo@82.25.74.242`         |
 | Shiraf | `/home/shelo/shiraf`       | `/home/shelo/shiraf`             |
+| Proxy  | nginx + certbot en el host | **Caddy** en contenedor, `/srv/proxy` |
 
 Los dos servidores sólo aceptan la clave `id_ed25519`, que tiene passphrase:
-cada `ssh`/`scp` la pide. Es molesto y es correcto.
+cada `ssh`/`scp` la pide. Es molesto y es correcto. En el nuevo `sudo` no
+pide contraseña; en el viejo sí.
 
-**Todos los comandos son para PowerShell en tu máquina**, salvo que digan lo
-contrario. Antes de empezar, en la terminal:
-
-```powershell
-cd C:\Users\shelo\Desktop\workspace\shiraf\Shiraf
-mkdir C:\Users\shelo\migracion-vps -Force   # acá caen los archivos de paso (fuera del repo)
-```
-
-> `C:\Users\shelo\migracion-vps` va a tener el `.env` y volcados de la base
-> con datos de clientas. Cuando termine todo, se borra.
+**Todos los comandos son para PowerShell en tu máquina**, desde la carpeta del
+proyecto (`cd C:\Users\shelo\Desktop\workspace\shiraf\Shiraf`). Los archivos
+de paso caen en `C:\Users\shelo\migracion-vps`, que tiene el `.env` y volcados
+con datos de clientas: **cuando termine todo, se borra.**
 
 La regla de toda la migración: **el viejo no se apaga ni se borra hasta que el
 nuevo lleve al menos dos semanas andando.** Es el único rollback.
@@ -48,82 +44,91 @@ salidas completas están en `inventario-vps-viejo.txt` e `inventario-sudo.txt`
   arrancó alguien a mano y no vuelve solo después de un reinicio. Cron de
   backup a las 3:00.
 - **nginx** con tres sitios y **certbot** renovando con el plugin de nginx.
-- **Sin firewall ni fail2ban.** El nuevo los tiene desde el paso 1.
+- **Sin firewall ni fail2ban.**
 - 21 GB de caché de build de Docker. No afecta a nada.
+
+## Lo que hay en el nuevo (inventario del 6/9/2026)
+
+Salió de `scripts/migracion/inventario-vps-nuevo.sh` (`inventario-vps-nuevo.txt`).
+
+- Ubuntu 24.04, 4 núcleos, 15 GB de RAM, 193 GB de disco. Docker ya venía.
+- **Un Caddy en `/srv/proxy`** (contenedor `proxy`, del usuario `jony`) es el
+  único que escucha en 80/443. Reparte por nombre de host a los contenedores
+  que estén en la red de Docker **`edge`**, y saca los certificados solo. Cada
+  sitio es un archivo en `/srv/proxy/sites/*.caddy`. Ya sirve dos sitios del
+  padre (shukmamtakim.com.ar y ohel-moed.com.ar), cada uno también con un
+  nombre `*.82-25-74-242.sslip.io` para probar por IP con certificado real.
+- Después de Shiraf, manhattan y el ecommerce, va un tercer sitio del padre.
+- `01-preparar-vps-nuevo.sh` (paso 1) dejó ufw con 22/80/443, fail2ban, swap
+  de 2 GB, y **un nginx que no se usa**: no puede arrancar porque el 80 es de
+  Caddy, y quedó deshabilitado. Los certificados los maneja Caddy, no certbot.
+
+**Consecuencia para Shiraf:** no se copia el certificado ni se instala nginx.
+La app se une a la red `edge` (con `docker-compose.override.yml`) y se agrega
+`shiraf.caddy` al proxy. Y el limitador de login usa `TRUST_PROXY=docker`,
+un modo agregado el 6/9/2026 en `loginLimiter.ts`: Caddy le llega desde la
+red de Docker y no por loopback, así que el modo `loopback` del viejo no le
+creería la IP a nadie.
 
 ---
 
 ## Shiraf, paso a paso
 
-### Paso 1 — Preparar el nuevo (una sola vez, sirve para los tres sitios)
+### Paso 1 — Preparar el nuevo ✅ (hecho el 6/9/2026)
 
-Instala Docker, nginx, certbot, ufw (22/80/443) y fail2ban. Pide la
-passphrase dos veces y la contraseña de sudo de `shelo` en el nuevo.
-
-```powershell
-scp scripts\migracion\01-preparar-vps-nuevo.sh shelo@82.25.74.242:~/
-ssh -t shelo@82.25.74.242 "sudo bash ~/01-preparar-vps-nuevo.sh 2>&1 | tee ~/preparacion.log"
-```
-
-Comprobar (en una sesión nueva, porque el grupo `docker` se aplica al volver a
-entrar):
-
-```powershell
-ssh shelo@82.25.74.242 "docker ps; docker compose version; sudo ufw status; nproc; free -h; df -h /"
-```
-
-Tiene que responder `docker ps` sin `permission denied` y el firewall en
-`active` con 22, 80 y 443.
+`01-preparar-vps-nuevo.sh` corrió bien. nginx quedó deshabilitado a mano
+(`sudo systemctl disable --now nginx`).
 
 ### Paso 2 — Clonar el repo y traer lo que el repo no tiene
 
-**2a. El código**, en el nuevo:
+**2a. El código**, en el nuevo. Se clona la rama `migracion-vps`, que es la
+que tiene el modo `docker` del limitador; cuando se mezcle a `main` se cambia
+con `git checkout main && git pull`:
 
 ```powershell
-ssh shelo@82.25.74.242 "git clone https://github.com/SheloSett/Shiraf.git ~/shiraf && cd ~/shiraf && git log --oneline -1"
+ssh shelo@82.25.74.242 "git clone -b migracion-vps https://github.com/SheloSett/Shiraf.git ~/shiraf && cd ~/shiraf && git log --oneline -1"
 ```
 
-Tiene que mostrar el mismo commit que el viejo (`git log --oneline -1` allá).
-
-**2b. El `.env`** (secretos: pasa por tu máquina y no por el repo):
+**2b. El `.env`** (secretos: pasa por tu máquina y no por el repo), y un
+cambio: `TRUST_PROXY` pasa de `loopback` a `docker`. El resto queda igual
+(`APP_URL`, `APP_BIND=127.0.0.1`, `DB_PORT`, Cloudinary, Brevo):
 
 ```powershell
 scp shelo@177.7.59.16:~/shiraf/.env C:\Users\shelo\migracion-vps\shiraf.env
+(Get-Content C:\Users\shelo\migracion-vps\shiraf.env) -replace '^TRUST_PROXY=.*', 'TRUST_PROXY=docker' | Set-Content -Encoding ascii C:\Users\shelo\migracion-vps\shiraf.env
+Select-String -Path C:\Users\shelo\migracion-vps\shiraf.env -Pattern '^TRUST_PROXY'
 scp C:\Users\shelo\migracion-vps\shiraf.env shelo@82.25.74.242:~/shiraf/.env
 ```
 
-No hace falta cambiarle nada: `APP_URL`, `TRUST_PROXY=loopback` y
-`APP_BIND=127.0.0.1` valen igual en el nuevo. `DB_PORT` (5435 en el viejo,
-porque el 5432 lo tenía el Postgres del host) también puede quedar.
+La tercera línea tiene que mostrar `TRUST_PROXY=docker`.
 
-**2c. Los backups viejos**, para no perder el historial de la rotación:
+**2c. El complemento de compose** que une la app a la red `edge`:
+
+```powershell
+scp scripts\migracion\docker-compose.override.yml shelo@82.25.74.242:~/shiraf/docker-compose.override.yml
+ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose config --services && docker compose config | grep -A3 'edge:'"
+```
+
+Tiene que listar los servicios sin error y mostrar `edge:` con `external: true`.
+
+**2d. Los backups viejos**, para no perder el historial de la rotación:
 
 ```powershell
 scp -r shelo@177.7.59.16:~/shiraf/backups C:\Users\shelo\migracion-vps\shiraf-backups
 scp -r C:\Users\shelo\migracion-vps\shiraf-backups\* shelo@82.25.74.242:~/shiraf/backups/
 ```
 
-**2d. El certificado**, para que el nuevo sirva HTTPS desde el primer minuto y
-se pueda probar antes de tocar el DNS. Se empaqueta con sudo en el viejo, pasa
-por tu máquina, y se desempaqueta con sudo en el nuevo:
+**2e. El sitio en Caddy**, por ahora sólo con el nombre de prueba por IP (el
+dominio real va en otro archivo que se copia en el corte; el porqué está en
+`shiraf.caddy`):
 
 ```powershell
-ssh -t shelo@177.7.59.16 "sudo tar czf /home/shelo/letsencrypt-shiraf.tgz -C / etc/letsencrypt/live/shiraf.com.ar etc/letsencrypt/archive/shiraf.com.ar etc/letsencrypt/renewal/shiraf.com.ar.conf etc/letsencrypt/options-ssl-nginx.conf etc/letsencrypt/ssl-dhparams.pem && sudo chown shelo:shelo /home/shelo/letsencrypt-shiraf.tgz && ls -la /home/shelo/letsencrypt-shiraf.tgz"
-scp shelo@177.7.59.16:~/letsencrypt-shiraf.tgz C:\Users\shelo\migracion-vps\
-scp C:\Users\shelo\migracion-vps\letsencrypt-shiraf.tgz shelo@82.25.74.242:~/
-ssh -t shelo@82.25.74.242 "sudo tar xzf ~/letsencrypt-shiraf.tgz -C / && sudo ls -la /etc/letsencrypt/live/shiraf.com.ar/"
+scp scripts\migracion\shiraf.caddy shelo@82.25.74.242:~/
+ssh shelo@82.25.74.242 "sudo cp ~/shiraf.caddy /srv/proxy/sites/shiraf.caddy && docker exec proxy caddy validate --config /etc/caddy/Caddyfile && docker exec proxy caddy reload --config /etc/caddy/Caddyfile && echo RECARGADO"
 ```
 
-Tiene que listar `fullchain.pem` y `privkey.pem` como enlaces a `../../archive`.
-
-**2e. nginx del nuevo**:
-
-```powershell
-scp scripts\migracion\nginx-shiraf.conf shelo@82.25.74.242:~/
-ssh -t shelo@82.25.74.242 "sudo cp ~/nginx-shiraf.conf /etc/nginx/sites-available/shiraf && sudo ln -sf /etc/nginx/sites-available/shiraf /etc/nginx/sites-enabled/shiraf && sudo nginx -t && sudo systemctl reload nginx"
-```
-
-`nginx -t` tiene que decir `syntax is ok` y `test is successful`.
+Tiene que terminar en `RECARGADO`. Los sitios del padre no se cortan con un
+reload.
 
 ### Paso 3 — Construir la imagen en el nuevo
 
@@ -157,11 +162,13 @@ ssh shelo@82.25.74.242 "gunzip -c ~/shiraf-ensayo.sql.gz | docker exec -i shiraf
 
 **4c. Levantar el resto.** `migrate` va a decir que el esquema ya está en
 sync (viene entero en el volcado, triggers incluidos) y va a verificar las
-reglas; después arranca la app:
+reglas; después arranca la app y se une a `edge`:
 
 ```powershell
-ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose up -d && sleep 20 && docker compose logs migrate | tail -8 && docker ps --filter name=shiraf --format '{{.Names}} {{.Status}}'"
+ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose up -d && sleep 20 && docker compose logs migrate | tail -8 && docker ps --filter name=shiraf --format '{{.Names}} {{.Status}}' && docker network inspect edge --format '{{range .Containers}}{{.Name}} {{end}}'"
 ```
+
+La última línea tiene que incluir `shiraf-app` junto a `proxy`.
 
 **4d. Comparar los dos servidores.** La última línea de cada salida es una
 huella de los conteos: tienen que coincidir (salvo que en el viejo alguien
@@ -172,26 +179,22 @@ Get-Content scripts\migracion\verificar-shiraf.sh -Raw | ssh shelo@177.7.59.16 '
 Get-Content scripts\migracion\verificar-shiraf.sh -Raw | ssh shelo@82.25.74.242 'bash -s'
 ```
 
-**4e. Ver el sitio nuevo en el navegador, con el dominio real.** Se le dice a
-tu máquina —y sólo a la tuya— que `shiraf.com.ar` es la IP nueva. Bloc de
-notas **como administrador**, abrir `C:\Windows\System32\drivers\etc\hosts` y
-agregar al final:
-
-```
-82.25.74.242 shiraf.com.ar www.shiraf.com.ar
-```
-
-Después `ipconfig /flushdns`, y entrar a https://shiraf.com.ar: tiene que
-tener candado (es el mismo certificado), mostrar los tratamientos con fotos,
-dejar entrar al panel y ver la agenda. Para saber que estás mirando el nuevo:
+**4e. Ver el sitio nuevo en el navegador**, con certificado real y sin tocar
+nada en tu máquina: **https://shiraf.82-25-74-242.sslip.io**. Tiene que tener
+candado, mostrar los tratamientos con fotos, dejar entrar al panel y ver la
+agenda. Si el candado tarda un minuto en aparecer es Caddy pidiendo el
+certificado; se mira con:
 
 ```powershell
-ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose logs app --since 2m | tail -5"
+ssh shelo@82.25.74.242 "docker logs proxy --since 5m 2>&1 | grep -iE 'shiraf|error' | tail -10"
 ```
 
-**Cuando termines, borrá esa línea del `hosts`** y volvé a hacer `flushdns`.
-Si no, vas a seguir viendo el nuevo aunque el DNS apunte a otro lado y no vas
-a poder distinguir nada.
+Y que el limitador esté leyendo la IP de verdad (no tiene que aparecer el
+aviso de que quedó apagado):
+
+```powershell
+ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose logs app --since 10m | grep -iE 'limiter|error' ; echo '(sin lineas = bien)'"
+```
 
 ### Paso 5 — El corte
 
@@ -200,7 +203,7 @@ de shiraf.com.ar está bajado a 300** desde al menos un día antes (se hace en
 el panel del DNS; ver «DNS» abajo). Elegir un momento de poco uso.
 
 **5a. Frenar la app del viejo.** Desde acá el sitio no responde (nginx da 502)
-hasta el 5e. Con la base de 9 MB son unos minutos:
+hasta el 5f. Con la base de 9 MB son unos minutos:
 
 ```powershell
 ssh shelo@177.7.59.16 "cd ~/shiraf && docker compose stop app && docker ps --filter name=shiraf --format '{{.Names}} {{.Status}}'"
@@ -228,17 +231,31 @@ ssh shelo@82.25.74.242 "cd ~/shiraf && docker compose up -d && sleep 20 && docke
 **5d. Comparar otra vez** (paso 4d). Ahora la huella tiene que coincidir
 exacto, porque el viejo está frenado.
 
-**5e. Cambiar el DNS**: registros A de `shiraf.com.ar` y `www.shiraf.com.ar`
-→ `82.25.74.242`. Ver que propagó:
+**5e. Cambiar el DNS y, enseguida, declarar el dominio en Caddy.** Primero
+el DNS: registros A de `shiraf.com.ar` y `www.shiraf.com.ar` →
+`82.25.74.242`. Después, sin esperar, se copia al proxy el archivo con el
+dominio real (`shiraf-dominio.caddy`; hasta acá sólo estaba el nombre de
+prueba) y se recarga:
+
+```powershell
+scp scripts\migracion\shiraf-dominio.caddy shelo@82.25.74.242:~/
+ssh shelo@82.25.74.242 "sudo cp ~/shiraf-dominio.caddy /srv/proxy/sites/shiraf-dominio.caddy && docker exec proxy caddy validate --config /etc/caddy/Caddyfile && docker exec proxy caddy reload --config /etc/caddy/Caddyfile && echo RECARGADO"
+```
+
+Tiene que decir `RECARGADO`. Caddy pide el certificado en cuanto Let's
+Encrypt resuelve la IP nueva; si el primer intento falla porque el DNS todavía
+no propagó, reintenta solo en un minuto. Ver que propagó y que el certificado
+salió:
 
 ```powershell
 nslookup shiraf.com.ar 8.8.8.8
+ssh shelo@82.25.74.242 "docker exec proxy sh -c 'ls -R /data/caddy/certificates | grep shiraf.com.ar'"
 ```
 
 **5f. Puente en el viejo, para los que todavía resuelven la IP vieja.** En vez
 de un 502, el nginx viejo reenvía al nuevo mientras el DNS termina de cambiar.
-Así nadie escribe en la base vieja después del corte. Se copia un archivo con
-el bloque ya escrito (`scripts/migracion/nginx-shiraf-puente.conf`):
+Así nadie escribe en la base vieja después del corte. Recién después de que
+el certificado del 5e exista:
 
 ```powershell
 scp scripts\migracion\nginx-shiraf-puente.conf shelo@177.7.59.16:~/
@@ -249,14 +266,13 @@ Durante esas horas, quienes entren por el puente le llegan al nuevo con la IP
 del viejo, así que el freno de intentos de login los cuenta como una sola
 persona. Es por un rato y no hay nada que hacer al respecto.
 
-**5g. Comprobar**: entrar al sitio desde el celular (con datos, no con el
-wifi), iniciar sesión, mirar la agenda, pedir un mail de recuperación de
-contraseña y ver que llega. Y que el backup diario del nuevo esté vivo y el
-certificado sepa renovarse desde acá:
+**5g. Comprobar**: entrar a https://shiraf.com.ar desde el celular (con
+datos, no con el wifi), iniciar sesión, mirar la agenda, pedir un mail de
+recuperación de contraseña y ver que llega. Y que el backup diario del nuevo
+esté vivo:
 
 ```powershell
 ssh shelo@82.25.74.242 "docker ps --filter name=shiraf-backup --format '{{.Names}} {{.Status}}'"
-ssh -t shelo@82.25.74.242 "sudo certbot renew --dry-run 2>&1 | tail -6"
 ```
 
 ### Paso 6 — Después
@@ -265,10 +281,13 @@ ssh -t shelo@82.25.74.242 "sudo certbot renew --dry-run 2>&1 | tail -6"
   durante dos semanas. Ni `down -v`, ni `volume rm`, ni borrar la carpeta.
 - A la semana: `ssh shelo@82.25.74.242 "ls -la ~/shiraf/backups/daily"` tiene
   que mostrar archivos nuevos cada día.
+- Cuando `migracion-vps` se mezcle a `main`: en el nuevo,
+  `cd ~/shiraf && git checkout main && git pull && docker compose up -d --build`.
 - Cuando estén los tres sitios en el nuevo y pasen las dos semanas: se da de
   baja el viejo desde el panel de Hostinger, se borra
   `C:\Users\shelo\migracion-vps`, y se actualizan `DOCKER.md`, `TODO.md` y
-  `ESTADO.md` con la IP nueva.
+  `ESTADO.md` con la IP nueva. El deploy de ahí en más es el mismo
+  `git pull && docker compose up -d --build` de siempre, en `~/shiraf`.
 
 ---
 
@@ -276,7 +295,8 @@ ssh -t shelo@82.25.74.242 "sudo certbot renew --dry-run 2>&1 | tail -6"
 
 **Pendiente saber dónde se administran los tres dominios `.com.ar`** (NIC
 Argentina delega a algún servidor de DNS: puede ser el panel de Hostinger, el
-del registrador, o Cloudflare). Hace falta para:
+del registrador, o Cloudflare). El padre ya apuntó los suyos al VPS nuevo, así
+que casi seguro es el mismo panel. Hace falta para:
 
 1. Bajar el TTL de los registros A a 300 **un día antes** de cada corte.
 2. Cambiar el A y el `www` en el corte.
@@ -288,9 +308,11 @@ del registrador, o Cloudflare). Hace falta para:
 ## Después de Shiraf: manhattan y el ecommerce
 
 **manhattan** repite el mismo esquema: clonar/copiar `/opt/inmobiliaria-manhattan`
-con su `.env`, volcar `manhattan_db`, traer el certificado, su bloque de nginx
-(con el `client_max_body_size 110M` y los timeouts de 300 s, que costaron
-encontrar) y el cron de backup.
+con su `.env`, volcar `manhattan_db`, unir su frontend a la red `edge`, un
+`manhattan.caddy` (con el `client_max_body_size 110M` y los timeouts de
+300 s traducidos a Caddy: `request_body { max_size 110MB }` y
+`transport http { response_header_timeout 300s }`, que costaron encontrar) y
+el cron de backup.
 
 **igwtstore** primero hay que ordenarlo, porque hoy nadie sabe con certeza qué
 arranca el Node del 4000 ni desde qué carpeta. Antes de moverlo:
@@ -300,7 +322,7 @@ arranca el Node del 4000 ni desde qué carpeta. Antes de moverlo:
 - volcar `ecommerce_db` del Postgres del host (`sudo -u postgres pg_dump
   ecommerce_db`), que es la base real, y no la del contenedor;
 - decidir si en el nuevo va con el `docker-compose.vps.yml` que ya existe en
-  el repo o con el mismo Node suelto pero bajo systemd/pm2 y **sin el puerto
-  4000 abierto a internet**.
+  el repo o con el mismo Node suelto pero bajo systemd y **sin el puerto 4000
+  abierto a internet** (en el nuevo, ufw lo bloquearía igual).
 
 Eso se planifica cuando Shiraf ya esté del otro lado.

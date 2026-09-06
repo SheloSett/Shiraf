@@ -1,0 +1,30 @@
+# /srv/proxy/sites/shiraf.caddy — Shiraf en el Caddy del VPS nuevo, nombre de
+# PRUEBA por IP (paso 2e de MIGRACION-VPS.md). El dominio real va en otro
+# archivo, shiraf-dominio.caddy, que se copia recién en el corte.
+#
+# Caddy importa solo todo lo de /etc/caddy/sites/*.caddy y saca el certificado
+# de Let's Encrypt. La app es el contenedor `shiraf-app`, unido a la red `edge`
+# por docker-compose.override.yml; Caddy le habla por esa red, puerto 3000.
+#
+# Instalar / actualizar (la carpeta es del usuario jony, por eso el sudo):
+#   sudo cp ~/shiraf.caddy /srv/proxy/sites/shiraf.caddy
+#   docker exec proxy caddy validate --config /etc/caddy/Caddyfile
+#   docker exec proxy caddy reload   --config /etc/caddy/Caddyfile
+#
+# ¿Por qué el dominio real NO está acá desde el principio? Mientras
+# shiraf.com.ar apunte al VPS viejo, Caddy no puede sacarle certificado, y
+# cada intento fallido alarga la espera hasta el siguiente (llega a horas). Si
+# el dominio se declara días antes del corte, al cambiar el DNS el certificado
+# puede tardar horas en aparecer. Declarado justo después del cambio, sale en
+# un minuto.
+
+# Igual que shuk.82-25-74-242.sslip.io y ohel-moed.…: certificado real, sin DNS.
+shiraf.82-25-74-242.sslip.io {
+    encode gzip
+    reverse_proxy shiraf-app:3000 {
+        # {remote_host} es la IP del socket del lado de Caddy: PISA cualquier
+        # X-Real-IP que haya mandado el cliente. La app la lee con
+        # TRUST_PROXY=docker (ver src/server/middleware/loginLimiter.ts).
+        header_up X-Real-IP {remote_host}
+    }
+}

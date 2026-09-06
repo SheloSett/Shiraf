@@ -1,0 +1,24 @@
+# /srv/proxy/sites/shiraf-dominio.caddy — el dominio real de Shiraf.
+#
+# 🔴 Se copia al proxy RECIÉN EN EL CORTE, justo después de cambiar el DNS
+#    (paso 5e de MIGRACION-VPS.md). El porqué está en shiraf.caddy.
+#
+#   sudo cp ~/shiraf-dominio.caddy /srv/proxy/sites/shiraf-dominio.caddy
+#   docker exec proxy caddy validate --config /etc/caddy/Caddyfile
+#   docker exec proxy caddy reload   --config /etc/caddy/Caddyfile
+
+shiraf.com.ar {
+    encode gzip
+    reverse_proxy shiraf-app:3000 {
+        # La IP del socket del lado de Caddy, que pisa lo que mande el cliente.
+        # La app la lee con TRUST_PROXY=docker.
+        header_up X-Real-IP {remote_host}
+    }
+}
+
+# El www no sirve el sitio: redirige al dominio pelado conservando la ruta.
+# Sin esto son dos sitios iguales para Google y el posicionamiento se reparte.
+# Es lo mismo que hacía el bloque de nginx del VPS viejo (ver DOCKER.md).
+www.shiraf.com.ar {
+    redir https://shiraf.com.ar{uri} permanent
+}

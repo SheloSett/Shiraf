@@ -67,6 +67,19 @@ curl -I http://localhost:3000/
 
 ## Deploy en el VPS
 
+> **Desde el 6/9/2026 hay un VPS nuevo (`82.25.74.242`) y el esquema de abajo
+> —nginx + certbot en el host— es el del VPS viejo.** En el nuevo, la puerta
+> de entrada es un **Caddy en contenedor** (`/srv/proxy`, red de Docker
+> `edge`) que comparten todos los sitios de la familia: Shiraf se une a esa
+> red con un `docker-compose.override.yml` y se declara con un archivo en
+> `/srv/proxy/sites/`. Caddy saca los certificados solo, así que no hay
+> certbot. En el `.env` va `TRUST_PROXY=docker` en vez de `loopback`, porque
+> Caddy le llega a la app desde la red de Docker y no por loopback (el modo
+> está explicado en `src/server/middleware/loginLimiter.ts`). El paso a paso
+> completo, con los archivos, está en `MIGRACION-VPS.md` y
+> `scripts/migracion/`. Todo lo que sigue en esta sección se conserva porque
+> describe lo que hay en el viejo hasta que se dé de baja.
+
 ```sh
 git clone <repo> shiraf && cd shiraf
 cp /ruta/a/tu/.env .env        # el .env NO va al repo
