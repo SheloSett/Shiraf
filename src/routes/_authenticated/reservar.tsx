@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Clock } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
-import { VolverArriba } from "@/components/volver-arriba";
+// 6/9/2026 - la flecha se mudo a `__root.tsx`: ahora va en todo el sitio.
+// import { VolverArriba } from "@/components/volver-arriba";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -650,11 +651,11 @@ function BookingPage() {
         )}
       </section>
 
-      {/* Ésta es LA página larga del sitio, y encima elegir un tratamiento la
-          baja sola: sin esto, corregir la elección era subir a mano pasando por
-          la profesional y el calendario. Aparece recién después de una pantalla
-          de scroll. */}
-      <VolverArriba />
+      {/* Acá estaba la flecha para volver arriba. Se mudó a `__root.tsx` el
+          6/9/2026, a pedido de la dueña: va en todas las páginas y no sólo en
+          ésta.
+
+          <VolverArriba /> */}
 
       <SiteFooter />
     </div>

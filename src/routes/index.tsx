@@ -69,6 +69,25 @@ export const Route = createFileRoute("/")({
  */
 const MOSTRAR_TRATAMIENTOS: boolean = false;
 
+/*
+ * Seccion "Profesionales" del home: apagada a pedido del centro (6/9/2026).
+ *
+ * Misma bandera y por el mismo motivo que la de arriba: el bloque tiene varios
+ * comentarios JSX adentro y esos no se anidan, asi que envolverlo en un
+ * comentario terminaria en el primer cierre interno y dejaria el resto del
+ * archivo suelto en medio del JSX. Con la bandera el codigo queda intacto y
+ * volver a mostrarla es poner true.
+ *
+ * Ojo con el margen de arriba de la seccion, que va atado a
+ * MOSTRAR_TRATAMIENTOS: si algun dia se prende esta y no aquella, revisar que
+ * el oliva no quede pegado al hero.
+ *
+ * La consulta de profesionales tambien cuelga de esta bandera (ver `enabled`
+ * mas abajo): con la seccion apagada, pedirlos seria un viaje al servidor en
+ * cada visita al home para tirar el resultado.
+ */
+const MOSTRAR_PROFESIONALES: boolean = false;
+
 function Home() {
   // Los textos de la portada y los datos del centro, editables desde el panel.
   // Vienen del loader de la raíz, así que ya están cuando esto se dibuja: no
@@ -95,6 +114,10 @@ function Home() {
 
   const professionals = useQuery({
     queryKey: ["professionals", "active", "home"],
+    // Cuelga de la bandera: con la seccion apagada, pedirlos seria un viaje al
+    // servidor en cada visita al home para tirar el resultado. Prendiendo la
+    // bandera vuelven los dos juntos, la consulta y la seccion.
+    enabled: MOSTRAR_PROFESIONALES,
     queryFn: async () =>
       (await api<RtaProfesionales>("/api/publico/profesionales?limite=3")).profesionales,
   });
@@ -525,8 +548,9 @@ function Home() {
         ponen margen). Si vuelve la carta de tratamientos, vuelven juntos el
         margen y el filete crema del hero.
       */}
-      <section className={`surface-olive grain ${MOSTRAR_TRATAMIENTOS ? "mt-24 lg:mt-36" : ""}`}>
-        {/*
+      {MOSTRAR_PROFESIONALES && (
+        <section className={`surface-olive grain ${MOSTRAR_TRATAMIENTOS ? "mt-24 lg:mt-36" : ""}`}>
+          {/*
           El mismo trazo a mano que venía arriba, pero apoyado DENTRO del oliva
           y en dorado en vez de `text-border`. Así el corte sigue estando
           dibujado — no es un choque seco de foto contra verde — pero no abre
@@ -541,45 +565,50 @@ function Home() {
           es el borde de arriba de la banda oliva, y le corresponde esté lo que
           esté arriba.
         */}
-        <OrganicRule className="text-gold/35" />
+          <OrganicRule className="text-gold/35" />
 
-        <div className="grid lg:grid-cols-12">
-          <div className="px-5 py-24 lg:col-span-10 lg:col-start-2 lg:px-0 lg:py-32">
-            <Reveal>
-              {/* Antes: "El equipo" y "Profesionales", escritos acá. Los
+          <div className="grid lg:grid-cols-12">
+            <div className="px-5 py-24 lg:col-span-10 lg:col-start-2 lg:px-0 lg:py-32">
+              <Reveal>
+                {/* Antes: "El equipo" y "Profesionales", escritos acá. Los
                   nombres y las bios que van abajo NO: ésos salen de la ficha de
                   cada profesional, que se carga en su propia sección. */}
-              <p className="text-eyebrow text-primary-foreground/60">{texto(c, "equipoEyebrow")}</p>
-              <h2 className="display-section mt-5 text-primary-foreground">
-                {texto(c, "equipoTitulo")}
-              </h2>
-            </Reveal>
+                <p className="text-eyebrow text-primary-foreground/60">
+                  {texto(c, "equipoEyebrow")}
+                </p>
+                <h2 className="display-section mt-5 text-primary-foreground">
+                  {texto(c, "equipoTitulo")}
+                </h2>
+              </Reveal>
 
-            <div className="mt-16 grid gap-x-10 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
-              {professionals.data?.map((p, i) => (
-                <Reveal key={p.id} delay={i * 80}>
-                  <span className="numeral text-gold">{String(i + 1).padStart(2, "0")}</span>
-                  <h3 className="mt-5 font-display text-4xl leading-tight text-primary-foreground">
-                    {p.full_name}
-                  </h3>
-                  <p className="text-eyebrow mt-4 text-gold">{p.specialty}</p>
-                  <p className="mt-5 text-sm leading-relaxed text-primary-foreground/70">{p.bio}</p>
-                </Reveal>
-              ))}
+              <div className="mt-16 grid gap-x-10 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
+                {professionals.data?.map((p, i) => (
+                  <Reveal key={p.id} delay={i * 80}>
+                    <span className="numeral text-gold">{String(i + 1).padStart(2, "0")}</span>
+                    <h3 className="mt-5 font-display text-4xl leading-tight text-primary-foreground">
+                      {p.full_name}
+                    </h3>
+                    <p className="text-eyebrow mt-4 text-gold">{p.specialty}</p>
+                    <p className="mt-5 text-sm leading-relaxed text-primary-foreground/70">
+                      {p.bio}
+                    </p>
+                  </Reveal>
+                ))}
+              </div>
+
+              <Reveal delay={240} className="mt-16">
+                <Link
+                  to="/profesionales"
+                  className="text-eyebrow text-primary-foreground/70 underline-offset-8 transition-colors hover:text-primary-foreground hover:underline"
+                >
+                  {/* Antes: Conocer al equipo */}
+                  {texto(c, "equipoLink")}
+                </Link>
+              </Reveal>
             </div>
-
-            <Reveal delay={240} className="mt-16">
-              <Link
-                to="/profesionales"
-                className="text-eyebrow text-primary-foreground/70 underline-offset-8 transition-colors hover:text-primary-foreground hover:underline"
-              >
-                {/* Antes: Conocer al equipo */}
-                {texto(c, "equipoLink")}
-              </Link>
-            </Reveal>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/*
         Cierre. El texto ocupaba de la columna 2 a la 8 y el tercio derecho

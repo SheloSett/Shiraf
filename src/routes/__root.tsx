@@ -13,6 +13,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { WhatsappFab } from "@/components/whatsapp-fab";
+import { VolverArriba } from "@/components/volver-arriba";
 import { CONTACT } from "@/lib/contact";
 import { fichaDelSitio } from "@/lib/seo";
 import { obtenerContenido } from "@/lib/contenido.functions";
@@ -268,6 +269,11 @@ function RootComponent() {
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
       {!esPanel && <WhatsappFab />}
+      {/* La flecha para volver arriba va en TODAS las paginas, incluido el
+          panel: la lista de Turnos y el calendario tambien son largos. En el
+          panel baja al lugar de abajo porque ahi no esta el de WhatsApp y si
+          no quedaria flotando sobre un hueco. */}
+      <VolverArriba sobreElDeWhatsapp={!esPanel} />
       <Toaster />
     </QueryClientProvider>
   );

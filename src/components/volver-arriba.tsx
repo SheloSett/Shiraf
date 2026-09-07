@@ -11,12 +11,18 @@ import { ArrowUp } from "lucide-react";
  * subir a mano pasando por la profesional y el calendario. Con el pulgar en un
  * teléfono eso son varios raspados de pantalla.
  *
- * ── POR QUÉ NO ESTÁ EN TODAS LAS PÁGINAS ──────────────────────────────────
+ * ── Y SÍ, VA EN TODAS LAS PÁGINAS (6/9/2026) ────────────────────
  *
- * A diferencia del de WhatsApp, que se monta una sola vez en `__root.tsx`,
- * éste se pone donde hace falta. Un botón flotante ocupa lugar y compite con
- * el que sí tiene que verse siempre; en una página que entra en dos pantallas
- * no resuelve nada y encima tapa contenido.
+ * Al principio lo puse sólo en /reservar, con el argumento de que un botón
+ * flotante ocupa lugar y que en una página corta no resuelve nada. La dueña
+ * pidió lo contrario: que esté siempre, para poder volver arriba en cualquier
+ * momento sin buscar cómo. Así que se monta una sola vez en `__root.tsx`, al
+ * lado del de WhatsApp.
+ *
+ * El argumento viejo no era falso, y por eso el botón no aparece hasta haber
+ * bajado una pantalla entera: en las páginas cortas efectivamente nunca llega
+ * a verse, que es lo mismo que buscaba ponerlo página por página — pero
+ * decidido por el scroll y no por una lista que hay que mantener a mano.
  *
  * ── DÓNDE SE PLANTA ───────────────────────────────────────────────────────
  *
@@ -24,6 +30,10 @@ import { ArrowUp } from "lucide-react";
  * del piso y mide 3.5rem, así que éste arranca a 5.5rem — los 0.75rem de aire
  * entre los dos. Comparte el `env(safe-area-inset-bottom)` por el mismo motivo
  * (la barra de gestos del iPhone) y el mismo `z-40`.
+ *
+ * En el panel de admin el de WhatsApp no se monta, asi que ahi este baja al
+ * lugar de abajo: quedarse a 5.5rem del piso lo dejaria flotando sobre un hueco
+ * vacio. De eso se encarga `sobreElDeWhatsapp`.
  *
  * En crema con borde y no en dorado: el dorado es del CTA de WhatsApp y del de
  * "Reservar turno". Dos botones dorados flotando uno arriba del otro se leen
@@ -39,8 +49,14 @@ export function VolverArriba({
    * altura de un teléfono y la de un monitor no se parecen en nada.
    */
   desdeQue = typeof window === "undefined" ? 800 : window.innerHeight,
+  /**
+   * Si abajo de este boton hay otro (el de WhatsApp) y hay que dejarle el
+   * lugar. En false se apoya en el piso.
+   */
+  sobreElDeWhatsapp = true,
 }: {
   desdeQue?: number;
+  sobreElDeWhatsapp?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -80,9 +96,11 @@ export function VolverArriba({
             : "smooth",
         })
       }
-      className={`fixed right-5 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-lg shadow-black/15 transition-[opacity,transform,background-color] duration-300 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none motion-reduce:hover:scale-100 ${
-        visible ? "opacity-100" : "pointer-events-none translate-y-2 opacity-0"
-      }`}
+      className={`fixed right-5 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-lg shadow-black/15 transition-[opacity,transform,background-color] duration-300 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none motion-reduce:hover:scale-100 ${
+        sobreElDeWhatsapp
+          ? "bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))]"
+          : "bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))]"
+      } ${visible ? "opacity-100" : "pointer-events-none translate-y-2 opacity-0"}`}
     >
       <ArrowUp className="h-5 w-5" />
     </button>
