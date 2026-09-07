@@ -796,10 +796,31 @@ function AdminLayout() {
         {/* `p-0` y `gap-0`: el Sheet trae `p-6` pensado para un dialogo con
             texto, y aca adentro va un menu que llega hasta los bordes. El
             `text-primary-foreground` es lo que hace visible la X de cerrar, que
-            no tiene color propio y sobre el oliva quedaba negra sobre verde. */}
+            no tiene color propio y sobre el oliva quedaria negra sobre verde.
+
+            ── POR QUE `bg-primary` Y NO `surface-olive` COMO EL ASIDE ─────────
+
+            Porque no funciona aca, y el sintoma es feo: el cajon salia crema
+            con el texto en crema, o sea ilegible.
+
+            `surface-olive` es un `@utility` propio (styles.css) que pinta el
+            fondo oliva. El `SheetContent` de shadcn trae `bg-background` en su
+            clase base y las junta con `cn()`, que es clsx + tailwind-merge.
+            tailwind-merge sabe que `bg-primary` pisa a `bg-background` —las dos
+            son `bg-*` que conoce— pero de `surface-olive` no sabe nada: no la
+            reconoce como una clase de fondo, asi que no descarta ninguna y
+            quedan las dos puestas. Ahi ya no decide el `className`, decide el
+            orden del CSS, y gana la del Sheet.
+
+            El `<aside>` de escritorio si usa `surface-olive` porque ahi no hay
+            con quien competir.
+
+            `bg-primary` + `text-primary-foreground` es exactamente lo que hace
+            `surface-olive` (ver su definicion), pero dicho con utilidades que
+            tailwind-merge entiende. */}
         <SheetContent
           side="left"
-          className="surface-olive flex w-72 flex-col gap-0 overflow-y-auto p-0 text-primary-foreground"
+          className="flex w-72 flex-col gap-0 overflow-y-auto bg-primary p-0 text-primary-foreground"
         >
           {/* Radix pide un titulo para el lector de pantalla. Va oculto: en
               pantalla el logo de adentro ya dice donde estas. */}
