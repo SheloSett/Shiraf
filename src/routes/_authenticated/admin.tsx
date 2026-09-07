@@ -23,6 +23,7 @@ import {
   LayoutDashboard,
   LineChart,
   LogOut,
+  Menu,
   Package,
   Settings,
   ShieldCheck,
@@ -33,6 +34,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { apiPost } from "@/lib/api";
 import { useAccess } from "@/hooks/useAccess";
 // 5/9/2026 — se suma el contador de los turnos en días cerrados. La línea vieja
@@ -294,6 +296,25 @@ function AdminLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  /** El cajon del menu en el telefono. En escritorio no existe: ahi es columna. */
+  const [menuAbierto, setMenuAbierto] = useState(false);
+
+  /*
+   * El cajon se cierra solo al cambiar de pantalla.
+   *
+   * Hace falta porque tocar un `<Link>` de adentro navega pero NO desmonta el
+   * cajon --el layout del panel es el mismo para todas las secciones--, asi que
+   * sin esto la seccion nueva quedaria tapada por el menu que la abrio.
+   *
+   * Va sobre `location.pathname` y no un `onClick` en cada link por dos
+   * motivos: son diez y medio y hay que acordarse en cada uno nuevo, y ademas
+   * la flechita que despliega una seccion NO tiene que cerrar el cajon --y no
+   * lo hace, porque no cambia la ruta--.
+   */
+  useEffect(() => {
+    setMenuAbierto(false);
+  }, [location.pathname]);
+
   // Mismo cierre de sesión que el header del sitio: se vacía la caché de
   // react-query ANTES de desloguear, para que la próxima persona que entre en
   // esta misma computadora no vea por un instante los datos de la anterior.
@@ -441,77 +462,94 @@ function AdminLayout() {
     return <p className="p-10 text-sm text-muted-foreground">Te llevamos a tu cuenta…</p>;
   }
 
-  return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
-      {/* La barra se queda quieta: en escritorio se pega arriba y mide una
-          pantalla, con su propio scroll si el menú no entra. Antes era
-          `lg:w-60 lg:shrink-0` a secas y, al ser una columna más del flex,
-          se estiraba hasta la altura del documento: en pantallas largas
-          (como "Mi cuenta") el pie del menú quedaba al fondo de la página y
-          había que scrollear todo para llegar a "Cerrar sesión".
-
-          className vieja:
-          "surface-olive flex flex-col lg:w-60 lg:shrink-0" */}
-      <aside className="surface-olive flex flex-col lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:shrink-0 lg:overflow-y-auto">
-        <div className="flex items-center gap-3 p-6">
-          <Logo className="h-9 w-9" />
-          <span className="font-display text-lg tracking-[0.25em] text-primary-foreground">
-            SHIRAF
-          </span>
-        </div>
-        {/* 5/9/2026 — `lg:flex-1`: en escritorio el menú ocupa todo el alto que
+  /**
+   * El menu del panel, dibujado SIEMPRE en columna.
+   *
+   * -- POR QUE ESTO ES UNA VARIABLE Y NO JSX SUELTO --------------------------
+   *
+   * Porque ahora se monta en dos lugares: la columna fija del escritorio y el
+   * cajon que se abre desde la izquierda en el telefono. Es el mismo menu con
+   * los mismos contadores; escrito dos veces, el dia que se agregue una seccion
+   * una de las dos se queda vieja sin que nadie lo note.
+   *
+   * -- LO QUE SE FUE: LA TIRA HORIZONTAL (6/9/2026) --------------------------
+   *
+   * Hasta hoy este mismo bloque hacia de barra horizontal en el telefono, y de
+   * ahi salian todos los `lg:` que tenia cada clase de aca adentro: la version
+   * sin prefijo era la tira y la `lg:` la columna. Pedido de la duena: en el
+   * celular ocupaba media pantalla --el logo, las seis secciones que se
+   * desplazaban a lo ancho con «Avisos» cortado por la mitad, y abajo otra tira
+   * con la cuenta-- antes de que empezara el contenido.
+   *
+   * Con la tira afuera hay un solo layout, asi que los `lg:` se fueron en vez
+   * de duplicarse. Las clases viejas, para poder volver:
+   *
+   *   nav          "flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-1 lg:flex-col lg:overflow-visible"
+   *   seccion      "contents lg:block" · al fondo: "contents lg:mt-auto lg:block lg:border-t ..."
+   *   subsecciones "flex gap-1 lg:mt-1 lg:ml-4 lg:flex-col lg:border-l ..."
+   *   hija         "whitespace-nowrap rounded-sm px-3 py-2 text-sm ... lg:px-2 lg:py-1.5"
+   *   pie          "mt-auto flex items-center gap-1 overflow-x-auto border-t ... px-3 py-3 lg:block lg:py-4"
+   *
+   * El `contents` de cada seccion era el truco de la tira: el envoltorio no
+   * pintaba nada y sus hijos caian directo en la fila. En columna estorba.
+   */
+  const menuDelPanel = (
+    <>
+      <div className="flex items-center gap-3 p-6">
+        <Logo className="h-9 w-9" />
+        <span className="font-display text-lg tracking-[0.25em] text-primary-foreground">
+          SHIRAF
+        </span>
+      </div>
+      {/* 5/9/2026 — `lg:flex-1`: en escritorio el menú ocupa todo el alto que
             queda entre el logo y el pie, para que Configuración pueda irse al
             fondo con un `mt-auto` (ver el envoltorio de cada sección, abajo).
             Sin esto el menú mide lo que miden sus entradas y no hay "fondo" al
             que mandarla. className vieja:
             "flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-col lg:overflow-visible" */}
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-1 lg:flex-col lg:overflow-visible">
-          {visibleNav.map((item) => {
-            const active = item.exact
-              ? location.pathname === item.to
-              : location.pathname.startsWith(item.to);
-            // La sección se despliega si estás en el padre o en cualquier hijo.
-            const sectionActive =
-              active || item.children.some((child) => location.pathname.startsWith(child.to));
-            // …salvo que la hayas abierto o cerrado vos con la flechita: esa
-            // decisión manda sobre la automática.
-            const open = openSections[item.to] ?? sectionActive;
+      <nav className="flex flex-1 flex-col gap-1 px-3 pb-4">
+        {visibleNav.map((item) => {
+          const active = item.exact
+            ? location.pathname === item.to
+            : location.pathname.startsWith(item.to);
+          // La sección se despliega si estás en el padre o en cualquier hijo.
+          const sectionActive =
+            active || item.children.some((child) => location.pathname.startsWith(child.to));
+          // …salvo que la hayas abierto o cerrado vos con la flechita: esa
+          // decisión manda sobre la automática.
+          const open = openSections[item.to] ?? sectionActive;
 
-            // Configuración va al FONDO del menú, pegada al pie donde está la
-            // cuenta y separada de las secciones del negocio por el espacio que
-            // sobre y una línea (pedido de la dueña, 5/9/2026): es lo que se
-            // decide una vez, no lo que se usa todo el día. Sólo en escritorio:
-            // en el celular el menú es una tira horizontal, el envoltorio es
-            // `contents` (no pinta nada) y ahí simplemente va última. className
-            // vieja, la misma para todas: "contents lg:block"
-            const alFondo = item.to === "/admin/configuracion";
+          // Configuración va al FONDO del menú, pegada al pie donde está la
+          // cuenta y separada de las secciones del negocio por el espacio que
+          // sobre y una línea (pedido de la dueña, 5/9/2026): es lo que se
+          // decide una vez, no lo que se usa todo el día. Sólo en escritorio:
+          // en el celular el menú es una tira horizontal, el envoltorio es
+          // `contents` (no pinta nada) y ahí simplemente va última. className
+          // vieja, la misma para todas: "contents lg:block"
+          const alFondo = item.to === "/admin/configuracion";
 
-            return (
-              <div
-                key={item.to}
-                className={
-                  alFondo
-                    ? "contents lg:mt-auto lg:block lg:border-t lg:border-primary-foreground/10 lg:pt-3"
-                    : "contents lg:block"
-                }
-              >
-                {/* El link y la flechita van en la misma fila pero separados:
+          return (
+            <div
+              key={item.to}
+              className={alFondo ? "mt-auto border-t border-primary-foreground/10 pt-3" : ""}
+            >
+              {/* El link y la flechita van en la misma fila pero separados:
                     tocar el nombre navega, tocar la flecha sólo despliega. Si
                     fuera un botón solo, no se podría entrar a "Servicios". */}
-                <div className="relative flex items-center">
-                  <Link
-                    to={item.to}
-                    className={`flex flex-1 items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
-                      item.children.length > 0 ? "pr-9" : ""
-                    } ${
-                      active
-                        ? "bg-primary-foreground/15 text-primary-foreground"
-                        : "text-primary-foreground/65 hover:text-primary-foreground"
-                    }`}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                    {/* Los dos contadores de Turnos. Van en el menú y no sólo
+              <div className="relative flex items-center">
+                <Link
+                  to={item.to}
+                  className={`flex flex-1 items-center gap-3 whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors ${
+                    item.children.length > 0 ? "pr-9" : ""
+                  } ${
+                    active
+                      ? "bg-primary-foreground/15 text-primary-foreground"
+                      : "text-primary-foreground/65 hover:text-primary-foreground"
+                  }`}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                  {/* Los dos contadores de Turnos. Van en el menú y no sólo
                         adentro de la sección para que se vean desde cualquier
                         pantalla del panel.
 
@@ -521,27 +559,27 @@ function AdminLayout() {
                         llegar sin que haya nadie para atenderlo. El segundo no
                         se resuelve solo ni salta a la vista, así que se le da el
                         color que no se puede ignorar. */}
-                    {item.to === "/admin/turnos" && (unassignedCount > 0 || pendingCount > 0) && (
-                      <span className="ml-auto flex items-center gap-1">
-                        {unassignedCount > 0 && (
-                          <span
-                            title={`${unassignedCount} sin profesional asignada`}
-                            className="min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
-                          >
-                            {unassignedCount > 99 ? "99+" : unassignedCount}
-                          </span>
-                        )}
-                        {pendingCount > 0 && (
-                          <span
-                            title={`${pendingCount} esperando respuesta`}
-                            className="min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums"
-                          >
-                            {pendingCount > 99 ? "99+" : pendingCount}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {/* El contador de Días cerrados (5/9/2026). Rojo, como el
+                  {item.to === "/admin/turnos" && (unassignedCount > 0 || pendingCount > 0) && (
+                    <span className="ml-auto flex items-center gap-1">
+                      {unassignedCount > 0 && (
+                        <span
+                          title={`${unassignedCount} sin profesional asignada`}
+                          className="min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                        >
+                          {unassignedCount > 99 ? "99+" : unassignedCount}
+                        </span>
+                      )}
+                      {pendingCount > 0 && (
+                        <span
+                          title={`${pendingCount} esperando respuesta`}
+                          className="min-w-5 rounded-full bg-gold px-1.5 py-0.5 text-center text-xs font-semibold text-primary tabular-nums"
+                        >
+                          {pendingCount > 99 ? "99+" : pendingCount}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {/* El contador de Días cerrados (5/9/2026). Rojo, como el
                         de sin profesional y por lo mismo: un turno dado en un
                         día que después se cerró es una clienta que va a llegar
                         y no va a encontrar a nadie. No se resuelve solo y no
@@ -564,92 +602,92 @@ function AdminLayout() {
                           </span>
                         )}
                     */}
-                    {item.to === "/admin/configuracion" && closedDaysCount > 0 && !open && (
-                      <span
-                        title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
-                        className="ml-auto min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
-                      >
-                        {closedDaysCount > 99 ? "99+" : closedDaysCount}
-                      </span>
-                    )}
-                  </Link>
-
-                  {item.children.length > 0 && (
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      aria-label={`${open ? "Ocultar" : "Mostrar"} las subsecciones de ${item.label}`}
-                      onClick={() => setOpenSections((prev) => ({ ...prev, [item.to]: !open }))}
-                      className="absolute right-1 rounded-sm p-1.5 text-primary-foreground/55 transition-colors hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                  {item.to === "/admin/configuracion" && closedDaysCount > 0 && !open && (
+                    <span
+                      title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
+                      className="ml-auto min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
                     >
-                      <ChevronDown
-                        className={`h-4 w-4 transition-transform duration-300 ease-out ${
-                          open ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
+                      {closedDaysCount > 99 ? "99+" : closedDaysCount}
+                    </span>
                   )}
-                </div>
+                </Link>
 
-                {/* Antes las subsecciones aparecían y desaparecían de golpe con
+                {item.children.length > 0 && (
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-label={`${open ? "Ocultar" : "Mostrar"} las subsecciones de ${item.label}`}
+                    onClick={() => setOpenSections((prev) => ({ ...prev, [item.to]: !open }))}
+                    className="absolute right-1 rounded-sm p-1.5 text-primary-foreground/55 transition-colors hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform duration-300 ease-out ${
+                        open ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                )}
+              </div>
+
+              {/* Antes las subsecciones aparecían y desaparecían de golpe con
                     `{sectionActive && (…)}`. Ahora el bloque siempre está en el
                     DOM y lo que se anima es su alto: el truco de la grilla de
                     0fr a 1fr deja que el alto lo calcule el navegador, así la
                     transición es suave sin tener que hardcodear un max-height.
                     En mobile además se achica el ancho, para que cerrado no
                     deje un hueco en la fila horizontal del menú. */}
-                {item.children.length > 0 && (
-                  <div
-                    className={`grid transition-all duration-300 ease-out ${
-                      open
-                        ? "grid-rows-[1fr] opacity-100"
-                        : "pointer-events-none max-w-0 grid-rows-[0fr] opacity-0 lg:max-w-none"
-                    }`}
-                  >
-                    {/* Este div de en medio es el que recorta: con
+              {item.children.length > 0 && (
+                <div
+                  className={`grid transition-all duration-300 ease-out ${
+                    open
+                      ? "grid-rows-[1fr] opacity-100"
+                      : "pointer-events-none grid-rows-[0fr] opacity-0"
+                  }`}
+                >
+                  {/* Este div de en medio es el que recorta: con
                         `overflow-hidden` el navegador acepta achicarlo hasta 0
                         y por eso la grilla puede animar el alto. Los márgenes y
                         el borde van adentro, para que cerrado no quede
                         ocupando lugar. */}
-                    <div className="overflow-hidden">
-                      <div className="flex gap-1 lg:mt-1 lg:ml-4 lg:flex-col lg:border-l lg:border-primary-foreground/20 lg:pl-3">
-                        {item.children.map((child) => {
-                          const childActive = location.pathname.startsWith(child.to);
-                          return (
-                            <Link
-                              key={child.to}
-                              to={child.to}
-                              className={`whitespace-nowrap rounded-sm px-3 py-2 text-sm transition-colors lg:px-2 lg:py-1.5 ${
-                                childActive
-                                  ? "bg-primary-foreground/15 text-primary-foreground lg:bg-transparent"
-                                  : "text-primary-foreground/55 hover:text-primary-foreground"
-                              }`}
-                            >
-                              {child.label}
-                              {/* El número de Días cerrados cuando la sección
+                  <div className="overflow-hidden">
+                    <div className="mt-1 ml-4 flex flex-col gap-1 border-l border-primary-foreground/20 pl-3">
+                      {item.children.map((child) => {
+                        const childActive = location.pathname.startsWith(child.to);
+                        return (
+                          <Link
+                            key={child.to}
+                            to={child.to}
+                            className={`rounded-sm px-2 py-1.5 text-sm transition-colors ${
+                              childActive
+                                ? "text-primary-foreground"
+                                : "text-primary-foreground/55 hover:text-primary-foreground"
+                            }`}
+                          >
+                            {child.label}
+                            {/* El número de Días cerrados cuando la sección
                                   está desplegada; plegada, va sobre
                                   «Configuración» (arriba). */}
-                              {child.to === "/admin/configuracion/dias-cerrados" &&
-                                closedDaysCount > 0 && (
-                                  <span
-                                    title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
-                                    className="ml-2 inline-block min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
-                                  >
-                                    {closedDaysCount > 99 ? "99+" : closedDaysCount}
-                                  </span>
-                                )}
-                            </Link>
-                          );
-                        })}
-                      </div>
+                            {child.to === "/admin/configuracion/dias-cerrados" &&
+                              closedDaysCount > 0 && (
+                                <span
+                                  title={`${closedDaysCount} ${closedDaysCount === 1 ? "turno dado en un día cerrado" : "turnos dados en días cerrados"}`}
+                                  className="ml-2 inline-block min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-xs font-semibold text-white tabular-nums"
+                                >
+                                  {closedDaysCount > 99 ? "99+" : closedDaysCount}
+                                </span>
+                              )}
+                          </Link>
+                        );
+                      })}
                     </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-        {/* Pie de la barra. Antes acá sólo había "Volver al sitio" y estaba
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+      {/* Pie de la barra. Antes acá sólo había "Volver al sitio" y estaba
             oculto en mobile (`hidden lg:block`), lo que dejaba al panel sin
             ninguna salida en el celular.
 
@@ -657,51 +695,131 @@ function AdminLayout() {
             porque no son secciones del negocio: son de la persona. Y tienen que
             estar, porque las cuentas del centro ya no entran a /mi-cuenta —
             antes se cerraba sesión desde el header del sitio público. */}
-        <div className="mt-auto flex items-center gap-1 overflow-x-auto border-t border-primary-foreground/10 px-3 py-3 lg:block lg:py-4">
-          {/* Con qué cuenta se está mirando esto.
+      <div className="mt-auto border-t border-primary-foreground/10 px-3 py-4">
+        {/* Con qué cuenta se está mirando esto.
               Arriba de «Mi cuenta» porque es de quién son las dos cosas que
               siguen. El rótulo del rol sólo en pantalla grande: en el celular
               esta barra es una tira que se desplaza a lo ancho y dos renglones
               la parten. El nombre sí va siempre — es lo que se vino a saber. */}
-          {(nombre ?? email) && (
-            <div className="min-w-0 shrink-0 px-3 lg:mb-3 lg:px-3">
-              <p
-                className="truncate text-sm font-medium text-primary-foreground"
-                title={email ?? undefined}
-              >
-                {nombre ?? email}
-              </p>
-              {rotuloDeRol && (
-                <p className="hidden text-xs text-primary-foreground/50 lg:block">{rotuloDeRol}</p>
+        {(nombre ?? email) && (
+          <div className="mb-3 min-w-0 px-3">
+            <p
+              className="truncate text-sm font-medium text-primary-foreground"
+              title={email ?? undefined}
+            >
+              {nombre ?? email}
+            </p>
+            {rotuloDeRol && <p className="text-xs text-primary-foreground/50">{rotuloDeRol}</p>}
+          </div>
+        )}
+        <Link
+          to="/admin/cuenta"
+          className={`flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
+            location.pathname.startsWith("/admin/cuenta")
+              ? "bg-primary-foreground/15 text-primary-foreground"
+              : "text-primary-foreground/65 hover:text-primary-foreground"
+          }`}
+        >
+          <UserCog className="h-4 w-4" />
+          Mi cuenta
+        </Link>
+        <button
+          type="button"
+          onClick={signOut}
+          className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-primary-foreground/65 transition-colors hover:text-primary-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+          Cerrar sesión
+        </button>
+        <Link
+          to="/"
+          className="mt-1 block rounded-sm px-3 py-2 text-xs text-primary-foreground/50 hover:text-primary-foreground"
+        >
+          ← Ver el sitio
+        </Link>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="flex min-h-screen flex-col lg:flex-row">
+      {/* La barra se queda quieta: en escritorio se pega arriba y mide una
+          pantalla, con su propio scroll si el menú no entra. Antes era
+          `lg:w-60 lg:shrink-0` a secas y, al ser una columna más del flex,
+          se estiraba hasta la altura del documento: en pantallas largas
+          (como "Mi cuenta") el pie del menú quedaba al fondo de la página y
+          había que scrollear todo para llegar a "Cerrar sesión".
+
+          className vieja:
+          "surface-olive flex flex-col lg:w-60 lg:shrink-0" */}
+      {/* -- EL TELEFONO: UN CAJON QUE SE ABRE DESDE LA IZQUIERDA -------------
+          Reemplaza a la tira horizontal. La barra de arriba queda en tres
+          cosas --hamburguesa, logo y nada mas-- y el contenido empieza casi
+          enseguida.
+
+          El cajon es el mismo `Sheet` que usa el header del sitio publico, y no
+          un panel a mano con `translate-x`: trae el atrapado del foco, el
+          cierre con Escape y el bloqueo del scroll de atras, que son justo las
+          tres cosas que uno se olvida de escribir. */}
+      <Sheet open={menuAbierto} onOpenChange={setMenuAbierto}>
+        <header className="surface-olive sticky top-0 z-30 flex items-center gap-3 px-4 py-3 lg:hidden">
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              aria-label="Abrir el menu del panel"
+              className="relative -ml-1 rounded-sm p-2 text-primary-foreground/80 transition-colors hover:bg-primary-foreground/10 hover:text-primary-foreground"
+            >
+              <Menu className="h-6 w-6" />
+              {/* Los contadores viven adentro del menu, asi que con el cajon
+                  cerrado no se ven --y eran justamente "para que se vean desde
+                  cualquier pantalla del panel"--. El puntito los resume: rojo si
+                  hay algo que nadie va a resolver solo (un turno sin
+                  profesional, uno en un dia cerrado), dorado si solo hay turnos
+                  sin ver. El numero exacto esta a un toque. */}
+              {(unassignedCount > 0 || closedDaysCount > 0 || pendingCount > 0) && (
+                <span
+                  aria-hidden
+                  className={`absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-primary ${
+                    unassignedCount > 0 || closedDaysCount > 0 ? "bg-destructive" : "bg-gold"
+                  }`}
+                />
               )}
-            </div>
-          )}
-          <Link
-            to="/admin/cuenta"
-            className={`flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
-              location.pathname.startsWith("/admin/cuenta")
-                ? "bg-primary-foreground/15 text-primary-foreground"
-                : "text-primary-foreground/65 hover:text-primary-foreground"
-            }`}
-          >
-            <UserCog className="h-4 w-4" />
-            Mi cuenta
-          </Link>
-          <button
-            type="button"
-            onClick={signOut}
-            className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-primary-foreground/65 transition-colors hover:text-primary-foreground"
-          >
-            <LogOut className="h-4 w-4" />
-            Cerrar sesión
-          </button>
-          <Link
-            to="/"
-            className="mt-1 block rounded-sm px-3 py-2 text-xs text-primary-foreground/50 hover:text-primary-foreground"
-          >
-            ← Ver el sitio
-          </Link>
-        </div>
+            </button>
+          </SheetTrigger>
+
+          <Logo className="h-8 w-8" />
+          <span className="font-display text-base tracking-[0.25em] text-primary-foreground">
+            SHIRAF
+          </span>
+        </header>
+
+        {/* `p-0` y `gap-0`: el Sheet trae `p-6` pensado para un dialogo con
+            texto, y aca adentro va un menu que llega hasta los bordes. El
+            `text-primary-foreground` es lo que hace visible la X de cerrar, que
+            no tiene color propio y sobre el oliva quedaba negra sobre verde. */}
+        <SheetContent
+          side="left"
+          className="surface-olive flex w-72 flex-col gap-0 overflow-y-auto p-0 text-primary-foreground"
+        >
+          {/* Radix pide un titulo para el lector de pantalla. Va oculto: en
+              pantalla el logo de adentro ya dice donde estas. */}
+          <SheetTitle className="sr-only">Menu del panel</SheetTitle>
+          {menuDelPanel}
+        </SheetContent>
+      </Sheet>
+
+      {/* -- EL ESCRITORIO: LA COLUMNA DE SIEMPRE ------------------------------
+          Se queda quieta: se pega arriba y mide una pantalla, con su propio
+          scroll si el menu no entra. Antes era `lg:w-60 lg:shrink-0` a secas y,
+          al ser una columna mas del flex, se estiraba hasta la altura del
+          documento: en pantallas largas (como "Mi cuenta") el pie del menu
+          quedaba al fondo de la pagina y habia que scrollear todo para llegar a
+          "Cerrar sesion".
+
+          className vieja (hacia las dos presentaciones a la vez):
+          "surface-olive flex flex-col lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:shrink-0 lg:overflow-y-auto" */}
+      <aside className="surface-olive sticky top-0 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto lg:flex">
+        {menuDelPanel}
       </aside>
 
       <main className="flex-1 bg-background px-5 py-10 lg:px-10">
