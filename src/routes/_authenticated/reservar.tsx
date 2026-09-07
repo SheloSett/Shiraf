@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Clock } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
+import { VolverArriba } from "@/components/volver-arriba";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -134,16 +135,33 @@ function BookingPage() {
    * porque se llegó con `?service=` ya puesto (el botón "Reservar" de la
    * ficha del tratamiento) y el paso 1 nace resuelto.
    *
-   * Depende de `elegido` y no de `serviceId`: con opciones, tocar la tarjeta
-   * no alcanza —falta elegir cuál— así que recién ahí tiene sentido bajar.
+   * ── POR QUÉ NO ALCANZA CON `elegido` ──────────────────────────────────────
+   *
+   * Porque es un booleano, y el efecto sólo corre cuando su dependencia
+   * CAMBIA. La primera elección lo lleva de false a true y la pantalla baja;
+   * de ahí en más, elegir otro tratamiento lo deja en true, React no ve
+   * ninguna diferencia y no vuelve a bajar. El síntoma es raro de explicar y
+   * muy fácil de encontrar: la primera vez funciona y después no, justo
+   * cuando alguien se equivocó y subió a corregir — el peor momento para
+   * dejarla mirando el mismo lugar sin entender qué pasó.
+   *
+   * Así que la dependencia es QUÉ se eligió y no SI se eligió. Sigue en null
+   * mientras el paso 1 no esté resuelto —con opciones, tocar la tarjeta no
+   * alcanza y falta elegir cuál—, que es la regla que ya tenía `elegido`.
+   *
+   * Cambiar de opción dentro del mismo tratamiento también baja, y está bien:
+   * es la elección que faltaba para poder seguir.
+   *
+   * Antes: `useEffect(() => { if (elegido) { … } }, [elegido]);`
    */
+  const listoParaBajar = elegido ? `${serviceId}·${variantId ?? ""}` : null;
+
   useEffect(() => {
-    if (elegido) {
-      document
-        .getElementById("paso-profesional")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [elegido]);
+    if (!listoParaBajar) return;
+    document
+      .getElementById("paso-profesional")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [listoParaBajar]);
 
   /** Lo que dura y lo que sale este turno: de la opción si hay, del tratamiento si no. */
   const duracion = variant?.duration_minutes ?? service?.duration_minutes ?? 0;
@@ -631,6 +649,12 @@ function BookingPage() {
           </Step>
         )}
       </section>
+
+      {/* Ésta es LA página larga del sitio, y encima elegir un tratamiento la
+          baja sola: sin esto, corregir la elección era subir a mano pasando por
+          la profesional y el calendario. Aparece recién después de una pantalla
+          de scroll. */}
+      <VolverArriba />
 
       <SiteFooter />
     </div>
