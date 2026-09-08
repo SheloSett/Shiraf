@@ -31,21 +31,24 @@ leer permisos no necesita el valor, sólo escribirlo.
 Agregar un valor a un enum no borra datos y no pide reset. Hay que correrlo en
 las dos: la local y la del VPS.
 
-### 🟡 0b. Correr `db:push` en el VPS por los avisos del centro — act. 8/9/2026
+### 🟡 0b. La columna de los avisos del centro entra sola con el deploy — act. 8/9/2026
 
 Se agregó la columna `users.receives_center_mail` (booleano, default false):
 la casilla «Recibe los avisos del centro por mail» de Accesos. En local ya
-está aplicada. **En el VPS, con el próximo deploy, hay que correr**
+está aplicada.
 
-    bun run db:push
+En el VPS **no hay que correr nada a mano**: el contenedor `migrate` hace
+`db push` + `post-push` en cada `docker compose up`, así que el deploy normal
+(`git pull && docker compose up -d --build`) la crea. Es una columna con
+default: no borra ni toca datos, y no pide `--accept-data-loss`. Si `migrate`
+fallara, la app no levanta y el motivo está en `docker logs shiraf-migrate`.
 
-antes de levantar el contenedor nuevo: sin la columna, Accesos no carga (el
-`select` la pide) y ningún aviso al centro sale (el `findMany` de
-`mailsDelCentro` la filtra). Es una columna con default: no borra ni toca
-datos, y no pide `--accept-data-loss`.
+Hasta que el deploy salga, el código nuevo no puede correr contra la base
+vieja: Accesos no carga (el `select` pide la columna) y ningún aviso al
+centro sale (el `findMany` de `mailsDelCentro` la filtra).
 
-Después del push, entrar a Accesos y tildarle la casilla a la secretaria. Las
-dueñas reciben siempre, sin tildar nada.
+Después del deploy, entrar a Accesos y tildarle la casilla a la secretaria.
+Las dueñas reciben siempre, sin tildar nada.
 
 ### 🔴 1. HTTPS — hoy las contraseñas viajan en claro
 
@@ -104,23 +107,23 @@ la primera hace menos urgente a la segunda:
       meses. El sitio se cae 1 o 2 minutos, así que va a un horario tranquilo.
 
       Se hace desde hPanel (VPS → Reiniciar) o con `reboot` en el terminal del
-          navegador — ahí la ventana se cuelga y se desconecta sola, que es el
-          servidor apagándose y no un error.
+              navegador — ahí la ventana se cuelga y se desconecta sola, que es el
+              servidor apagándose y no un error.
 
-          **No hay que levantar nada a mano.** Verificado el 2/9: los ocho
-          contenedores del VPS —los tres de Shiraf más los de `igwtstore` y
-          `manhattan`— están con `restart: unless-stopped`, así que vuelven solos al
-          arrancar. La base tampoco corre riesgo: vive en un volumen de Docker, que
-          es aparte del contenedor.
+              **No hay que levantar nada a mano.** Verificado el 2/9: los ocho
+              contenedores del VPS —los tres de Shiraf más los de `igwtstore` y
+              `manhattan`— están con `restart: unless-stopped`, así que vuelven solos al
+              arrancar. La base tampoco corre riesgo: vive en un volumen de Docker, que
+              es aparte del contenedor.
 
-          Después del reinicio, comprobar:
+              Después del reinicio, comprobar:
 
-              docker ps --format "{{.Names}}  {{.Status}}"
-              curl -sI https://shiraf.com.ar/ | head -1
+                  docker ps --format "{{.Names}}  {{.Status}}"
+                  curl -sI https://shiraf.com.ar/ | head -1
 
-          Los tres `shiraf-*` en `Up` y la última línea en `HTTP/1.1 200`. Ojo que
-          `shiraf-app` tarda unos segundos en pasar de `(health: starting)` a
-          `(healthy)`: si mirás muy rápido, todavía no dice `healthy` y está bien.
+              Los tres `shiraf-*` en `Up` y la última línea en `HTTP/1.1 200`. Ojo que
+              `shiraf-app` tarda unos segundos en pasar de `(health: starting)` a
+              `(healthy)`: si mirás muy rápido, todavía no dice `healthy` y está bien.
 
 - [ ] **Destildarle «Ver datos de clientas» a `camila@gmail.com`** en la base
       LOCAL. Se lo puse el 27/8 para probar que a una empleada no le aparece la
