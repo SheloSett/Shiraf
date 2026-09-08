@@ -377,10 +377,102 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       dispara junto— y `reminder`, que serían seis mails cada mañana. Tampoco se
       le avisa de lo que hizo ella misma desde el panel.
       **Sin probar el envío real todavía**: los textos sí, el mail no.
-- [ ] **Un resumen del día para cada profesional.** Salió de lo anterior: el
-      recordatorio no se le manda porque serían seis mails sueltos, pero un solo
-      mail a la mañana con los turnos del día sí serviría. Nadie lo pidió; ver si
-      hace falta antes de escribirlo.
+- [x] ~~**Un resumen del día para cada profesional.**~~ Hecho (8/9/2026), en
+      `bf77a3c`. Un solo mail a la mañana con los turnos del día, con su propia
+      columna aparte de `reminded_at` porque son dos avisos distintos.
+
+## 🔴 WhatsApp automático — lo único que falta es encenderlo
+
+**Estado al 8/9/2026: el código está entero, commiteado (`b979c22`) y apagado.**
+Sobrevivió intacto a la migración al VPS nuevo — el override de Caddy no toca
+esos contenedores. **No hay nada que programar.**
+
+Se eligió el camino que **no le cuesta nada a la dueña**: un chip prepago
+descartable vinculado a **Evolution API** en el VPS. Es la vía no oficial (va
+contra los términos de WhatsApp), y se acepta **sólo** porque el número que se
+expone es un prepago que no vale nada.
+
+🔴 **Nunca vincular ahí el número por el que atiende el centro.** Si lo banean, se
+pierde un chip de dos mil pesos; con el número real se pierde el negocio. La
+regla está escrita también en `evolution.service.ts` y en el `.env.example`.
+
+El porqué de cada decisión, los precios que se descartaron y las otras tres
+salidas están en [`docs/whatsapp-automatico.md`](docs/whatsapp-automatico.md).
+
+### Los pasos que faltan, en orden
+
+- [x] Comprar el chip prepago y activarlo. Hecho el 8/9/2026.
+- [ ] **Instalar WhatsApp _Business_ en el celular y registrar el chip ahí.**
+      Business y no el normal, por tres motivos: es una app aparte, así que **no
+      te pisa tu WhatsApp personal**; la clienta ve una cuenta de empresa en vez
+      de un número pelado; y tiene **mensaje de ausencia automático**, que es la
+      única forma de contestarle a alguien que responda a un número que no
+      atiende nadie. No choca con el Business del centro: son números y teléfonos
+      distintos.
+- [ ] **Cargarle el perfil**: nombre "Shiraf", dirección, horarios, sitio. Es lo
+      que la clienta ve al tocar el contacto, y lo que hace que el aviso no
+      parezca spam.
+- [ ] **Dejar armado el mensaje de ausencia** apuntando al número real del
+      centro. Lo genera la app en el teléfono, así que necesita que el celular
+      tenga conexión.
+- [ ] **Generar la llave** en el VPS: `openssl rand -hex 32`. Va en
+      `EVOLUTION_API_KEY`, y tiene que ser al azar: es la **única** puerta de
+      Evolution —no hay usuario ni contraseña— y cualquier contenedor del VPS
+      puede pegarle a `evolution:8080`.
+- [ ] **Las variables `EVOLUTION_*`** en el `.env` del VPS. Están documentadas
+      una por una en `.env.example`.
+- [ ] **Levantar**: `docker compose --profile whatsapp up -d`.
+      ⚠️ Sin el `--profile` los contenedores no levantan y las variables solas no
+      alcanzan. El síntoma es "No se pudo llamar a Evolution" en cada aviso.
+- [ ] **Vincular el chip**: túnel `ssh -L 8080:127.0.0.1:8080 usuario@vps`, abrir
+      `localhost:8080`, crear la instancia con el nombre exacto de
+      `EVOLUTION_INSTANCIA` y escanear el QR desde el teléfono del chip.
+      El panel **no sale a internet a propósito**: con la llave se puede mandar y
+      leer todo.
+- [ ] **Probar con un turno de prueba** antes de que lo vea una clienta.
+
+### ⚠️ Lo que nunca se probó
+
+El código pasa `tsc` y `eslint`, y los textos de los avisos se leyeron uno por
+uno. Pero **nada de esto se levantó ni una vez**, así que la primera corrida va a
+ser en el VPS. Si algo falla, empezar por acá:
+
+- **El compose no se validó.** No hay Docker en la máquina de desarrollo.
+- **La imagen de Evolution no se probó.** Está fijada en
+  `evoapicloud/evolution-api:v2.2.3`. El proyecto cambió de organización más de
+  una vez; si esa imagen no baja, el nombre viejo es `atendai/evolution-api`. Se
+  puede pisar con `EVOLUTION_IMAGE` sin tocar el compose.
+- **El endpoint sale de la documentación, no de una llamada real**:
+  `POST /message/sendText/{instancia}`, con header `apikey` (no `Bearer`).
+- **No se mandó ningún mensaje**, obviamente: no había chip.
+
+### Los tres errores que van a aparecer
+
+- **404** — casi siempre el nombre de la instancia no coincide con el del `.env`.
+  No es la URL.
+- **"No se pudo llamar a Evolution"** — el contenedor está apagado. Suele ser el
+  `--profile` olvidado.
+- **Se manda pero no llega** — la sesión se desvinculó: volver al panel y
+  escanear el QR de nuevo.
+
+### El día que baneen el chip
+
+Va a pasar. Los mails siguen saliendo solos, así que **nadie se queda sin
+enterarse de su turno**, y el WhatsApp vuelve a mandarse a mano desde la pantalla
+de Avisos. Se compra otro chip y se repite. **Lo que NO hay que hacer ese día es
+vincular el número del centro "hasta que consigamos otro"**: así es como se pierde
+el número bueno, no por una decisión sino por un apuro.
+
+### Pendiente aparte, decidir
+
+- [ ] **El WhatsApp al centro va a un solo número, el mail va a varias
+      personas.** Desde el 8/9 los avisos internos por mail salen a las dueñas y a
+      quien esté tildado en Accesos (`mailsDelCentro()`), pero los mismos avisos
+      por WhatsApp siguen saliendo a `CONTACT.whatsappNumber`, fijo. Puede estar
+      bien —el WhatsApp del centro es uno— pero hoy está así por omisión y no
+      porque alguien lo haya decidido.
+- [ ] **Marcar los avisos mandados a mano** (`notified_wa_at`). Viejo pendiente;
+      si el envío automático arranca, pierde casi toda su urgencia.
 
 - [x] ~~**Recordatorio de turno 24h antes.**~~ Hecho (26/8/2026). Va **por
       mail**, y el cron **vive adentro de la app** con `node-cron`: ni `pg_cron`
@@ -497,13 +589,18 @@ SERVICIOS
       dueña; antes estaba copiado literal y se leía como error de tipeo.
 
 x- recordatorios en el dia del turno/ y un wasap apenas saquen turno, Astrid-Profesional-cliente
-→ el mail de todos esos avisos ya sale solo. El WhatsApp hoy es a mano, con
-el botón que abre el mensaje escrito. Automatizarlo depende de una decisión
-de la dueña —plantillas, un proveedor y unos dólares por mes—: está todo
-escrito en `docs/whatsapp-automatico.md`. **Actualizado el 4/9/2026**: con
-la coexistencia de Meta ya no hace falta un chip nuevo, los avisos salen del
-número de siempre y las secretarias siguen atendiendo desde el celular. Son
-avisos y nada más: se decidió que no hay bot que responda.
+→ el mail de todos esos avisos ya sale solo, y desde el 4/9 también le llega a
+la profesional. El WhatsApp hoy sigue siendo a mano, con el botón que abre el
+mensaje escrito.
+**Actualizado el 8/9/2026**: la dueña no quiso pagar nada, así que se descartó
+la vía oficial de Meta —la coexistencia sobre el número del centro salía unos
+57 dólares por mes, y el número nuevo con Meta directo unos 7— y se fue por un
+**chip prepago descartable con Evolution API**. Los avisos salen de un número
+nuevo, no del de siempre, y las secretarias no cambian nada. Son avisos y nada
+más: se decidió que **no hay bot que responda**.
+El código está escrito, commiteado y apagado; lo que falta es encenderlo, y los
+pasos están arriba en «WhatsApp automático». Todo el análisis, en
+`docs/whatsapp-automatico.md`.
 
 - [x] todas las profesionales manejan turnos
       → la cuenta de una profesional nace con «Gestionar turnos» tildado, por las
