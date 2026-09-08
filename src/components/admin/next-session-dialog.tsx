@@ -14,6 +14,7 @@ import {
 import { SelectorDeHorario } from "@/components/admin/selector-de-horario";
 import { instanteDe, toTimeInput } from "@/lib/horarios";
 import { apiPost } from "@/lib/api";
+import { notifyAppointment } from "@/lib/notifications.functions";
 import { toDateKey } from "@/lib/shiraf";
 
 /** "viernes, 18 de septiembre" — la fecha como se la dice en voz alta. */
@@ -128,18 +129,42 @@ export function NextSessionDialog({
 
   const agendar = useMutation({
     mutationFn: async () => {
-      if (!turno || !cuando) return;
-      await apiPost(`/api/turnos/${turno.id}/siguiente-sesion`, {
+      // `return;` daba undefined; con el resultado del mail como valor de la
+      // mutación, el "no hubo nada que hacer" es null, que onSuccess distingue.
+      // if (!turno || !cuando) return;
+      if (!turno || !cuando) return null;
+      // Antes se descartaba la respuesta; ahora hace falta el id para avisar.
+      // await apiPost(`/api/turnos/${turno.id}/siguiente-sesion`, {
+      const { id } = await apiPost<{ id: string }>(`/api/turnos/${turno.id}/siguiente-sesion`, {
         // El día y la hora son de pared —el reloj del centro— y viajan como
         // instante para que el servidor no tenga que adivinar la zona.
         starts_at: cuando.toISOString(),
         client_notes: nota.trim() || null,
       });
+
+      // El mismo aviso que al cargar un turno nuevo, y por el mismo motivo: la
+      // sesión nace confirmada y sin esto nadie se enteraba. El porqué largo
+      // está en new-appointment-dialog.tsx.
+      return await notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
+        (e: Error) => ({ sent: false as const, reason: e.message }),
+      );
     },
-    onSuccess: async () => {
+    // Antes no recibía nada: la mutación no devolvía el resultado del mail.
+    // onSuccess: async () => {
+    onSuccess: async (mail) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-calendar"] });
-      toast.success(`Sesión ${(turno?.session_number ?? 1) + 1} agendada.`);
+      // El toast pelado no decía si el mail salió; ahora lo dice en la bajada.
+      // toast.success(`Sesión ${(turno?.session_number ?? 1) + 1} agendada.`);
+      toast.success(`Sesión ${(turno?.session_number ?? 1) + 1} agendada.`, {
+        ...(mail
+          ? {
+              description: mail.sent
+                ? "Le avisamos por mail."
+                : `Por mail no salió: ${mail.reason}`,
+            }
+          : {}),
+      });
       onOpenChange(false);
       onCreated();
     },

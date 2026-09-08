@@ -74,6 +74,8 @@ const CAMPOS_VEDADOS_A_LA_CLIENTA = [
   "guest_phone",
   "guest_email",
   "reminded_at",
+  // Por lo mismo que `reminded_at`: es la marca del resumen a la profesional.
+  "professional_reminded_at",
   "created_at",
 ] as const;
 

@@ -695,6 +695,13 @@ model appointments {
   guest_phone       String?
   guest_email       String?
   reminded_at       DateTime? @db.Timestamptz(6)
+  // La misma marca, pero del resumen que le llega a la PROFESIONAL el día
+  // antes (8/9/2026). Va aparte de `reminded_at` porque son dos avisos
+  // distintos a dos personas distintas: a la clienta se le escribe turno por
+  // turno, a la profesional una sola vez con todos los de mañana. Con una sola
+  // marca, una clienta sin mail —que deja `reminded_at` en null— haría que a la
+  // profesional le llegue el resumen otra vez en la segunda pasada del día.
+  professional_reminded_at DateTime? @db.Timestamptz(6)
   created_at        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 

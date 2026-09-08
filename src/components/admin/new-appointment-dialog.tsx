@@ -26,6 +26,7 @@ import { TeamTag } from "@/components/admin/team-tag";
 import { SelectorDeHorario } from "@/components/admin/selector-de-horario";
 import { instanteDe } from "@/lib/horarios";
 import { api, apiPost } from "@/lib/api";
+import { notifyAppointment } from "@/lib/notifications.functions";
 import type {
   RtaClientasParaElegir,
   RtaProfesionalesConHorarios,
@@ -196,7 +197,9 @@ export function NewAppointmentDialog({
       // Sin duration_minutes ni price: los fija validarTurno() leyéndolos del
       // catálogo, igual que antes los pisaba el trigger. Y sin status: nace
       // confirmado porque lo carga el centro.
-      await apiPost("/api/turnos", {
+      // Antes se descartaba la respuesta; ahora hace falta el id para avisar.
+      // await apiPost("/api/turnos", {
+      const { id } = await apiPost<{ id: string }>("/api/turnos", {
         // Una cosa o la otra, nunca las dos.
         ...(who === "registrada"
           ? { client_id: clientId }
@@ -212,14 +215,44 @@ export function NewAppointmentDialog({
         starts_at: startsAt!.toISOString(),
         client_notes: notes.trim() || null,
       });
+
+      /*
+       * El aviso, a la clienta y a la profesional (8/9/2026).
+       *
+       * Hasta acá, un turno cargado desde el panel no le avisaba a NADIE: nacía
+       * confirmado, así que nunca pasaba por el "confirmar" de la lista, que es
+       * el único lugar del panel que manda el mail. La clienta reclamó que no
+       * llegaban mails, y en este camino era literalmente cierto.
+       *
+       * Va "confirmed" y no un evento nuevo: el turno ESTÁ confirmado, y los
+       * dos textos que ya existen dicen exactamente eso —"tu turno quedó
+       * confirmado" a ella, "se confirmó un turno en tu agenda" a la
+       * profesional—. Y si la que lo carga es la misma que lo atiende, el
+       * servidor no se lo manda a ella misma.
+       *
+       * El fallo NO rompe la carga, igual que en los otros caminos: el turno ya
+       * está en la agenda, y un mail que no sale no puede convertirse en "no se
+       * pudo cargar", que haría cargarlo dos veces.
+       */
+      return {
+        mail: await notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
+          (e: Error) => ({ sent: false as const, reason: e.message }),
+        ),
+      };
     },
-    onSuccess: async () => {
+    // Antes no recibía nada: la mutación no devolvía el resultado del mail.
+    // onSuccess: async () => {
+    onSuccess: async ({ mail }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin-appointments"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-calendar"] }),
         queryClient.invalidateQueries({ queryKey: ["appointment-form", "availability"] }),
       ]);
-      toast.success("Turno cargado y confirmado.");
+      // El toast pelado no decía si el mail salió; ahora lo dice en la bajada.
+      // toast.success("Turno cargado y confirmado.");
+      toast.success("Turno cargado y confirmado.", {
+        description: mail.sent ? "Le avisamos por mail." : `Por mail no salió: ${mail.reason}`,
+      });
       reset();
       onOpenChange(false);
       onCreated("confirmed");

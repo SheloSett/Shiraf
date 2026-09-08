@@ -253,7 +253,12 @@ function BookingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });
-      toast.success("¡Turno solicitado! Queda pendiente de confirmación.");
+      // Decía «¡Turno solicitado! Queda pendiente de confirmación.» — quedó de
+      // cuando el turno nacía pendiente. Desde el 6/9/2026 reservar ES la
+      // confirmación, y el mail que acaba de salir dice exactamente eso; el
+      // toast no puede contradecirlo.
+      // toast.success("¡Turno solicitado! Queda pendiente de confirmación.");
+      toast.success("¡Turno reservado! Te mandamos el comprobante por mail.");
       navigate({ to: "/mi-cuenta" });
     },
     // El trigger de la base rechaza los turnos superpuestos. Puede pasar si

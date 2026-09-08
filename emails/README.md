@@ -63,10 +63,26 @@ clienta, se cambia ahí y cambia en WhatsApp y en el mail a la vez.
 
 | Aviso | Va a | Lo dispara | Canales |
 | --- | --- | --- | --- |
-| Turno confirmado | La clienta | El centro, al confirmar en el panel | Mail + WhatsApp |
-| Turno cancelado | La clienta | El centro, al cancelar en el panel | Mail + WhatsApp |
-| Turno nuevo pendiente | El centro | La clienta, al reservar en el sitio | Mail |
-| Recordatorio | La clienta | La tarea programada, el día antes | Mail |
+| Turno reservado | La clienta | Ella misma, al reservar en el sitio | Mail |
+| Turno nuevo | El centro y la profesional | La clienta, al reservar en el sitio | Mail |
+| Turno confirmado | La clienta y la profesional | El centro, al confirmar en la lista **o al cargarlo desde el panel** (8/9/2026) | Mail + WhatsApp |
+| Turno cancelado | La clienta y la profesional | El centro, al cancelar en el panel | Mail + WhatsApp |
+| Turno movido | La clienta y la profesional | El centro, al reprogramar | Mail + WhatsApp |
+| Cancelado / movido por la clienta | El centro y la profesional | La clienta, desde «Mi cuenta» | Mail |
+| Recordatorio | La clienta, turno por turno | La tarea programada, el día antes | Mail (+ WhatsApp si está encendido) |
+| Resumen de mañana | La profesional, un mail con todos sus turnos | La tarea programada, el día antes (8/9/2026) | Mail |
+
+Hasta el 8/9/2026 la tabla tenía cuatro filas y dos agujeros que la clienta
+reclamó juntos —"no llegan mails ni a mí ni a las profesionales"—:
+
+- Un turno **cargado desde el panel** no le avisaba a nadie. Nacía confirmado,
+  así que nunca pasaba por el "confirmar" de la lista, que era el único botón
+  que mandaba el mail. Ahora los dos diálogos —cargar turno y agendar la
+  sesión siguiente— disparan "confirmed" al terminar, y el toast dice si salió.
+- La profesional recibía el aviso al reservar y **nada el día antes**. Ahora
+  le llega un resumen con todos sus turnos de mañana, en orden. Es un mail por
+  profesional y no uno por turno; la marca es `professional_reminded_at`, en
+  cada turno, aparte de `reminded_at` que es la de la clienta.
 
 "Marcar realizado" no avisa nada a propósito: es una anotación interna que pasa
 después de que la clienta ya estuvo en el centro.
@@ -208,6 +224,12 @@ haya recibido. Que corra dos veces el mismo día no le escribe a nadie de nuevo:
 la marca queda en `appointments.reminded_at`, y la segunda pasada está
 justamente para el día en que el contenedor esté reiniciándose a las 10.
 
+En la misma corrida, después de las clientas, sale el **resumen de mañana a
+cada profesional** con cuenta vinculada: un mail con todos sus turnos del día
+siguiente. Su marca es `appointments.professional_reminded_at`; si entre las
+10 y las 13 le entra un turno más para mañana, a las 13 le llega el resumen de
+nuevo, completo.
+
 La zona horaria va declarada ahí y no depende del reloj del servidor, que corre
 en UTC. Se acabó escribir la hora convertida.
 
@@ -220,6 +242,8 @@ Deja una línea por corrida en el log del contenedor:
     [recordatorios] Programados: "0 10,13 * * *" (America/Argentina/Buenos_Aires).
     [recordatorios] 2026-08-26: 3 turno(s), 3 aviso(s) enviado(s).
     [recordatorios] Sin enviar · turno 8f2a…: La clienta no tiene mail cargado.
+    [recordatorios] 2026-08-26: 2 profesional(es) con turnos, 2 resumen(es) enviado(s).
+    [recordatorios] Sin resumen · Ale: La profesional no tiene cuenta vinculada.
 
 Es la única señal: antes había un endpoint que contestaba el resumen en JSON y
 ya no existe. Los que no salen se listan de a uno con el motivo — casi siempre,

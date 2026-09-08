@@ -36,7 +36,14 @@ export type AppointmentEvent =
   | "cancelled"
   /** El centro le movió el turno a otro día u hora. Va a la clienta. */
   | "rescheduled"
-  /** Día previo. Va a la clienta. */
+  /**
+   * Día previo. Va a la clienta, turno por turno.
+   *
+   * A la profesional NO le llega este mismo aviso: recibe UN resumen con todos
+   * sus turnos de mañana, armado en `buildProfessionalDayDigest` y mandado por
+   * la misma tarea del reloj (8/9/2026). Un mail por turno a quien atiende
+   * cinco por día serían cinco mails iguales en la misma mañana.
+   */
   | "reminder"
   /** Entró una reserva por el sitio, ya confirmada. Va al centro Y a la profesional. */
   | "new-request"
@@ -619,6 +626,76 @@ export function buildOverdueDigest(turnos: TurnoVencido[], total: number): Appoi
  * Devuelve null cuando el número no da para armar un enlace confiable, y ahí la
  * interfaz esconde el botón en vez de ofrecer uno roto.
  */
+/** Un turno de mañana, lo justo para listarlo en el resumen de la profesional. */
+export type TurnoDelDia = {
+  startsAt: string;
+  clientName: string;
+  clientPhone?: string | null;
+  serviceName?: string | null;
+  sessionNumber?: number | null;
+  sessionsTotal?: number | null;
+};
+
+/**
+ * El recordatorio del día antes, para la PROFESIONAL: un solo mail con todos
+ * los turnos que atiende mañana, en orden. Lo manda la tarea del reloj, la
+ * misma que le escribe a cada clienta (8/9/2026).
+ *
+ * Hasta ese día la profesional se enteraba de un turno cuando entraba —el
+ * "te reservaron un turno"— y nada más: si lo reservaron hace tres semanas, el
+ * día antes no le llegaba ningún aviso. La clienta lo pidió así: aviso al
+ * reservar y aviso el día antes, para las dos puntas del mostrador.
+ *
+ * Un mail y no uno por turno, a propósito: los cuatro avisos de arriba son
+ * sobre UN turno porque los dispara un hecho sobre ese turno. Esto es "cómo
+ * viene tu día", y eso se lee de una vez. Las horas van sin el "el jueves 10
+ * de septiembre a las" repetido: el día ya está en el asunto.
+ */
+export function buildProfessionalDayDigest(
+  professionalName: string,
+  turnos: TurnoDelDia[],
+): AppointmentMessage {
+  const pro = firstName(professionalName);
+  const uno = turnos.length === 1;
+  const primero = turnos[0];
+  const dia = primero
+    ? new Date(primero.startsAt).toLocaleDateString("es-AR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        timeZone: TIMEZONE,
+      })
+    : "mañana";
+
+  return {
+    subject: uno
+      ? `Mañana tenés un turno — ${dia}`
+      : `Mañana tenés ${turnos.length} turnos — ${dia}`,
+    lines: [
+      `Hola ${pro}, te recordamos tu agenda de mañana, ${dia}.`,
+      "",
+      ...turnos.flatMap((t) => {
+        const hora = new Date(t.startsAt).toLocaleTimeString("es-AR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+          timeZone: TIMEZONE,
+        });
+        const sesion =
+          t.sessionsTotal && t.sessionsTotal > 1 && t.sessionNumber
+            ? ` · sesión ${t.sessionNumber} de ${t.sessionsTotal}`
+            : "";
+        return [
+          `${hora} · ${t.clientName}${t.clientPhone ? ` · ${t.clientPhone}` : ""}`,
+          ...(t.serviceName ? [`${t.serviceName}${sesion}`] : sesion ? [sesion.slice(3)] : []),
+          "",
+        ];
+      }),
+      `Tu agenda: ${CONTACT.siteUrl}/admin/mi-agenda`,
+    ],
+  };
+}
+
 export function toWhatsappNumber(raw: string | null | undefined): string | null {
   const digits = (raw ?? "").replace(/\D/g, "");
   if (!digits) return null;

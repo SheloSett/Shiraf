@@ -4,9 +4,11 @@ import {
   deliverAppointmentEmail,
   deliverAppointmentWhatsapp,
   deliverOverdueDigest,
+  deliverProfessionalDigest,
   transporteWhatsapp,
 } from "@/lib/notifications.server";
-import type { TurnoVencido } from "@/lib/notifications";
+// import type { TurnoVencido } from "@/lib/notifications"; ← se sumó TurnoDelDia
+import type { TurnoDelDia, TurnoVencido } from "@/lib/notifications";
 import { yaVencio } from "@/lib/shiraf";
 
 /**
@@ -141,6 +143,17 @@ export type ReminderRun = {
   sent: number;
   /** Los que no salieron, con el motivo. Casi siempre: sin mail cargado. */
   skipped: { id: string; reason: string }[];
+  /** El resumen de mañana a cada profesional (8/9/2026). */
+  professionals: ProfessionalReminderRun;
+};
+
+export type ProfessionalReminderRun = {
+  /** Profesionales con turnos mañana que todavía no habían recibido el resumen. */
+  found: number;
+  /** A cuántas les salió. */
+  sent: number;
+  /** Las que no, con el motivo. */
+  skipped: { name: string; reason: string }[];
 };
 
 export async function runDailyReminders(): Promise<ReminderRun> {
@@ -251,7 +264,154 @@ export async function runDailyReminders(): Promise<ReminderRun> {
     sent += 1;
   }
 
-  return { day: from.slice(0, 10), found: appointments.length, sent, skipped };
+  // A las profesionales, después de las clientas y con su propia marca. Si
+  // esto tira, que no se pierda lo de arriba: lo de arriba ya salió y ya quedó
+  // marcado, así que el `catch` lo deja en el log y devuelve la corrida vacía.
+  const professionals = await recordarALasProfesionales(from, to).catch((e: unknown) => {
+    console.error("[recordatorios] El resumen a las profesionales falló entero:", e);
+    return { found: 0, sent: 0, skipped: [] } satisfies ProfessionalReminderRun;
+  });
+
+  // return { day: from.slice(0, 10), found: appointments.length, sent, skipped };
+  // ↑ la corrida ahora también cuenta lo de las profesionales.
+  return { day: from.slice(0, 10), found: appointments.length, sent, skipped, professionals };
+}
+
+/**
+ * El resumen de mañana para cada profesional (8/9/2026).
+ *
+ * Hasta acá, la profesional recibía un mail cuando le RESERVABAN un turno y
+ * nada más: el recordatorio del día antes era sólo para la clienta, con el
+ * argumento de que un mail por turno a quien atiende cinco por día son cinco
+ * mails iguales. El argumento sigue valiendo; lo que no valía era la
+ * conclusión de no mandarle nada. La solución es UN mail con todos los turnos
+ * de mañana, en orden.
+ *
+ * ── LA MARCA ES POR TURNO, NO POR PROFESIONAL ─────────────────────────────
+ *
+ * `professional_reminded_at` vive en cada turno, igual que `reminded_at`, y
+ * el resumen sale si al menos uno de los turnos de mañana de esa profesional
+ * no lo tiene. Cuando sale, se marcan TODOS los que entraron. Así:
+ *
+ *   · La segunda pasada del día (13:00) no le manda el resumen otra vez a
+ *     quien ya lo recibió a las 10:00 — todos sus turnos están marcados.
+ *   · Si entre las 10 y las 13 le reservan uno más para mañana, a las 13 le
+ *     llega el resumen de nuevo, COMPLETO, con el turno nuevo adentro. Es un
+ *     segundo mail, sí, pero uno que dice algo que el primero no decía.
+ *   · Mover un turno le limpia la marca (ver `reprogramar` en el controlador),
+ *     igual que a la clienta, así que un turno movido A mañana entra.
+ *
+ * Una marca por profesional y por día habría sido más chica, pero se
+ * quedaría muda ante el turno que entra entre pasadas, y necesitaría una
+ * columna en `professionals` que no habla de ningún turno en particular.
+ *
+ * ── A QUIÉN NO LE LLEGA, Y NO ES UN PROBLEMA ──────────────────────────────
+ *
+ * A la ficha sin cuenta vinculada —no hay dirección— y al turno sin
+ * profesional asignada, que no es de nadie todavía. Los dos se listan en el
+ * log con su motivo, igual que las clientas sin mail.
+ */
+export async function recordarALasProfesionales(
+  from: string,
+  to: string,
+): Promise<ProfessionalReminderRun> {
+  const turnos = await prisma.appointments.findMany({
+    where: {
+      status: "confirmed",
+      professional_id: { not: null },
+      starts_at: { gte: new Date(from), lte: new Date(to) },
+    },
+    select: {
+      id: true,
+      starts_at: true,
+      professional_id: true,
+      professional_reminded_at: true,
+      guest_name: true,
+      guest_phone: true,
+      service_name: true,
+      session_number: true,
+      sessions_total: true,
+      service: { select: { name: true } },
+      variant: { select: { name: true } },
+      variant_name: true,
+      client: { select: { profile: { select: { full_name: true, phone: true } } } },
+      professional: {
+        select: { full_name: true, user: { select: { email: true } } },
+      },
+    },
+    orderBy: { starts_at: "asc" },
+  });
+
+  // Agrupar por profesional, respetando el orden por hora que ya trae la
+  // consulta: un Map conserva el orden de inserción y el primer turno de cada
+  // una es el más temprano.
+  const porProfesional = new Map<string, typeof turnos>();
+  for (const t of turnos) {
+    const lista = porProfesional.get(t.professional_id!) ?? [];
+    lista.push(t);
+    porProfesional.set(t.professional_id!, lista);
+  }
+
+  const { nombreDelTratamiento } = await import("@/server/services/turnos.service");
+
+  const skipped: { name: string; reason: string }[] = [];
+  let found = 0;
+  let sent = 0;
+
+  for (const lista of porProfesional.values()) {
+    // Todos marcados: ya recibió el resumen de este día. Es lo normal en la
+    // segunda pasada, y no cuenta ni como encontrada ni como salteada.
+    if (lista.every((t) => t.professional_reminded_at !== null)) continue;
+    found += 1;
+
+    const ficha = lista[0]!.professional;
+    const name = ficha?.full_name ?? "(sin ficha)";
+    const email = ficha?.user?.email ?? null;
+
+    if (!email) {
+      skipped.push({ name, reason: "La profesional no tiene cuenta vinculada." });
+      continue;
+    }
+
+    const resumen: TurnoDelDia[] = lista.map((t) => ({
+      startsAt: t.starts_at.toISOString(),
+      clientName: t.client?.profile?.full_name ?? t.guest_name ?? "Clienta",
+      clientPhone: t.client?.profile?.phone ?? t.guest_phone,
+      serviceName: nombreDelTratamiento(t),
+      sessionNumber: t.session_number,
+      sessionsTotal: t.sessions_total,
+    }));
+
+    const envio = await deliverProfessionalDigest({
+      professionalName: name,
+      email,
+      turnos: resumen,
+    });
+
+    if (!envio.sent) {
+      skipped.push({ name, reason: envio.reason });
+      continue;
+    }
+
+    // Se marcan TODOS los de la lista, también los que ya estaban marcados de
+    // una pasada anterior: el resumen que acaba de salir los incluyó.
+    try {
+      await prisma.appointments.updateMany({
+        where: { id: { in: lista.map((t) => t.id) } },
+        data: { professional_reminded_at: new Date() },
+      });
+    } catch (e) {
+      console.error(
+        `[recordatorios] El resumen a ${name} salió pero no se pudo marcar: ${
+          e instanceof Error ? e.message : e
+        }`,
+      );
+    }
+
+    sent += 1;
+  }
+
+  return { found, sent, skipped };
 }
 
 /**
@@ -402,8 +562,15 @@ export async function iniciarRecordatorios(): Promise<void> {
  */
 async function correr(): Promise<void> {
   try {
-    const { day, found, sent, skipped } = await runDailyReminders();
+    // const { day, found, sent, skipped } = await runDailyReminders(); ← + professionals
+    const { day, found, sent, skipped, professionals } = await runDailyReminders();
     console.log(`[recordatorios] ${day}: ${found} turno(s), ${sent} aviso(s) enviado(s).`);
+    console.log(
+      `[recordatorios] ${day}: ${professionals.found} profesional(es) con turnos, ${professionals.sent} resumen(es) enviado(s).`,
+    );
+    for (const { name, reason } of professionals.skipped) {
+      console.warn(`[recordatorios] Sin resumen · ${name}: ${reason}`);
+    }
 
     // Uno por línea y con el motivo: casi siempre es "no tiene mail cargado", y
     // eso se arregla en la ficha de la clienta.

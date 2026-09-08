@@ -3,6 +3,8 @@ import {
   buildAppointmentMessage,
   buildProfessionalMessage,
   buildOverdueDigest,
+  buildProfessionalDayDigest,
+  type TurnoDelDia,
   type TurnoVencido,
   type AppointmentEvent,
   type AppointmentMessage,
@@ -447,8 +449,48 @@ export async function deliverAppointmentToProfessional(
     return { sent: false, reason: "Este aviso no le corresponde a la profesional." };
   }
 
-  return sendEmail({
+  // Se devolvía directo; ahora se guarda para poder loguear el fallo abajo.
+  // return sendEmail({
+  const envio = await sendEmail({
     to: datos.professionalEmail,
+    subject: message.subject,
+    text: message.lines.join("\n"),
+    html: renderEmailHtml(message),
+  });
+
+  /*
+   * 8/9/2026: la clienta reclamó que a las profesionales no les llegaba nada, y
+   * no había UNA línea de log para saber si era cierto. `notifyAppointment`
+   * sólo escribe el fallo del mail a la clienta; el de la profesional viajaba
+   * en su propio campo y ninguna pantalla lo muestra. Los cuatro `sent: false`
+   * de arriba son normales y siguen sin loguearse; éste no: acá había
+   * dirección y mensaje, y el envío falló.
+   */
+  if (!envio.sent) {
+    console.error(`[aviso] ${event} · turno ${appointmentId} · a la profesional: ${envio.reason}`);
+  }
+
+  return envio;
+}
+
+/**
+ * El resumen de mañana para UNA profesional. Lo llama la tarea del reloj, una
+ * vez por profesional con turnos al día siguiente (8/9/2026).
+ *
+ * No pasa por `datosDelAviso` porque no es sobre un turno sino sobre varios:
+ * la tarea ya los tiene leídos y agrupados, y acá sólo se redacta y se manda.
+ */
+export async function deliverProfessionalDigest(input: {
+  professionalName: string;
+  email: string;
+  turnos: TurnoDelDia[];
+}): Promise<DeliveryResult> {
+  if (input.turnos.length === 0) return { sent: false, reason: "No tiene turnos mañana." };
+
+  const message = buildProfessionalDayDigest(input.professionalName, input.turnos);
+
+  return sendEmail({
+    to: input.email,
     subject: message.subject,
     text: message.lines.join("\n"),
     html: renderEmailHtml(message),

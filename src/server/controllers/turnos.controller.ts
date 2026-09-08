@@ -902,7 +902,10 @@ export async function reprogramar(ctx: Ctx) {
 
   await prisma.appointments.update({
     where: { id },
-    data: { starts_at, reminded_at: null },
+    // La marca de la profesional se limpia por lo mismo que la de la clienta:
+    // si el turno se mueve A mañana, tiene que entrar en el resumen de hoy.
+    // data: { starts_at, reminded_at: null }, ← faltaba la marca de la profesional
+    data: { starts_at, reminded_at: null, professional_reminded_at: null },
   });
   return json({ ok: true });
 }
