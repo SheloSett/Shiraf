@@ -1,13 +1,88 @@
 # Qué cambió y qué falta probar
 
-Rama: **`trabajo/dias-cerrados`** · actualizado el **5/9/2026**
+Rama: **`main`** · actualizado el **8/9/2026**
 
-Lo de `trabajo/margen-y-ausencias` **ya está en `main`**. Esta rama sale del
-`main` del 5/9 (`c7a0417`).
+Lo de `trabajo/dias-cerrados` y `trabajo/margen-y-ausencias` **ya está en
+`main`**.
 
 Este archivo se reescribe cada vez que se cierra una tanda de trabajo. Lo de las
 tandas anteriores sigue abajo, porque hay cosas de ahí que todavía no se
 probaron.
+
+---
+
+## 🔴 Tanda del 4-8/9 — el WhatsApp automático, escrito y SIN PROBAR
+
+**Esta tanda es distinta de todas las de abajo: no se probó nada.** El código
+está commiteado (`b979c22`) y apagado, y la primera vez que corra va a ser en el
+VPS. Lo que sigue es para que esa primera corrida no sea a ciegas.
+
+### Qué hay
+
+Los avisos de turno pueden salir por WhatsApp, solos, además del mail. Sale por
+uno de dos transportes, y lo decide `transporteWhatsapp()` mirando el `.env`:
+
+| Transporte | Qué es | Estado |
+| --- | --- | --- |
+| **evolution** | Un chip prepago descartable vinculado a Evolution API en el VPS. Gratis, no oficial | **El elegido.** Falta encenderlo |
+| **meta** | La Cloud API oficial. Cuesta plata y exige plantillas aprobadas | Escrito y apagado desde el 28/8 |
+
+Con los dos apagados —que es como está hoy— no pasa nada: los avisos salen sólo
+por mail, exactamente como venían.
+
+🔴 **El chip que se vincula a Evolution es descartable a propósito.** Nunca el
+número por el que atiende el centro: es la vía no oficial y el castigo es que
+banean el número. El porqué completo está en `evolution.service.ts` y en
+`docs/whatsapp-automatico.md` §5.
+
+### ⚠️ Lo que NO se probó — que es TODO
+
+- **El compose nunca se validó.** No hay Docker en la máquina de desarrollo. Ni
+  un `docker compose config`.
+- **La imagen de Evolution no se bajó nunca.** Está fijada en
+  `evoapicloud/evolution-api:v2.2.3`. El proyecto cambió de organización más de
+  una vez; si no baja, el nombre viejo es `atendai/evolution-api`, y se pisa con
+  `EVOLUTION_IMAGE` sin tocar el compose.
+- **El endpoint sale de la documentación, no de una llamada real**:
+  `POST /message/sendText/{instancia}`, con header `apikey` — **no** `Bearer`,
+  que es el del transporte de Meta que está al lado.
+- **No se mandó ni un mensaje.** Hasta el 8/9 no había chip.
+- **Los tres contenedores nuevos** (Evolution, su Postgres y su Redis) nunca
+  levantaron, así que tampoco se sabe cuánta RAM se comen en el VPS.
+
+### Qué mirar cuando se encienda, en orden
+
+1. Que los tres contenedores levanten:
+   `docker compose --profile whatsapp up -d`. **Sin `--profile` no levantan**, y
+   el síntoma es "No se pudo llamar a Evolution" en cada aviso.
+2. Que el QR se escanee y la instancia quede vinculada, con el nombre **exacto**
+   de `EVOLUTION_INSTANCIA`. Un **404** al mandar casi siempre es que ese nombre
+   no coincide, no que la URL esté mal.
+3. Un turno de prueba, mirando que llegue **por los dos canales** y que digan lo
+   mismo. Por Evolution el texto es el mismo `buildAppointmentMessage()` del
+   mail, así que no deberían poder divergir.
+4. El recordatorio de la mañana con **varios turnos**: es la única ráfaga del
+   sistema. Verificar que el `delay` de 1,2 segundos los espacie y no salgan
+   todos juntos — es lo que más llama la atención de WhatsApp.
+5. Que la sesión **sobreviva a un reinicio** del contenedor sin pedir el QR de
+   nuevo. Para eso está el volumen `shiraf-evolution-instances`; si no
+   sobrevive, el volumen no está montado bien.
+
+### Lo otro de esta tanda: el aviso a la profesional (4/9)
+
+Ya está en `main` y **los textos sí se probaron**, los ocho casos leídos uno por
+uno. Lo que **no** se probó es el envío real, que necesita base y SMTP.
+
+Le llegan **seis de los ocho** avisos: los tres internos y los tres que el centro
+le manda a la clienta. Quedan afuera a propósito `requested` —duplicaría
+`new-request`, que se dispara junto— y `reminder`, que serían seis mails cada
+mañana. Y **no se le avisa de lo que hizo ella misma** desde el panel.
+
+Dos casos que conviene mirar con un turno real:
+
+- Una profesional **sin cuenta vinculada** (`professionals.user_id` en null): no
+  recibe nada y no es un error, pero conviene verlo una vez.
+- Que la que confirma un turno desde el panel **no** reciba el mail de eso.
 
 ---
 

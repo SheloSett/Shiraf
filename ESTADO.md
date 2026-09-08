@@ -305,6 +305,19 @@ escribe en disco; lo que persiste vive en el contenedor de la base.
 
 ### Importante
 
+- **El WhatsApp automático está escrito y apagado** (8/9/2026). Los avisos de
+  turno salen hoy sólo por mail; el segundo canal está entero en el código y se
+  enciende con variables de entorno, sin programar nada.
+  Se eligió el camino que **no le cuesta nada a la dueña**: un **chip prepago
+  descartable** vinculado a **Evolution API** en el VPS. Es la vía **no oficial**
+  —va contra los términos de WhatsApp— y se acepta sólo porque el número expuesto
+  no vale nada. 🔴 **Nunca vincular ahí el número por el que atiende el centro.**
+  La vía oficial de Meta también está escrita y apagada, por si algún día se
+  decide pagarla; si las dos están configuradas, gana Evolution.
+  Los pasos para encenderlo están en `TODO.md`; el análisis completo, con los
+  precios que se descartaron y las otras tres salidas, en
+  [`docs/whatsapp-automatico.md`](docs/whatsapp-automatico.md).
+  **Nada de esto se probó todavía** — ver `PARA-PROBAR.md`.
 - **Fotos reales.** Sigue siendo el techo del diseño. Hacen falta 8–12: sala,
   detalle de manos trabajando, texturas de producto y **retratos de las
   profesionales**. Sin eso, ninguna decisión de CSS llega al "wow".
