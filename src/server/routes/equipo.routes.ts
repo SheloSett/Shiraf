@@ -5,6 +5,7 @@ import {
   borrar,
   borrarAusencia,
   activarCuenta,
+  cambiarAvisos,
   cambiarPermiso,
   crear,
   crearAusencia,
@@ -62,3 +63,6 @@ equipoRouter.put("/empleadas/:id/permiso", authMiddleware, cambiarPermiso);
 // Dar de baja sin borrar. El candado de "sólo la dueña" está adentro del
 // controlador, igual que en los dos de arriba y por el mismo motivo.
 equipoRouter.put("/empleadas/:id/activa", authMiddleware, activarCuenta);
+// Si recibe por mail los avisos del centro (8/9/2026). No es un acceso, es una
+// columna de `users`; el candado es el mismo que arriba: sólo la dueña.
+equipoRouter.put("/empleadas/:id/avisos", authMiddleware, cambiarAvisos);

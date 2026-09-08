@@ -100,14 +100,15 @@ poder pedirle un permiso distinto.
 
 ## Reparto de accesos — `user_roles` (3) y `user_permissions` (3)
 
-| ✔   | Policy                          | Op     | Regla                             | Vigente en     | Dónde queda                                                          |
-| --- | ------------------------------- | ------ | --------------------------------- | -------------- | -------------------------------------------------------------------- |
-| ✅  | `read own roles`                | SELECT | `user_id = uid` **o** rol admin   | 20260805164122 | authz.service → accesoDe (siempre por userId de la sesión)           |
-| ✅  | `admin assigns non-admin roles` | INSERT | Rol admin **y** `role <> 'admin'` | 20260813070000 | team.functions → createEmployee (verifica admin con la service role) |
-| ✅  | `admin removes non-admin roles` | DELETE | Ídem                              | 20260813070000 | team.functions → deleteEmployee (exige que la víctima sea staff)     |
-| ✅  | `read permissions`              | SELECT | `user_id = uid` **o** rol admin   | 20260813070000 | authz.service → accesoDe                                             |
-| ✅  | `admin grants permissions`      | INSERT | **Rol** admin, no permiso         | 20260813070000 | equipo.controller → cambiarPermiso + exigirAdmin                     |
-| ✅  | `admin revokes permissions`     | DELETE | Ídem                              | 20260813070000 | equipo.controller → cambiarPermiso + exigirAdmin                     |
+| ✔   | Policy                                                                                                      | Op     | Regla                                 | Vigente en     | Dónde queda                                                                                            |
+| --- | ----------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------ |
+| ✅  | `read own roles`                                                                                            | SELECT | `user_id = uid` **o** rol admin       | 20260805164122 | authz.service → accesoDe (siempre por userId de la sesión)                                             |
+| ✅  | `admin assigns non-admin roles`                                                                             | INSERT | Rol admin **y** `role <> 'admin'`     | 20260813070000 | team.functions → createEmployee (verifica admin con la service role)                                   |
+| ✅  | `admin removes non-admin roles`                                                                             | DELETE | Ídem                                  | 20260813070000 | team.functions → deleteEmployee (exige que la víctima sea staff)                                       |
+| ✅  | `read permissions`                                                                                          | SELECT | `user_id = uid` **o** rol admin       | 20260813070000 | authz.service → accesoDe                                                                               |
+| ✅  | `admin grants permissions`                                                                                  | INSERT | **Rol** admin, no permiso             | 20260813070000 | equipo.controller → cambiarPermiso + exigirAdmin                                                       |
+| ✅  | `admin revokes permissions`                                                                                 | DELETE | Ídem                                  | 20260813070000 | equipo.controller → cambiarPermiso + exigirAdmin                                                       |
+| ✅  | Recibe los avisos del centro por mail (nueva, 8/9/2026; no es un permiso sino `users.receives_center_mail`) | UPDATE | **Rol** admin, y sólo sobre empleadas | —              | equipo.controller → cambiarAvisos + exigirAdmin · quién recibe: destinatarios.service → mailsDelCentro |
 
 > ⚠️ Repartir accesos es del **rol** `admin`, no de un permiso, y es a propósito:
 > ningún permiso se amplía a sí mismo. Va con `exigirAdmin()`, nunca con

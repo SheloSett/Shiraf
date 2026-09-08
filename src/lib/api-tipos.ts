@@ -934,6 +934,12 @@ export type RtaEmpleadas = {
     email: string;
     /** Si está en false, la cuenta está dada de baja y no puede entrar. */
     is_active: boolean;
+    /**
+     * Recibe por mail los avisos del centro (reservas, cancelaciones, el
+     * resumen de vencidos). Las dueñas los reciben siempre y no están en esta
+     * lista; esto es sólo para empleadas. Ver destinatarios.service.ts.
+     */
+    receives_center_mail: boolean;
     permissions: string[];
   }[];
 };

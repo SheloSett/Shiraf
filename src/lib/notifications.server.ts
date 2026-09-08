@@ -218,7 +218,8 @@ export type NotifyResult = DeliveryResult & {
  * importa Prisma así.
  */
 async function sendEmail(input: {
-  to: string;
+  /** Una dirección o varias: los avisos al centro van a más de una persona. */
+  to: string | string[];
   subject: string;
   text: string;
   html: string;
@@ -356,9 +357,16 @@ export async function deliverAppointmentEmail(
   const datos = await datosDelAviso(appointmentId);
   if (!datos) return { sent: false, reason: "El turno no existe." };
 
-  const recipient = TO_CLIENT.includes(event) ? datos.clientEmail : CONTACT.email;
+  // 8/9/2026 — los avisos al centro dejaron de ir a una sola casilla fija. Ahora
+  // van a las dueñas, a las empleadas con la casilla tildada en Accesos y al
+  // Gmail del centro; la regla entera está en `mailsDelCentro`. Dinámico como
+  // prisma, por el mismo motivo. La línea vieja, comentada por la regla del repo:
+  //   const recipient = TO_CLIENT.includes(event) ? datos.clientEmail : CONTACT.email;
+  const recipient = TO_CLIENT.includes(event)
+    ? datos.clientEmail
+    : await (await import("@/server/services/destinatarios.service")).mailsDelCentro();
 
-  if (!recipient) {
+  if (!recipient || recipient.length === 0) {
     // El caso real: una invitada cargada por teléfono, de la que el centro tiene
     // el celular y no el mail. No es un error — es el motivo por el que WhatsApp
     // sigue siendo el canal principal.
@@ -611,7 +619,8 @@ export async function deliverAppointmentWhatsapp(
 }
 
 /**
- * Manda el resumen diario de turnos vencidos. Va a la casilla del centro.
+ * Manda el resumen diario de turnos vencidos. Va a quienes reciben los avisos
+ * del centro (hasta el 8/9/2026, a la casilla fija del centro).
  *
  * No pasa por `deliverAppointmentEmail` porque no habla de UN turno: recibe la
  * lista ya armada por quien la consultó —`reminders.service.ts`, que es el que
@@ -629,8 +638,12 @@ export async function deliverOverdueDigest(
 
   const message = buildOverdueDigest(turnos, total);
 
+  // Las mismas personas que reciben "entró una reserva": ver `mailsDelCentro`.
+  // Antes: `to: CONTACT.email`.
+  const { mailsDelCentro } = await import("@/server/services/destinatarios.service");
+
   return sendEmail({
-    to: CONTACT.email,
+    to: await mailsDelCentro(),
     subject: message.subject,
     text: message.lines.join("\n"),
     html: renderEmailHtml(message),

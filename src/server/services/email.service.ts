@@ -168,7 +168,12 @@ function remitente(user: string): string {
  * correo.
  */
 export async function enviarMail(mail: {
-  to: string;
+  /**
+   * Una dirección, o varias. Nodemailer acepta la lista tal cual y manda UN
+   * mail con todas en «Para». Se abrió a lista el 8/9/2026, cuando los avisos
+   * del centro dejaron de ir a una sola casilla (ver destinatarios.service).
+   */
+  to: string | string[];
   subject: string;
   text: string;
   html: string;

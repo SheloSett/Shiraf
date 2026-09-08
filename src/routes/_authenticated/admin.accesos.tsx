@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KeyRound, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { KeyRound, MailCheck, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -259,6 +259,28 @@ function AdminTeam() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /**
+   * Si le llegan por mail los avisos del centro: entró una reserva, una
+   * clienta canceló o se movió el turno, el resumen de vencidos.
+   *
+   * 8/9/2026 — hasta hoy esos avisos iban a una sola casilla fija, el Gmail
+   * del centro, y a ninguna persona. La dueña le dio acceso a su secretaria y
+   * pidió que a ella le llegue. Las dueñas lo reciben siempre; por eso esta
+   * casilla no existe para ellas. No es un acceso —no la habilita a nada— y
+   * por eso va separada de las casillas de arriba.
+   */
+  const toggleAvisos = useMutation({
+    mutationFn: ({ userId, value }: { userId: string; value: boolean }) =>
+      apiPut("/api/equipo/empleadas/" + userId + "/avisos", { receives_center_mail: value }),
+    onSuccess: async (_data, vars) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
+      toast.success(
+        vars.value ? "Le van a llegar los avisos del centro." : "Ya no recibe los avisos.",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const remove = useMutation({
     mutationFn: async (userId: string) => await deleteEmployee({ data: { userId } }),
     onSuccess: async () => {
@@ -464,6 +486,31 @@ function AdminTeam() {
                   );
                 })}
               </div>
+
+              {/* Los avisos por mail. Van abajo de los accesos y no entre
+                  ellos porque no son uno: recibir el mail de "entró una
+                  reserva" no la habilita a hacer nada con esa reserva. Lo que
+                  puede hacer lo dicen las casillas de arriba. */}
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-sm border border-border bg-secondary/20 p-3">
+                <Switch
+                  className="mt-0.5"
+                  checked={member.receives_center_mail}
+                  disabled={toggleAvisos.isPending || !member.is_active}
+                  onCheckedChange={(value) => toggleAvisos.mutate({ userId: member.id, value })}
+                  aria-label={`Mandarle los avisos del centro a ${member.full_name}`}
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-sm text-foreground">
+                    <MailCheck className="h-4 w-4 shrink-0 text-gold" />
+                    Recibe los avisos del centro por mail
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                    Cada vez que una clienta reserva, cancela o se mueve el turno, y el resumen
+                    diario de turnos vencidos. A vos te llegan siempre.
+                    {!member.is_active && " Una cuenta dada de baja no recibe nada."}
+                  </span>
+                </span>
+              </label>
 
               {/* La ficha va separada de las casillas a propósito: no es un
                   acceso más que se reparte, es decir QUIÉN ES esta persona en

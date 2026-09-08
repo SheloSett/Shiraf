@@ -198,6 +198,23 @@ model users {
    */
   is_active Boolean @default(true)
 
+  /**
+   * Recibe por mail los avisos del centro: entró una reserva, una clienta
+   * canceló o se movió el turno, el resumen de vencidos.
+   *
+   * 8/9/2026. Hasta hoy esos avisos iban a UNA casilla fija —el Gmail del
+   * centro, `CONTACT.email`— y a ninguna persona. La dueña le dio acceso a su
+   * secretaria y pidió que a ella y a las dueñas les llegue "X sacó turno con
+   * X profesional". Las dueñas lo reciben siempre, sin mirar esto; para una
+   * empleada es esta casilla, que se tilda desde Accesos. Ver
+   * `mailsDelCentro()` en destinatarios.service.ts.
+   *
+   * Es una columna y no un valor más del enum app_permission a propósito: no
+   * es un acceso —no habilita a hacer nada— y agregar valores a un enum de
+   * Postgres es la migración que ya costó una vez (ver TODO, «Ver métricas»).
+   */
+  receives_center_mail Boolean @default(false)
+
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 

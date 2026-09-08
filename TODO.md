@@ -31,6 +31,22 @@ leer permisos no necesita el valor, sólo escribirlo.
 Agregar un valor a un enum no borra datos y no pide reset. Hay que correrlo en
 las dos: la local y la del VPS.
 
+### 🟡 0b. Correr `db:push` en el VPS por los avisos del centro — act. 8/9/2026
+
+Se agregó la columna `users.receives_center_mail` (booleano, default false):
+la casilla «Recibe los avisos del centro por mail» de Accesos. En local ya
+está aplicada. **En el VPS, con el próximo deploy, hay que correr**
+
+    bun run db:push
+
+antes de levantar el contenedor nuevo: sin la columna, Accesos no carga (el
+`select` la pide) y ningún aviso al centro sale (el `findMany` de
+`mailsDelCentro` la filtra). Es una columna con default: no borra ni toca
+datos, y no pide `--accept-data-loss`.
+
+Después del push, entrar a Accesos y tildarle la casilla a la secretaria. Las
+dueñas reciben siempre, sin tildar nada.
+
 ### 🔴 1. HTTPS — hoy las contraseñas viajan en claro
 
 Se entra por **`http://177.7.59.16:3000`**, con `APP_BIND=0.0.0.0` y sin
@@ -88,23 +104,23 @@ la primera hace menos urgente a la segunda:
       meses. El sitio se cae 1 o 2 minutos, así que va a un horario tranquilo.
 
       Se hace desde hPanel (VPS → Reiniciar) o con `reboot` en el terminal del
-      navegador — ahí la ventana se cuelga y se desconecta sola, que es el
-      servidor apagándose y no un error.
+          navegador — ahí la ventana se cuelga y se desconecta sola, que es el
+          servidor apagándose y no un error.
 
-      **No hay que levantar nada a mano.** Verificado el 2/9: los ocho
-      contenedores del VPS —los tres de Shiraf más los de `igwtstore` y
-      `manhattan`— están con `restart: unless-stopped`, así que vuelven solos al
-      arrancar. La base tampoco corre riesgo: vive en un volumen de Docker, que
-      es aparte del contenedor.
+          **No hay que levantar nada a mano.** Verificado el 2/9: los ocho
+          contenedores del VPS —los tres de Shiraf más los de `igwtstore` y
+          `manhattan`— están con `restart: unless-stopped`, así que vuelven solos al
+          arrancar. La base tampoco corre riesgo: vive en un volumen de Docker, que
+          es aparte del contenedor.
 
-      Después del reinicio, comprobar:
+          Después del reinicio, comprobar:
 
-          docker ps --format "{{.Names}}  {{.Status}}"
-          curl -sI https://shiraf.com.ar/ | head -1
+              docker ps --format "{{.Names}}  {{.Status}}"
+              curl -sI https://shiraf.com.ar/ | head -1
 
-      Los tres `shiraf-*` en `Up` y la última línea en `HTTP/1.1 200`. Ojo que
-      `shiraf-app` tarda unos segundos en pasar de `(health: starting)` a
-      `(healthy)`: si mirás muy rápido, todavía no dice `healthy` y está bien.
+          Los tres `shiraf-*` en `Up` y la última línea en `HTTP/1.1 200`. Ojo que
+          `shiraf-app` tarda unos segundos en pasar de `(health: starting)` a
+          `(healthy)`: si mirás muy rápido, todavía no dice `healthy` y está bien.
 
 - [ ] **Destildarle «Ver datos de clientas» a `camila@gmail.com`** en la base
       LOCAL. Se lo puse el 27/8 para probar que a una empleada no le aparece la
@@ -443,29 +459,26 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
 - [ ] El favicon sigue siendo el de Lovable.
 - [ ] Fotos reales del centro. Sigue siendo el techo del diseño.
 
-
-
-
 ## http://localhost:8081/admin/turnos
+
 1- falta poder tener una vista en detalle del turno con la posibilidad de ver los datos de la clienta y modificar el estado del turno
 
-
-
 ## http://localhost:8081/admin/profesionales
-- [x]  cuando creo a una profesional automaticamente deberia formar parte del "equipo", entonces en su creacio del profesional debo tener el campo de email y contraseño para que automaticamente ya pueda acceder
+
+- [x] cuando creo a una profesional automaticamente deberia formar parte del "equipo", entonces en su creacio del profesional debo tener el campo de email y contraseño para que automaticamente ya pueda acceder
 
 - [x] cuando ponemos su horario solo tenemos un rango de horario por dia, es decir que si en el dia tiene su break y trabaja:
-LUNES 9:00 a 13:00
-14hrs no trabaja
-LUNES 15:00 a 17:00
+      LUNES 9:00 a 13:00
+      14hrs no trabaja
+      LUNES 15:00 a 17:00
 
 La idea es que sea algo onda:
 LUNES 9:00 a 13:00 - 15:00 a 17:00
 
-
 shiraf
 
 HOME
+
 - [x] fondo mas beige de lo que ya esta...
 - [x] El nombre de shiraf calma belleza y bienestar en dorado y primera letra en mayuscula, logo agrandado
 
@@ -473,23 +486,21 @@ HOME
 
 - [x] seccion de servicio en el Home SACARLO
 
-
 SERVICIOS
+
 - [x] ¿Qué necesita tu piel hoy? no va VA "Como te vas Consentir hoy"
       → en el sitio va **"Cómo te vas a consentir hoy"**: mismas palabras, con la
       tilde y la "a" que faltaban en el pedido. Corregido el 27/8 a pedido de la
       dueña; antes estaba copiado literal y se leía como error de tipeo.
 
-
-
 x- recordatorios en el dia del turno/ y un wasap apenas saquen turno, Astrid-Profesional-cliente
-      → el mail de todos esos avisos ya sale solo. El WhatsApp hoy es a mano, con
-      el botón que abre el mensaje escrito. Automatizarlo depende de una decisión
-      de la dueña —plantillas, un proveedor y unos dólares por mes—: está todo
-      escrito en `docs/whatsapp-automatico.md`. **Actualizado el 4/9/2026**: con
-      la coexistencia de Meta ya no hace falta un chip nuevo, los avisos salen del
-      número de siempre y las secretarias siguen atendiendo desde el celular. Son
-      avisos y nada más: se decidió que no hay bot que responda.
+→ el mail de todos esos avisos ya sale solo. El WhatsApp hoy es a mano, con
+el botón que abre el mensaje escrito. Automatizarlo depende de una decisión
+de la dueña —plantillas, un proveedor y unos dólares por mes—: está todo
+escrito en `docs/whatsapp-automatico.md`. **Actualizado el 4/9/2026**: con
+la coexistencia de Meta ya no hace falta un chip nuevo, los avisos salen del
+número de siempre y las secretarias siguen atendiendo desde el celular. Son
+avisos y nada más: se decidió que no hay bot que responda.
 
 - [x] todas las profesionales manejan turnos
       → la cuenta de una profesional nace con «Gestionar turnos» tildado, por las
@@ -498,5 +509,3 @@ x- recordatorios en el dia del turno/ y un wasap apenas saquen turno, Astrid-Pro
       clínicas incluidas.
 
 x- 10 min de tolerancia ACLARAR AL SACAR UNO Y MANDAR POR WASAP
-
-

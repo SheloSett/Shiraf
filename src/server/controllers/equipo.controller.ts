@@ -464,6 +464,7 @@ export async function listarEmpleadas(ctx: Ctx) {
       id: true,
       email: true,
       is_active: true,
+      receives_center_mail: true,
       profile: { select: { full_name: true, phone: true } },
       permissions: { select: { permission: true } },
     },
@@ -476,6 +477,7 @@ export async function listarEmpleadas(ctx: Ctx) {
       phone: c.profile?.phone ?? null,
       email: c.email,
       is_active: c.is_active,
+      receives_center_mail: c.receives_center_mail,
       permissions: c.permissions.map((p) => p.permission as string),
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name, "es"));
@@ -574,6 +576,43 @@ export async function activarCuenta(ctx: Ctx) {
   }
 
   await prisma.users.update({ where: { id: userId }, data: { is_active: activa } });
+  return json({ ok: true });
+}
+
+/**
+ * Tilda o destilda que una empleada reciba por mail los avisos del centro.
+ *
+ * No es un acceso —no la habilita a hacer nada— y por eso no es un valor más
+ * del enum de permisos ni pasa por `cambiarPermiso`: es una columna de `users`
+ * (`receives_center_mail`, ver el schema). Quién recibe qué está en
+ * `mailsDelCentro()`, destinatarios.service.ts.
+ *
+ * Mismos candados que la baja: sólo la dueña, y sólo sobre empleadas. A una
+ * administradora no se le tilda nada porque recibe siempre.
+ */
+export async function cambiarAvisos(ctx: Ctx) {
+  exigirAdmin(await accesoDe(ctx.user!.id));
+
+  const userId = ctx.params["id"];
+  const recibe = ctx.body["receives_center_mail"];
+
+  if (!userId) return json({ error: "Falta la cuenta." }, 400);
+  if (typeof recibe !== "boolean") return json({ error: "Falta si recibe o no." }, 400);
+
+  const roles = await prisma.user_roles.findMany({
+    where: { user_id: userId },
+    select: { role: true },
+  });
+
+  if (roles.length === 0) return json({ error: "Esa cuenta no existe." }, 404);
+  if (roles.some((r) => r.role === "admin")) {
+    return json({ error: "Una administradora recibe los avisos siempre." }, 422);
+  }
+  if (!roles.some((r) => r.role === "staff")) {
+    return json({ error: "Esa cuenta no es de una empleada." }, 422);
+  }
+
+  await prisma.users.update({ where: { id: userId }, data: { receives_center_mail: recibe } });
   return json({ ok: true });
 }
 
