@@ -6,21 +6,26 @@ import { hoyEnElCentro } from "@/server/services/turnos.service";
 import type { CierreDelCentro, RtaCierreGuardado, RtaCierres } from "@/lib/api-tipos";
 
 /**
- * Los días que el centro no abre. Permiso `appointments`.
+ * Los días que el centro no abre. Sólo la dueña (ver cierres.routes.ts).
  *
- * ── POR QUÉ `appointments` Y NO `team` ────────────────────────────────────
+ * ── 7/9/2026: DE `appointments` A LA DUEÑA ────────────────────────────────
  *
- * Las ausencias de una profesional piden `team`: son parte de su ficha, como
- * sus horarios. Cerrar el centro entero es otra cosa: es una decisión sobre la
- * agenda, y lo que deja atrás —los turnos que ya estaban dados esos días— lo
- * tiene que resolver quien gestiona turnos, que es quien puede reprogramarlos
- * y cancelarlos. Pedir `team` acá dejaría la pantalla en manos de alguien que
- * ve el problema y no lo puede tocar.
+ * Nació con el permiso `appointments`, con este razonamiento: las ausencias de
+ * una profesional piden `team` porque son parte de su ficha, como sus horarios;
+ * cerrar el centro entero es una decisión sobre la agenda, y lo que deja atrás
+ * —los turnos que ya estaban dados esos días— lo resuelve quien gestiona
+ * turnos. Y era un permiso y no `exigirAdmin()` porque "el 25 no abrimos" era
+ * el tipo de cosa que se le pide anotar a la secretaria.
  *
- * Y es un permiso, no `exigirAdmin()`: en la práctica lo carga la dueña, pero
- * "el 25 no abrimos" es exactamente el tipo de cosa que se le pide anotar a la
- * secretaria. Si el centro prefiere reservárselo, es una línea en
- * cierres.routes.ts y otra en permissions.ts.
+ * El centro prefirió reservárselo: la dueña vio a una empleada de prueba con
+ * Configuración en el menú y pidió que eso sea suyo y de nadie más. Era "una
+ * línea en cierres.routes.ts y otra en permissions.ts", y fueron ésas (más la
+ * de configuracion.ts, que decide qué tarjetas se dibujan).
+ *
+ * Lo que NO cambió: los turnos que un cierre deja en pie siguen saliendo en la
+ * pestaña de Turnos para quien tiene `appointments`. Eso lo sirve /api/turnos,
+ * no esto. Acá lo único que se cerró es anotar y borrar los cierres —y la
+ * lista, que sólo la pide la pantalla que ya no ven.
  */
 
 function aCierre(c: {

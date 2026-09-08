@@ -41,6 +41,14 @@ export type Acceso = {
   permisos: Permission[];
   /** La ficha de profesional atada, si tiene. Habilita "Mi agenda". */
   fichaProfesionalId: string | null;
+  /**
+   * Tiene ficha y está dada de baja. Ver `bloqueada` y la nota de abajo.
+   *
+   * 7/9/2026. Antes se consultaba la ficha con `is_active: true` y listo:
+   * inactiva y sin ficha eran lo mismo, null. Ahora se trae la ficha como esté
+   * y se miran las dos cosas.
+   */
+  fichaInactiva: boolean;
 };
 
 export async function accesoDe(userId: string): Promise<Acceso> {
@@ -50,9 +58,12 @@ export async function accesoDe(userId: string): Promise<Acceso> {
       where: { user_id: userId },
       select: { permission: true },
     }),
-    prisma.professionals.findFirst({
-      where: { user_id: userId, is_active: true },
-      select: { id: true },
+    // Era `findFirst({ where: { user_id, is_active: true } })`. `user_id` es
+    // único, así que es la misma fila; sólo que ahora se lee aunque esté
+    // inactiva, para poder distinguirla de "no tiene ficha".
+    prisma.professionals.findUnique({
+      where: { user_id: userId },
+      select: { id: true, is_active: true },
     }),
   ]);
 
@@ -62,12 +73,44 @@ export async function accesoDe(userId: string): Promise<Acceso> {
     userId,
     esAdmin: nombres.includes("admin"),
     permisos: permisos.map((p) => p.permission as Permission),
-    fichaProfesionalId: ficha?.id ?? null,
+    fichaProfesionalId: ficha?.is_active ? ficha.id : null,
+    fichaInactiva: ficha !== null && !ficha.is_active,
   };
 }
 
+/**
+ * ¿Es una profesional dada de baja? Entonces no tiene NINGÚN permiso, tenga
+ * lo que tenga tildado.
+ *
+ * ── 7/9/2026: POR QUÉ DESACTIVAR LA FICHA TIENE QUE ALCANZAR ──────────────
+ *
+ * La dueña desactivó a una profesional de prueba y ésa siguió entrando y
+ * viendo Calendario, Turnos, Avisos y Clientes. Tenía sentido por cómo estaba
+ * armado —los permisos viven en `user_permissions`, la ficha en
+ * `professionals`, y desactivar una no toca la otra—, pero para quien maneja el
+ * centro "la desactivé" quiere decir "ya no trabaja acá", y eso incluye no ver
+ * los teléfonos de las clientas. Pedirle que además vaya a Accesos a destildar
+ * casillas es exactamente el olvido que un día deja a alguien con acceso a
+ * historias clínicas después de irse.
+ *
+ * Se decide acá, en `puede()` y `puedeAlguno()`, y no ruta por ruta: son las
+ * dos funciones por las que pasa todo chequeo de permiso del servidor, así que
+ * no hay endpoint que se pueda olvidar. La dueña no se bloquea nunca, ni con
+ * su propia ficha desactivada: está por encima del sistema de permisos, como
+ * dice la regla 1 de arriba.
+ *
+ * Los permisos quedan guardados: si la reincorporan, activar la ficha le
+ * devuelve lo que tenía.
+ */
+export function bloqueada(acceso: Acceso): boolean {
+  return acceso.fichaInactiva && !acceso.esAdmin;
+}
+
+const MENSAJE_INACTIVA = "Tu cuenta está inactiva. Hablá con el centro.";
+
 /** ¿Tiene este permiso? La dueña siempre. Era `has_permission()`. */
 export function puede(acceso: Acceso, permiso: Permission): boolean {
+  if (bloqueada(acceso)) return false;
   return acceso.esAdmin || acceso.permisos.includes(permiso);
 }
 
@@ -83,6 +126,9 @@ export function puede(acceso: Acceso, permiso: Permission): boolean {
  *     return prisma.services.findMany();
  */
 export function exigirPermiso(acceso: Acceso, permiso: Permission): void {
+  // El mensaje distinto importa: "no tenés el acceso" le dice a la profesional
+  // dada de baja que le falta una casilla, y no es eso.
+  if (bloqueada(acceso)) throw new ErrorDeAcceso(MENSAJE_INACTIVA);
   if (!puede(acceso, permiso)) {
     throw new ErrorDeAcceso("No tenés el acceso necesario para esto.");
   }
@@ -107,11 +153,13 @@ export function exigirPermiso(acceso: Acceso, permiso: Permission): void {
  * chequean explícitos, igual que los enumeraba la policy.
  */
 export function puedeAlguno(acceso: Acceso, permisos: Permission[]): boolean {
+  if (bloqueada(acceso)) return false;
   return acceso.esAdmin || permisos.some((p) => acceso.permisos.includes(p));
 }
 
 /** Exige alguno de estos permisos, o tira. Ver `puedeAlguno`. */
 export function exigirAlguno(acceso: Acceso, permisos: Permission[]): void {
+  if (bloqueada(acceso)) throw new ErrorDeAcceso(MENSAJE_INACTIVA);
   if (!puedeAlguno(acceso, permisos)) {
     throw new ErrorDeAcceso("No tenés el acceso necesario para esto.");
   }

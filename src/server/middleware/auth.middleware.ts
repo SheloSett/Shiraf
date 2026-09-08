@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { prisma } from "@/server/db";
 import { json, leerCookie, type Ctx, type Handler } from "@/server/http";
-import { accesoDe, exigirPermiso } from "@/server/services/authz.service";
+import { accesoDe, exigirAdmin, exigirPermiso } from "@/server/services/authz.service";
 import type { Permission } from "@/lib/permissions";
 
 /**
@@ -209,3 +209,21 @@ export function exigeMiddleware(permiso: Permission): Handler {
     return undefined;
   };
 }
+
+/**
+ * Sólo la dueña. Para las rutas que no se delegan con ninguna casilla.
+ *
+ * Es `exigirAdmin(await accesoDe(...))` puesto en la ruta y no en el controller,
+ * por el mismo motivo que `exigeMiddleware`: que el archivo de rutas conteste
+ * de un vistazo quién puede hacer qué. Los controllers que ya lo hacían adentro
+ * (Accesos, el vínculo ficha-cuenta) se quedan como están — ahí el chequeo
+ * convive con otra lógica y moverlo no aclara nada.
+ *
+ * Nació el 7/9/2026 para /api/cierres, cuando Días cerrados dejó de ser un
+ * permiso delegable. Lee la base en cada pedido, no el token: ver arriba.
+ */
+export const soloAdminMiddleware: Handler = async (ctx: Ctx) => {
+  if (!ctx.user) return json({ error: "No autorizado." }, 401);
+  exigirAdmin(await accesoDe(ctx.user.id));
+  return undefined;
+};

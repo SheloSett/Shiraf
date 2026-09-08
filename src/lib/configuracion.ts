@@ -10,10 +10,16 @@ import type { AccessRequirement } from "@/lib/permissions";
  * subsección nueva aparecería en el menú y no en la portada —o al revés— y
  * nadie lo notaría hasta ir a buscarla.
  *
- * Cada una declara su propio acceso, y no es prolijidad: piden cosas DISTINTAS.
- * Cerrar días es una decisión de agenda (`appointments`, lo puede hacer la
- * secretaria); tocar el sitio público es de la dueña (`admin`). El menú y la
- * portada muestran sólo las que la persona puede abrir.
+ * Cada una declara su propio acceso. Hoy las dos piden `admin`, pero el campo
+ * se queda: el menú y la portada muestran sólo las que la persona puede abrir,
+ * y el día que entre una subsección delegable la regla ya está escrita.
+ *
+ * 7/9/2026 — Días cerrados pedía `appointments`, con la idea de que "el 25 no
+ * abrimos" era algo que se le podía pedir anotar a la secretaria. La dueña lo
+ * vio en producción con una empleada de prueba y lo pidió al revés: cerrar el
+ * centro lo decide ella y nadie más, y una empleada no tiene por qué ver
+ * Configuración. Con las dos subsecciones en `admin`, la sección entera
+ * desaparece del menú para todo el equipo.
  *
  * ⚠️ Lo que NO sale de acá es lo que exige cada ruta del lado del guard: eso
  * sigue en `ADMIN_ROUTES` (permissions.ts), y no puede importar este archivo
@@ -27,7 +33,8 @@ export const SECCIONES_DE_CONFIGURACION = [
     to: "/admin/configuracion/dias-cerrados",
     label: "Días cerrados",
     icon: CalendarOff,
-    access: "appointments",
+    // Era "appointments". Ver la nota de arriba (7/9/2026).
+    access: "admin",
     descripcion:
       "Los días que el centro no abre para nadie: feriados, vacaciones de todo el equipo. Esos días no se puede reservar, y si ya había turnos dados, acá quedan a la vista hasta que se resuelvan.",
   },

@@ -192,14 +192,17 @@ const ADMIN_ROUTES = [
   // Los recordatorios de mañana para mandar por WhatsApp. Es la agenda de un día
   // mirada de otra forma, así que pide lo mismo que verla.
   { path: "/admin/avisos", access: "appointments" },
-  // Los días que el centro no abre. Pide lo mismo que Turnos y no `team` como
-  // las ausencias de una profesional: cerrar el centro es una decisión de
-  // agenda, y los turnos que deja en pie los resuelve quien gestiona turnos.
+  // Los días que el centro no abre. Nació pidiendo `appointments` —cerrar el
+  // centro como decisión de agenda, que la secretaria podía anotar— y el
+  // 7/9/2026 la dueña lo pidió al revés: eso lo decide ella. Configuración
+  // entera queda para la dueña y desaparece del menú del equipo.
   //
   // Se mudó adentro de Configuración el mismo día que nació (5/9/2026). La
-  // ruta vieja ya no existe; queda comentada por la regla de este repo:
+  // ruta vieja ya no existe; queda comentada por la regla de este repo, y
+  // debajo la fila tal como estuvo hasta el 7/9:
   //   { path: "/admin/dias-cerrados", access: "appointments" },
-  { path: "/admin/configuracion/dias-cerrados", access: "appointments" },
+  //   { path: "/admin/configuracion/dias-cerrados", access: "appointments" },
+  { path: "/admin/configuracion/dias-cerrados", access: "admin" },
   { path: "/admin/servicios", access: "catalog" },
   { path: "/admin/categorias-servicios", access: "catalog" },
   { path: "/admin/profesionales", access: "team" },
@@ -222,16 +225,18 @@ const ADMIN_ROUTES = [
   // se queda porque /admin/contenido sigue existiendo, sólo para redirigir a
   // la dirección nueva (por si quedó en algún marcador).
   { path: "/admin/configuracion/contenido", access: "admin" },
-  // La portada de Configuración. Pide «panel» y no un permiso porque sus
-  // subsecciones piden accesos distintos entre sí: la portada muestra las
-  // tarjetas que la persona puede abrir, y cada subsección exige lo suyo en
-  // su propia fila, más arriba.
+  // La portada de Configuración. Pedía «panel» mientras sus subsecciones
+  // pedían accesos distintos entre sí; desde el 7/9/2026 las dos son de la
+  // dueña, así que la portada también. Si mañana entra una subsección
+  // delegable, esto vuelve a «panel» y la portada filtra sus tarjetas con
+  // `allows`, que ya lo hace. La fila vieja, comentada por la regla del repo:
+  //   { path: "/admin/configuracion", access: "panel" },
   //
   // ⚠️ Va DESPUÉS de sus subsecciones a propósito: `requiredAccessFor` se queda
   // con la primera fila que coincida, y ésta coincide por prefijo con las dos
-  // de arriba. Puesta antes, Contenido pasaría a pedir «panel» y cualquiera
-  // del centro entraría a tocar el sitio.
-  { path: "/admin/configuracion", access: "panel" },
+  // de arriba. Hoy da lo mismo porque piden todas lo mismo; el orden se
+  // conserva para que no muerda el día que vuelvan a diferir.
+  { path: "/admin/configuracion", access: "admin" },
   // Su contraseña, no el negocio: no depende de ninguna casilla.
   { path: "/admin/cuenta", access: "panel" },
   // Sus propios turnos. Tampoco depende de una casilla: depende de que la ficha

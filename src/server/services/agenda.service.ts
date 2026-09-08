@@ -41,6 +41,33 @@ export async function miFichaDeProfesional(userId: string): Promise<string | nul
   return ficha?.id ?? null;
 }
 
+/**
+ * ¿Esta cuenta tiene una ficha de profesional, y está dada de baja?
+ *
+ * Es la contracara de `miFichaDeProfesional`, que devuelve null tanto para
+ * quien nunca tuvo ficha como para quien la tiene desactivada — y para el
+ * panel esas dos personas no son la misma. La secretaria sin ficha trabaja
+ * normal; la profesional que el centro desactivó no tiene que ver NADA, ni
+ * aunque le hayan quedado casillas tildadas de cuando trabajaba.
+ *
+ * 7/9/2026 — la dueña desactivó a una profesional de prueba y ésa siguió
+ * entrando y viendo Calendario, Turnos, Avisos y Clientes: desactivar la ficha
+ * le sacaba «Mi agenda» y nada más, porque los permisos viven en otra tabla y
+ * nadie los tocaba. Con esto, desactivar la ficha alcanza. Lo lee `accesoDe`
+ * en cada pedido —los permisos dejan de valer— y `/api/auth/me` para que el
+ * panel dibuje el cartel en vez del menú.
+ *
+ * Una cuenta puede tener a lo sumo una ficha (`user_id` es único), así que
+ * `findUnique` y no `findMany`.
+ */
+export async function fichaDeProfesionalInactiva(userId: string): Promise<boolean> {
+  const ficha = await prisma.professionals.findUnique({
+    where: { user_id: userId },
+    select: { is_active: true },
+  });
+  return ficha !== null && !ficha.is_active;
+}
+
 export type TurnoDeMiAgenda = {
   id: string;
   empiezaEn: Date;

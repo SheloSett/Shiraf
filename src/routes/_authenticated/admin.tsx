@@ -269,12 +269,17 @@ const nav = [
     // Productos y Accesos. Quién la manda al fondo es el `mt-auto` del menú, y
     // eso sólo funciona si en el DOM viene última.
     //
-    // Las subsecciones piden accesos DISTINTOS —Días cerrados, `appointments`;
-    // Contenido, `admin`— y por eso cada una declara el suyo (la lista vive en
+    // Cada subsección declara su acceso (la lista vive en
     // SECCIONES_DE_CONFIGURACION, compartida con la portada). La sección se
     // muestra si la persona puede abrir al menos una, y sólo se le dibujan las
-    // que puede: ver visibleNav. La portada (/admin/configuracion) pide
-    // «panel» y hace el mismo filtro con sus tarjetas.
+    // que puede: ver visibleNav. La portada hace el mismo filtro con sus
+    // tarjetas.
+    //
+    // 7/9/2026 — pedía «panel» porque Días cerrados era de `appointments` y
+    // Contenido de `admin`. La dueña pidió que Configuración sea suya y de
+    // nadie más: la sección pasa a «admin» y desaparece del menú del equipo.
+    // La línea vieja, comentada por la regla de este repo:
+    //   access: "panel",
     //
     // `exact: true` como Servicios y Productos: adentro de una subsección se
     // resalta la subsección, no la sección — que igual queda desplegada.
@@ -282,7 +287,7 @@ const nav = [
     label: "Configuración",
     icon: Settings,
     exact: true,
-    access: "panel",
+    access: "admin",
     children: SECCIONES_DE_CONFIGURACION.map((s) => ({
       to: s.to,
       label: s.label,
@@ -347,8 +352,18 @@ function AdminLayout() {
   //       return (data ?? []).some((r) => r.role === "admin");
   //     },
   //   });
-  const { canEnterPanel, can, allows, loading, isAdmin, isStaff, professionalId, nombre, email } =
-    useAccess();
+  const {
+    canEnterPanel,
+    inactiveAccount,
+    can,
+    allows,
+    loading,
+    isAdmin,
+    isStaff,
+    professionalId,
+    nombre,
+    email,
+  } = useAccess();
 
   /**
    * Cómo se presenta la cuenta abajo del menú.
@@ -379,7 +394,15 @@ function AdminLayout() {
   // Turnos dados en días que después el centro cerró. Es de la misma familia
   // que el de arriba: la clienta tiene la confirmación y ese día no va a haber
   // nadie. Sale del mismo endpoint, así que se refresca con los otros dos.
-  const closedDaysCount = useAppointmentsOnClosedDays(can("appointments"));
+  //
+  // 7/9/2026 — el número va sobre «Configuración», y desde hoy esa sección es
+  // sólo de la dueña. A una empleada el contador le encendía el puntito rojo
+  // del teléfono sin ningún lugar del menú donde verlo. Se pide igual (sale
+  // del mismo endpoint que los otros dos, no cuesta nada) y se muestra sólo a
+  // quien tiene la sección. La línea vieja, comentada por la regla del repo:
+  //   const closedDaysCount = useAppointmentsOnClosedDays(can("appointments"));
+  const closedDaysCountBruto = useAppointmentsOnClosedDays(can("appointments"));
+  const closedDaysCount = isAdmin ? closedDaysCountBruto : 0;
 
   // Sólo el menú: quién puede hacer qué lo decide la RLS, no esta lista.
   //
@@ -460,6 +483,43 @@ function AdminLayout() {
     //      </Button>
     //    </div>
     return <p className="p-10 text-sm text-muted-foreground">Te llevamos a tu cuenta…</p>;
+  }
+
+  /**
+   * La profesional dada de baja: un cartel, y nada más.
+   *
+   * 7/9/2026 — hasta hoy, desactivarle la ficha le sacaba «Mi agenda» y le
+   * dejaba todo lo demás que tuviera tildado: entraba y veía Calendario,
+   * Turnos, Avisos y Clientes. La dueña lo pidió así: o no entra, o lo único
+   * que ve es que su cuenta está inactiva. Se eligió lo segundo porque explica
+   * —"no entro" con la contraseña correcta se lee como que la app está rota— y
+   * porque la puerta de salida tiene que estar a la vista.
+   *
+   * No hay menú, no hay Outlet: escribir cualquier /admin/... a mano cae acá
+   * igual, porque esto va ANTES de dibujar el layout. Y aunque no cayera, el
+   * servidor ya no le reconoce ningún permiso (ver `bloqueada` en
+   * authz.service). Lo de acá es para que lo vea, no para protegerla.
+   */
+  if (inactiveAccount) {
+    return (
+      <div className="mx-auto max-w-md px-5 py-24 text-center">
+        <p className="text-eyebrow text-muted-foreground">Panel</p>
+        <h1 className="mt-2 font-display text-3xl text-foreground">Cuenta inactiva</h1>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+          Tu ficha de profesional está dada de baja, así que el panel no está disponible para esta
+          cuenta. Si es un error, hablá con el centro.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Button variant="outline" onClick={signOut}>
+            <LogOut className="h-4 w-4" />
+            Cerrar sesión
+          </Button>
+          <Button asChild variant="ghost">
+            <Link to="/">Ver el sitio</Link>
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   /**

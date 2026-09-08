@@ -78,7 +78,7 @@ Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 >
 > Ninguna policy permitía borrar un `profile`: en Supabase las cuentas se
 > borraban con la Admin API, fuera del alcance de la RLS. `DELETE
-> /api/clientas/:id` es nuevo, así que no hay regla vieja de la cual copiar el
+/api/clientas/:id` es nuevo, así que no hay regla vieja de la cual copiar el
 > candado — y con el mismo criterio fail-closed del resto del archivo se le
 > puso `exigirAdmin()`, el que ya usa la baja de una empleada.
 >
@@ -92,11 +92,11 @@ Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 Alergias, embarazos, antecedentes. Tabla aparte de `profiles` justamente para
 poder pedirle un permiso distinto.
 
-| ✔   | Policy                | Op     | Regla                                   | Vigente en     | Dónde queda                                                                                          |
-| --- | --------------------- | ------ | --------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| ✔   | Policy                | Op     | Regla                                   | Vigente en     | Dónde queda                                                                                                        |
+| --- | --------------------- | ------ | --------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
 | ✅  | `read client notes`   | SELECT | `client_id = uid` **o** `clients_notes` | 20260814010000 | clientas.controller → listar (sólo si `clients_notes`) · agenda.service → miAgenda y miHistorial (sólo sus turnos) |
-| ✅  | `write client notes`  | INSERT | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                 |
-| ✅  | `update client notes` | UPDATE | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                 |
+| ✅  | `write client notes`  | INSERT | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                               |
+| ✅  | `update client notes` | UPDATE | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                               |
 
 ## Reparto de accesos — `user_roles` (3) y `user_permissions` (3)
 
@@ -209,6 +209,33 @@ No eran policies pero hacían lo mismo, y también hay que portarlos.
 
 ---
 
+## La profesional dada de baja — `professionals.is_active` (7/9/2026)
+
+No es una policy nueva sino una regla que atraviesa a todas: **una cuenta con
+ficha de profesional inactiva no tiene ningún permiso, tenga lo que tenga
+tildado.** Se decide en `puede()` y `puedeAlguno()` (authz.service →
+`bloqueada`), que son las dos funciones por las que pasa todo chequeo del
+servidor, así que no hay endpoint que se pueda olvidar. La dueña no se bloquea
+nunca, ni con su propia ficha desactivada.
+
+| ✔   | Ruta / regla                            | Quién                                                                     | Dónde queda                                            |
+| --- | --------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------ |
+| ✅  | Cualquier ruta que exija un permiso     | 403 «Tu cuenta está inactiva» si la ficha está dada de baja y no es admin | authz.service → bloqueada, exigirPermiso, exigirAlguno |
+| ✅  | `GET /api/auth/me` dice `fichaInactiva` | Para que el panel dibuje «Cuenta inactiva» y nada más                     | auth.controller → retrato · admin.tsx                  |
+| ✅  | «Mi agenda»                             | Ya lo cubría `miFichaDeProfesional`, que filtra por `is_active`           | agenda.service                                         |
+
+> Por qué: la dueña desactivó a una profesional de prueba y ésa siguió
+> entrando y viendo Calendario, Turnos, Avisos y Clientes. Los permisos viven
+> en `user_permissions` y la ficha en `professionals`; desactivar una no tocaba
+> la otra. Pedirle a la dueña que además vaya a Accesos a destildar casillas es
+> el olvido que un día deja a alguien con acceso a historias clínicas después
+> de irse. Los permisos quedan guardados: reactivar la ficha se los devuelve.
+>
+> Lo que NO cubre: `users.is_active` es otra cosa —la cuenta entera dada de
+> baja— y la corta `authMiddleware` antes, con 403 en todo.
+
+---
+
 ## Días cerrados del centro — `center_closures` (tabla nueva, 5/9/2026)
 
 No estaba entre las 39: la tabla no existía en Supabase, así que no hay policy
@@ -216,13 +243,26 @@ vieja de la cual copiar. El candado se decidió con el criterio del resto del
 archivo y queda anotado acá para que la auditoría ruta por ruta siga cerrando:
 son **3 endpoints más** sobre los 61.
 
-| ✔   | Ruta / regla                                             | Quién                                                                      | Dónde queda                                                              |
-| --- | -------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| ✅  | `GET /api/cierres`, `POST /api/cierres`, `DELETE /api/cierres/:id` | Permiso `appointments`                                                     | cierres.routes (middleware) · cierres.controller                          |
-| ✅  | Qué días están cerrados, para elegir horario             | **Sin permiso**, sólo "de tal día a tal día" y nunca el motivo — como `schedules public` | reservar.controller → disponibilidad, mezclados con las ausencias |
-| ✅  | Que una clienta no reserve ni se mueva a un día cerrado  | Regla de `validarTurno`; el centro está exento, como con las ausencias     | turnos.service → exigirQueElCentroAbra                                   |
+| ✔   | Ruta / regla                                                       | Quién                                                                                    | Dónde queda                                                       |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| ✅  | `GET /api/cierres`, `POST /api/cierres`, `DELETE /api/cierres/:id` | **Sólo la dueña** (`soloAdminMiddleware`). Hasta el 7/9/2026, permiso `appointments`     | cierres.routes (middleware) · cierres.controller                  |
+| ✅  | Qué días están cerrados, para elegir horario                       | **Sin permiso**, sólo "de tal día a tal día" y nunca el motivo — como `schedules public` | reservar.controller → disponibilidad, mezclados con las ausencias |
+| ✅  | Que una clienta no reserve ni se mueva a un día cerrado            | Regla de `validarTurno`; el centro está exento, como con las ausencias                   | turnos.service → exigirQueElCentroAbra                            |
 
-> ### Por qué `appointments` y no `team`, como las ausencias
+> ### 7/9/2026 — pasó a ser sólo de la dueña
+>
+> La dueña vio a una empleada de prueba con «Configuración › Días cerrados» en
+> el menú y pidió que eso sea suyo y de nadie más. Las tres rutas piden ahora
+> `soloAdminMiddleware` (auth.middleware.ts, nuevo ese día), y del lado de la
+> pantalla `/admin/configuracion` y sus dos subsecciones piden «admin», así
+> que la sección desaparece del menú para todo el equipo. Los turnos que un
+> cierre deja en pie siguen en la pestaña de Turnos de quien tiene
+> `appointments`: los sirve `/api/turnos`, no `/api/cierres`.
+>
+> El razonamiento con el que nació —abajo— se deja porque explica por qué la
+> pestaña de Turnos sigue abierta al equipo aunque la pantalla de cierres no.
+>
+> ### Por qué `appointments` y no `team`, como las ausencias (criterio original, 5/9/2026)
 >
 > Las ausencias de una profesional son parte de su ficha, como sus horarios, y
 > por eso piden `team`. Cerrar el centro entero es una decisión de agenda: lo

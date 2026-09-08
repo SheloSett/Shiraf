@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { puedeEntrarAlPanel, sesionQuery } from "@/lib/sesion";
+import { cuentaInactiva, puedeEntrarAlPanel, sesionQuery } from "@/lib/sesion";
 import { impliedPermissions } from "@/lib/permissions";
 import type { AccessRequirement, Permission } from "@/lib/permissions";
 
@@ -87,6 +87,12 @@ export function useAccess() {
     // escrita otra vez: si las dos se separan, un día una suma un caso y la otra
     // no, y el síntoma es una pantalla que rebota a alguien que sí puede entrar.
     canEnterPanel: puedeEntrarAlPanel(sesion.data ?? null),
+    /**
+     * Profesional dada de baja. Entra al panel (ver arriba) pero adentro no
+     * hay menú ni secciones: un cartel y el botón de salir. Es la misma
+     * función que usa `puedeEntrarAlPanel`, no la condición escrita otra vez.
+     */
+    inactiveAccount: cuentaInactiva(sesion.data ?? null),
     /**
      * Lo que REALMENTE tiene, no lo que la dueña tildó: van también los
      * arrastrados. Es lo que lista "Tus accesos" en /admin/cuenta, y esa

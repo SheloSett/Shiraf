@@ -38,6 +38,12 @@ export type Sesion = {
   permisos: Permission[];
   /** La ficha de profesional atada a esta cuenta, si hay alguna y está activa. */
   professionalId: string | null;
+  /**
+   * Tiene ficha de profesional y está dada de baja. Con esto en true (y sin
+   * ser la dueña) el panel muestra «Cuenta inactiva» y nada más, y el servidor
+   * ya no le reconoce ningún permiso. Ver `fichaDeProfesionalInactiva`.
+   */
+  fichaInactiva: boolean;
 };
 
 export const CLAVE_SESION = ["sesion"] as const;
@@ -142,5 +148,21 @@ export function esDelCentro(sesion: Sesion | null): boolean {
  * una pantalla que rebota a alguien que sí puede entrar, o al revés.
  */
 export function puedeEntrarAlPanel(sesion: Sesion | null): boolean {
-  return esDelCentro(sesion) || Boolean(sesion?.professionalId);
+  return esDelCentro(sesion) || Boolean(sesion?.professionalId) || cuentaInactiva(sesion);
+}
+
+/**
+ * ¿Es una profesional dada de baja?
+ *
+ * Tiene ficha, la ficha está inactiva, y no es la dueña —a la dueña no la
+ * bloquea nada, ni su propia ficha desactivada. Para esta persona el panel es
+ * un solo cartel: «Cuenta inactiva». Por eso `puedeEntrarAlPanel` la deja
+ * pasar: la puerta lleva al cartel, que es lo que la dueña pidió que vea, y no
+ * a su cuenta de clienta como si nada hubiera pasado.
+ *
+ * 7/9/2026. Antes, desactivar la ficha le sacaba «Mi agenda» y le dejaba todo
+ * lo demás que tuviera tildado.
+ */
+export function cuentaInactiva(sesion: Sesion | null): boolean {
+  return sesion?.fichaInactiva === true && sesion.roles.includes("admin") === false;
 }

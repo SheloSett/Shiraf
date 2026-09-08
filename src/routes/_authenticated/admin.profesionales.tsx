@@ -879,6 +879,14 @@ function AdminProfessionals() {
                       sólo el resumen: son días sueltos que se cargan dos veces al
                       año, y un formulario de tres campos siempre abierto ocupaba
                       media ficha para eso. Lo demás está en el diálogo. */}
+                  {/* 7/9/2026 — era un renglón de texto gris, subrayado sólo al
+                      pasar el mouse, y la dueña no lo encontró: dio por perdida
+                      la función entera. Pasa a ser un botón con borde, del
+                      mismo tamaño que los del resto del panel. El texto sigue
+                      siendo el resumen —qué días no está— porque eso es lo que
+                      se quiere leer de un vistazo. El renglón viejo, comentado
+                      por la regla de este repo:
+
                   <button
                     type="button"
                     onClick={() => setAusenciasDe(p.id)}
@@ -887,6 +895,17 @@ function AdminProfessionals() {
                     <CalendarOff className="h-3.5 w-3.5 shrink-0" />
                     {resumenDeAusencias(p.professional_absences)}
                   </button>
+                  */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 h-auto w-full justify-start gap-2 whitespace-normal py-2 text-left"
+                    onClick={() => setAusenciasDe(p.id)}
+                  >
+                    <CalendarOff className="h-4 w-4 shrink-0 text-gold" />
+                    {resumenDeAusencias(p.professional_absences)}
+                  </Button>
                 </div>
               </div>
 

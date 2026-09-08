@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/server/db";
-import { miFichaDeProfesional } from "@/server/services/agenda.service";
+import { fichaDeProfesionalInactiva, miFichaDeProfesional } from "@/server/services/agenda.service";
 import { json, type Ctx } from "@/server/http";
 import { cookieDeCierre, crearCookieDeSesion } from "@/server/middleware/auth.middleware";
 import { resetearIntentos } from "@/server/middleware/loginLimiter";
@@ -93,6 +93,11 @@ async function retrato(userId: string) {
     // función incluye el `is_active`, así que una profesional dada de baja deja
     // de ver la agenda en el acto.
     professionalId: await miFichaDeProfesional(usuario.id),
+    // 7/9/2026 — la otra mitad de la pregunta: `professionalId` en null no
+    // distingue a quien nunca tuvo ficha de quien la tiene dada de baja, y el
+    // panel a la segunda le tiene que mostrar un cartel y nada más. Ver
+    // `fichaDeProfesionalInactiva`.
+    fichaInactiva: await fichaDeProfesionalInactiva(usuario.id),
   };
 }
 
