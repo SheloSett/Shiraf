@@ -25,6 +25,7 @@ import { api, apiPut } from "@/lib/api";
 import type { RtaProfesionalesParaElTurno, RtaTurnoEnDetalle } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, toStatus } from "@/lib/shiraf";
 import { appointmentWhatsappUrl } from "@/lib/notifications";
+import { notifyAppointment } from "@/lib/notifications.functions";
 import {
   NOTIFIES,
   openWhatsapp,
@@ -185,6 +186,31 @@ function FichaDelTurno() {
 
   const setStatus = useCambiarEstadoDeTurno();
   const reprogramar = useReprogramarTurno();
+
+  /**
+   * Reenviar el aviso por MAIL, con el texto del estado en el que el turno está
+   * ahora: "quedó confirmado" o "fue cancelado". Le llega a la clienta y a la
+   * profesional, como cuando se cambia el estado (8/9/2026).
+   *
+   * Hasta hoy, el único "reenviar" de esta ficha era el de WhatsApp. El de mail
+   * no existía porque el mail salía solo al cambiar el estado... salvo en los
+   * turnos cargados desde el panel, que hasta hoy no avisaban a nadie. Este
+   * botón es la forma de mandarles el aviso a los que ya estaban cargados, y
+   * queda para cualquier otra vez que un mail se pierda o se corrija una
+   * dirección.
+   *
+   * No toca el turno: sólo manda. Por eso no invalida ninguna consulta.
+   */
+  const reenviar = useMutation({
+    mutationFn: async (event: NonNullable<(typeof NOTIFIES)[keyof typeof NOTIFIES]>) =>
+      notifyAppointment({ data: { appointmentId: id, event } }),
+    onSuccess: (r) => {
+      const pro = r.professional?.sent ? " Y a la profesional también." : "";
+      if (r.sent) toast.success("Mail enviado.", { description: `Le llegó a la clienta.${pro}` });
+      else toast.error("Por mail no salió.", { description: `${r.reason}${pro}` });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   /**
    * El horario nuevo, en dos piezas: el día y la hora.
    *
@@ -531,6 +557,20 @@ function FichaDelTurno() {
                 onClick={() => openWhatsapp(whatsapp)}
               >
                 <MessageCircle className="mr-2 h-4 w-4" /> Avisar por WhatsApp
+              </Button>
+            )}
+
+            {/* Lo mismo por mail. Aparece en los estados que tienen aviso
+                —confirmado y cancelado—; realizado no avisa nada a propósito. */}
+            {aviso && (
+              <Button
+                variant="ghost"
+                title="Mandar de nuevo el mail del estado actual, a la clienta y a la profesional"
+                disabled={reenviar.isPending}
+                onClick={() => reenviar.mutate(aviso)}
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                {reenviar.isPending ? "Enviando…" : "Reenviar por mail"}
               </Button>
             )}
           </div>
