@@ -41,3 +41,18 @@ export function nombreDelMes(clave: string): string {
 
 /** El formateador de plata del proyecto, para no reimplementarlo en cada panel. */
 export const comoPlata = (n: number) => formatMoney(n);
+
+/**
+ * Minutos como texto de horas: "45 min", "1 h", "1,5 h", "23 h".
+ *
+ * Redondear a horas enteras convertía 30 minutos en "1 h" y 20 en "0 h", y en
+ * la ocupación —donde ahora se aclara cuánto son los vencidos— un "0 h de
+ * turnos vencidos" al lado de un cartel que dice que hay uno es peor que no
+ * decir nada. Bajo la hora se dice en minutos; arriba, con un decimal sólo si
+ * hace falta.
+ */
+export function comoHoras(minutos: number): string {
+  if (minutos < 60) return `${Math.round(minutos)} min`;
+  const horas = Math.round((minutos / 60) * 10) / 10;
+  return `${horas.toLocaleString("es-AR")} h`;
+}

@@ -245,13 +245,18 @@ function Metricas() {
 
             <Panel
               titulo="Facturación por profesional"
-              ayuda="Lo que facturaron los turnos de cada una."
+              ayuda="Lo que facturaron los turnos de cada una. Tocá el nombre para ver qué tratamientos dio y cuántas veces."
             >
               <Ranking
                 filas={d.plata.porProfesional.map((f) => ({
                   etiqueta: f.nombre,
                   valor: f.total,
                   nota: `${f.cantidad}×`,
+                  desglose: f.tratamientos.map((t) => ({
+                    etiqueta: t.nombre,
+                    valor: t.total,
+                    nota: `${t.cantidad}×`,
+                  })),
                 }))}
                 color={SERIE_B}
                 formato={comoPlata}
@@ -261,7 +266,7 @@ function Metricas() {
 
           <Panel
             titulo="Ocupación de la agenda"
-            ayuda="Minutos ocupados sobre los minutos que la agenda estaba abierta, según los horarios cargados en Profesionales. Acá SÍ entran los turnos por venir: un turno confirmado bloquea el horario aunque todavía no haya pasado. Los cancelados no, que ese hueco quedó libre."
+            ayuda="Horas bloqueadas por un turno sobre las horas que la agenda estaba abierta, según los horarios cargados en Profesionales. Mide agenda, no plata: cuenta todo turno que no esté cancelado, haya pasado o no. Un confirmado bloquea el horario aunque todavía falte; un vencido lo bloqueó igual, aunque nadie lo haya cerrado, y debajo de cada una se aclara cuánto pesan. Los cancelados no cuentan, que ese hueco quedó libre."
           >
             <Ocupacion filas={d.agenda.ocupacion} />
           </Panel>

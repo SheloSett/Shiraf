@@ -757,6 +757,17 @@ export type RtaMiAgenda = { turnos: FilaDeMiAgenda[] };
 export type FilaConTotal = { nombre: string; cantidad: number; total: number };
 
 /**
+ * Una profesional en el ranking de facturación, con lo que hizo abierto por
+ * tratamiento (8/9/2026). La dueña quería saber qué dio cada una y cuántas
+ * veces, y los dos rankings de plata no se cruzaban: "por tratamiento" mezcla a
+ * todas y "por profesional" no decía de qué eran los turnos.
+ *
+ * `tratamientos` va completo y no cortado a 8 como los rankings: es el detalle
+ * de UNA profesional, y una profesional da un puñado de tratamientos.
+ */
+export type FilaPorProfesional = FilaConTotal & { tratamientos: FilaConTotal[] };
+
+/**
  * Lo que devuelve `/api/metricas`. Lo dibujan el Dashboard y la sección
  * Métricas: el Dashboard es un recorte de esto con el rango puesto en el mes.
  *
@@ -777,12 +788,18 @@ export type RtaMetricas = {
     ticketPromedio: number;
     turnosRealizados: number;
     porTratamiento: FilaConTotal[];
-    porProfesional: FilaConTotal[];
+    porProfesional: FilaPorProfesional[];
     porMes: { mes: string; facturado: number; turnos: number }[];
   };
   agenda: {
     /**
-     * Minutos vendidos sobre minutos de agenda abierta.
+     * Minutos bloqueados por un turno sobre minutos de agenda abierta.
+     *
+     * `minutosOcupados` cuenta todo turno no cancelado, pase lo que pase con él
+     * después: por venir, realizado o vencido sin cerrar. Mide agenda, no plata.
+     * `minutosVencidos` es la parte de esos que ya pasó y nadie cerró, para que
+     * la pantalla lo aclare: la dueña preguntó (8/9/2026) por qué una
+     * profesional tenía una hora ocupada sin ningún turno realizado.
      *
      * `minutosDisponibles` en 0 NO es 0% de ocupación: es una profesional sin
      * horarios cargados. La pantalla los distingue, porque son dos problemas
@@ -790,7 +807,8 @@ export type RtaMetricas = {
      */
     ocupacion: {
       nombre: string;
-      minutosVendidos: number;
+      minutosOcupados: number;
+      minutosVencidos: number;
       minutosDisponibles: number;
       porcentaje: number;
     }[];

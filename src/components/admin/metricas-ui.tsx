@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { nombreDelMes, RAMPA, SERIE_A, SERIE_B } from "@/lib/metricas-formato";
+import { comoHoras, nombreDelMes, RAMPA, SERIE_A, SERIE_B } from "@/lib/metricas-formato";
 
 /**
  * Las piezas de los gráficos, compartidas por el Dashboard y por Métricas.
@@ -78,13 +78,28 @@ export function SinDatos({ children }: { children: ReactNode }) {
  * La barra es de un solo color a propósito. Pintar cada fila de un color
  * distinto no agrega información —la posición ya dice el orden— y gasta los dos
  * colores de identidad en algo que no los necesita.
+ *
+ * ── EL DESGLOSE ───────────────────────────────────────────────────────────
+ *
+ * Una fila puede traer `desglose`: de qué está hecha. Se usa en "por
+ * profesional" para abrir cada una en sus tratamientos (8/9/2026). La fila se
+ * vuelve un `<details>` nativo —cerrado por defecto, sin estado propio— para
+ * que el ranking siga leyéndose igual de limpio y el detalle aparezca sólo
+ * cuando alguien lo pide. Adentro no van barras: son pocas líneas de UNA
+ * profesional, y otra tanda de barras compitiendo con las de afuera confunde
+ * más de lo que ordena.
  */
 export function Ranking({
   filas,
   color = SERIE_A,
   formato = (n: number) => String(n),
 }: {
-  filas: { etiqueta: string; valor: number; nota?: string }[];
+  filas: {
+    etiqueta: string;
+    valor: number;
+    nota?: string;
+    desglose?: { etiqueta: string; valor: number; nota?: string }[];
+  }[];
   color?: string;
   formato?: (n: number) => string;
 }) {
@@ -96,46 +111,95 @@ export function Ranking({
 
   return (
     <ul className="space-y-3">
-      {filas.map((f) => (
-        <li key={f.etiqueta}>
-          <div className="flex items-baseline justify-between gap-4">
-            <span className="min-w-0 truncate text-sm text-foreground">{f.etiqueta}</span>
-            <span className="shrink-0 text-sm tabular-nums text-foreground">
-              {formato(f.valor)}
-            </span>
-          </div>
-          <div className="mt-1.5 flex items-center gap-3">
-            {/* La pista gris da la referencia del 100%: sin ella, la barra más
-                larga parece "lleno" aunque sea el 4% de algo. */}
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${(f.valor / tope) * 100}%`, background: color }}
-              />
+      {filas.map((f) => {
+        const fila = (
+          <>
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="min-w-0 truncate text-sm text-foreground">{f.etiqueta}</span>
+              <span className="shrink-0 text-sm tabular-nums text-foreground">
+                {formato(f.valor)}
+              </span>
             </div>
-            {f.nota && (
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{f.nota}</span>
-            )}
-          </div>
-        </li>
-      ))}
+            <div className="mt-1.5 flex items-center gap-3">
+              {/* La pista gris da la referencia del 100%: sin ella, la barra más
+                  larga parece "lleno" aunque sea el 4% de algo. */}
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${(f.valor / tope) * 100}%`, background: color }}
+                />
+              </div>
+              {f.nota && (
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {f.nota}
+                </span>
+              )}
+            </div>
+          </>
+        );
+
+        if (!f.desglose || f.desglose.length === 0) return <li key={f.etiqueta}>{fila}</li>;
+
+        return (
+          <li key={f.etiqueta}>
+            <details className="group">
+              {/* `list-none` saca el triángulo del navegador; el propio se
+                  dibuja a la derecha del nombre y gira al abrir. */}
+              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                <div className="flex items-baseline gap-2">
+                  <div className="min-w-0 flex-1">{fila}</div>
+                  <span
+                    aria-hidden
+                    className="shrink-0 text-xs text-muted-foreground transition-transform group-open:rotate-90"
+                  >
+                    ›
+                  </span>
+                </div>
+                <span className="mt-1 block text-xs text-muted-foreground group-open:hidden">
+                  Ver qué hizo
+                </span>
+              </summary>
+              <ul className="mt-2 space-y-1.5 border-l-2 border-border pl-3">
+                {f.desglose.map((d) => (
+                  <li key={d.etiqueta} className="flex items-baseline justify-between gap-4">
+                    <span className="min-w-0 truncate text-sm text-muted-foreground">
+                      {d.etiqueta}
+                    </span>
+                    <span className="flex shrink-0 items-baseline gap-3 text-sm tabular-nums">
+                      {d.nota && <span className="text-xs text-muted-foreground">{d.nota}</span>}
+                      <span className="text-foreground">{formato(d.valor)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 /**
- * Ocupación: lo vendido sobre lo que estaba abierto.
+ * Ocupación: lo bloqueado por turnos sobre lo que estaba abierto.
  *
  * Es un medidor y no un ranking: cada barra se lee contra su propio 100%, no
  * contra la de al lado. Por eso la pista siempre representa la agenda completa
  * de esa profesional y el porcentaje va escrito.
+ *
+ * Decía "vendidas" y se cambió a "ocupadas" (8/9/2026): "vendidas" suena a
+ * plata cobrada, y acá entran turnos que todavía no pasaron y turnos vencidos
+ * que nadie cerró. Los vencidos se aclaran aparte, en la misma línea chica,
+ * para que una hora ocupada sin ningún turno realizado tenga explicación a la
+ * vista.
  */
 export function Ocupacion({
   filas,
 }: {
   filas: {
     nombre: string;
-    minutosVendidos: number;
+    minutosOcupados: number;
+    minutosVencidos: number;
     minutosDisponibles: number;
     porcentaje: number;
   }[];
@@ -171,7 +235,13 @@ export function Ocupacion({
             <p className="mt-1.5 text-xs text-muted-foreground">
               {sinAgenda
                 ? "Sin horarios cargados — no se puede calcular. Cargalos en Profesionales."
-                : `${Math.round(f.minutosVendidos / 60)} h vendidas de ${Math.round(f.minutosDisponibles / 60)} h de agenda`}
+                : `${comoHoras(f.minutosOcupados)} ocupadas de ${comoHoras(f.minutosDisponibles)} de agenda`}
+              {!sinAgenda && f.minutosVencidos > 0 && (
+                <span className="text-destructive">
+                  {" "}
+                  · {comoHoras(f.minutosVencidos)} de turnos vencidos sin cerrar
+                </span>
+              )}
             </p>
           </li>
         );

@@ -286,7 +286,17 @@ export async function calcularMetricas(desde: Date, hasta: Date): Promise<RtaMet
   // no facturó nada, y contarlo haría que el tratamiento que más se cancela
   // parezca el que más vende.
   const porTratamiento = new Map<string, { cantidad: number; total: number }>();
-  const porProfesional = new Map<string, { cantidad: number; total: number }>();
+  // Cada profesional lleva adentro su propio "por tratamiento": es lo que
+  // contesta "qué hizo Isa y cuántas veces", que los dos rankings sueltos no
+  // podían (8/9/2026).
+  const porProfesional = new Map<
+    string,
+    {
+      cantidad: number;
+      total: number;
+      tratamientos: Map<string, { cantidad: number; total: number }>;
+    }
+  >();
   const porMes = new Map<string, { facturado: number; turnos: number }>();
 
   for (const t of realizados) {
@@ -301,8 +311,14 @@ export async function calcularMetricas(desde: Date, hasta: Date): Promise<RtaMet
     const a = porTratamiento.get(tratamiento) ?? { cantidad: 0, total: 0 };
     porTratamiento.set(tratamiento, { cantidad: a.cantidad + 1, total: a.total + monto });
 
-    const b = porProfesional.get(profesional) ?? { cantidad: 0, total: 0 };
-    porProfesional.set(profesional, { cantidad: b.cantidad + 1, total: b.total + monto });
+    const b = porProfesional.get(profesional) ?? { cantidad: 0, total: 0, tratamientos: new Map() };
+    const bt = b.tratamientos.get(tratamiento) ?? { cantidad: 0, total: 0 };
+    b.tratamientos.set(tratamiento, { cantidad: bt.cantidad + 1, total: bt.total + monto });
+    porProfesional.set(profesional, {
+      cantidad: b.cantidad + 1,
+      total: b.total + monto,
+      tratamientos: b.tratamientos,
+    });
 
     const c = porMes.get(mes) ?? { facturado: 0, turnos: 0 };
     porMes.set(mes, { facturado: c.facturado + monto, turnos: c.turnos + 1 });
@@ -310,9 +326,14 @@ export async function calcularMetricas(desde: Date, hasta: Date): Promise<RtaMet
 
   // ── Agenda ───────────────────────────────────────────────────────────────
 
-  // Ocupación: los minutos que se vendieron sobre los que estaban abiertos. Los
-  // cancelados NO cuentan como vendidos —ese hueco quedó libre— pero el
-  // denominador no cambia, que es justamente lo que hace que cancelar se vea.
+  // Ocupación: los minutos bloqueados por un turno sobre los que estaban
+  // abiertos. Cuenta todo lo no cancelado —por venir, realizado o vencido sin
+  // cerrar—: un turno ocupó ese hueco aunque después nadie lo haya marcado, y
+  // sacar los vencidos haría que la ocupación baje cada vez que alguien se
+  // olvida de cerrar uno, midiendo prolijidad en vez de agenda. Lo que sí se
+  // hace es contarlos aparte, para que la pantalla diga cuánto pesan. Los
+  // cancelados NO cuentan —ese hueco quedó libre— pero el denominador no
+  // cambia, que es justamente lo que hace que cancelar se vea.
   const minutosPorProfesional = new Map<string, number>();
   for (const t of turnos) {
     if (t.status === "cancelled" || !t.professional_id) continue;
@@ -321,19 +342,29 @@ export async function calcularMetricas(desde: Date, hasta: Date): Promise<RtaMet
       (minutosPorProfesional.get(t.professional_id) ?? 0) + t.duration_minutes,
     );
   }
+  // Los vencidos son los mismos del cartel rojo, agrupados por profesional.
+  const minutosVencidosPorProfesional = new Map<string, number>();
+  for (const t of vencidos) {
+    if (!t.professional_id) continue;
+    minutosVencidosPorProfesional.set(
+      t.professional_id,
+      (minutosVencidosPorProfesional.get(t.professional_id) ?? 0) + t.duration_minutes,
+    );
+  }
 
   const ocupacion = profesionales
     .map((p) => {
       const disponibles = minutosDisponibles(p.schedules, desde, hasta);
-      const vendidos = minutosPorProfesional.get(p.id) ?? 0;
+      const ocupados = minutosPorProfesional.get(p.id) ?? 0;
       return {
         nombre: p.full_name,
-        minutosVendidos: vendidos,
+        minutosOcupados: ocupados,
+        minutosVencidos: minutosVencidosPorProfesional.get(p.id) ?? 0,
         minutosDisponibles: disponibles,
         // Sin horarios cargados el porcentaje sería una división por cero. Se
         // devuelve 0 y la pantalla lo distingue mirando `minutosDisponibles`:
         // "0% ocupada" y "sin horarios cargados" son cosas muy distintas.
-        porcentaje: disponibles > 0 ? redondear((vendidos / disponibles) * 100, 1) : 0,
+        porcentaje: disponibles > 0 ? redondear((ocupados / disponibles) * 100, 1) : 0,
       };
     })
     .sort((a, b) => b.porcentaje - a.porcentaje);
@@ -472,7 +503,16 @@ export async function calcularMetricas(desde: Date, hasta: Date): Promise<RtaMet
         (f) => f.total,
       ),
       porProfesional: ranking(
-        [...porProfesional].map(([nombre, v]) => ({ nombre, ...v })),
+        [...porProfesional].map(([nombre, v]) => ({
+          nombre,
+          cantidad: v.cantidad,
+          total: v.total,
+          // El detalle de una profesional va entero, ordenado por plata: no
+          // es un ranking, es la respuesta a "qué hizo".
+          tratamientos: [...v.tratamientos]
+            .map(([nombre, t]) => ({ nombre, ...t }))
+            .sort((a, b) => b.total - a.total),
+        })),
         (f) => f.total,
       ),
       porMes: [...porMes]
