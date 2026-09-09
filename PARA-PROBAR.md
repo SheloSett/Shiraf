@@ -47,6 +47,10 @@ banean el número. El porqué completo está en `evolution.service.ts` y en
 - La instancia vincula el chip y queda en `connectionStatus: "open"`.
 - Un mensaje suelto por la API llega al teléfono.
 - Un turno de prueba desde el panel llega por WhatsApp **y** por mail.
+- **La sesión sobrevive a un `--force-recreate` del contenedor**, sin volver a
+  pedir el QR: sigue en `"open"`. O sea que el volumen
+  `shiraf-evolution-instances` está bien montado, que era la duda. Un reinicio
+  de Evolution —o del VPS entero— no obliga a agarrar el teléfono.
 
 ### ⚠️ Lo que TODAVÍA no se probó
 
@@ -54,12 +58,8 @@ banean el número. El porqué completo está en `evolution.service.ts` y en
   sistema y el momento de más riesgo: hay que ver que el `delay` de 1,2 segundos
   los espacie de verdad y no salgan diez juntos. Se ve recién la primera mañana
   con varios turnos confirmados para el día siguiente.
-- **Que la sesión sobreviva a un reinicio** del contenedor sin volver a pedir el
-  QR. Para eso está el volumen `shiraf-evolution-instances`; si no sobrevive, el
-  volumen no está montado bien. Se prueba con un `docker compose restart
-  evolution`.
 - **Cuánta RAM se comen** los tres contenedores en el VPS, que comparte máquina
-  con los otros proyectos.
+  con los otros proyectos. Se mira con `docker stats --no-stream`.
 - **Los avisos que van al centro por WhatsApp**: sólo se probaron los que van a
   la clienta.
 - **Qué pasa cuando el teléfono del chip se queda sin batería o sin señal.** Es
