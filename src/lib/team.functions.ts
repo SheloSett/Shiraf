@@ -2,6 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/serverfn-auth";
 import { PERMISSION_VALUES, type Permission } from "@/lib/permissions";
+// Sólo el tipo, para armar el objeto de cambios con la forma que espera Prisma.
+// `import type` desaparece al compilar, así que no arrastra el cliente al bundle
+// del navegador — que es la razón por la que todo lo demás se importa dinámico.
+import type { Prisma } from "@prisma/client";
 
 /**
  * Alta y baja de empleadas. **Sólo la dueña.**
@@ -127,10 +131,24 @@ const UpdateEmployeeAccessInput = z
     userId: z.string().uuid(),
     email: z.string().trim().email("El mail no parece válido.").optional(),
     password: z.string().min(8, "La contraseña necesita al menos 8 caracteres.").optional(),
+    /**
+     * El teléfono, para el WhatsApp de los avisos. 9/9/2026.
+     *
+     * Sin `.email()` ni largo mínimo a propósito: los teléfonos se cargan a mano
+     * y llegan de mil formas —"11 5555-5555", "+54 9 11…"—, y quien decide si un
+     * número sirve es `toWhatsappNumber()` a la hora de mandar, no este
+     * validador. Rechazar acá lo que después se normaliza igual sería frenar el
+     * guardado por un guión.
+     *
+     * ⚠️ La cadena vacía SÍ se acepta, y no es lo mismo que no mandarlo: es
+     * cómo se BORRA un teléfono cargado por error. Sin esto, un número
+     * equivocado no se podría sacar nunca desde el panel.
+     */
+    phone: z.string().trim().optional(),
   })
-  // Al menos una de las dos: sin esto, "guardar" sin haber tocado nada pasaría
+  // Al menos uno de los tres: sin esto, "guardar" sin haber tocado nada pasaría
   // por todos los chequeos y contestaría que salió bien sin haber hecho nada.
-  .refine((v) => v.email !== undefined || v.password !== undefined, {
+  .refine((v) => v.email !== undefined || v.password !== undefined || v.phone !== undefined, {
     message: "No hay nada para cambiar.",
   });
 
@@ -185,7 +203,7 @@ export const updateEmployeeAccess = createServerFn({ method: "POST" })
       throw new Error("Esa cuenta no es de una empleada.");
     }
 
-    const cambios: { email?: string; password?: string } = {};
+    const cambios: Prisma.usersUpdateInput = {};
 
     if (data.email !== undefined) {
       const email = data.email.toLowerCase();
@@ -203,9 +221,30 @@ export const updateEmployeeAccess = createServerFn({ method: "POST" })
       cambios.password = await bcrypt.hash(data.password, RONDAS);
     }
 
+    /*
+     * El teléfono no vive en `users` sino en su `profile`, así que va en el
+     * mismo update pero por la relación.
+     *
+     * `upsert` y no `update`: el profile podría no existir. En la práctica lo
+     * crea siempre `createEmployee`, pero una cuenta migrada de la base vieja
+     * puede no tenerlo, y ahí un `update` tira un error de registro no
+     * encontrado que en pantalla se lee como "error interno" — por no poder
+     * guardar un teléfono.
+     */
+    if (data.phone !== undefined) {
+      const phone = data.phone.trim() || null;
+      cambios.profile = {
+        upsert: { create: { phone }, update: { phone } },
+      };
+    }
+
     await prisma.users.update({ where: { id: data.userId }, data: cambios });
 
     // Se devuelve qué se tocó y NUNCA la contraseña: la pantalla la necesita
     // para el aviso, y el valor no tiene por qué volver a viajar.
-    return { emailCambiado: data.email !== undefined, claveCambiada: data.password !== undefined };
+    return {
+      emailCambiado: data.email !== undefined,
+      claveCambiada: data.password !== undefined,
+      telefonoCambiado: data.phone !== undefined,
+    };
   });

@@ -244,10 +244,13 @@ function AdminTeam() {
    * La baja vale en el acto aunque la empleada tenga la sesión abierta: el
    * servidor mira `is_active` en cada pedido, no sólo al entrar.
    */
-  /** La empleada a la que se le están cambiando el mail o la contraseña. */
-  const [editando, setEditando] = useState<{ id: string; name: string; email: string } | null>(
-    null,
-  );
+  /** La empleada a la que se le están cambiando el mail, la clave o el teléfono. */
+  const [editando, setEditando] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+  } | null>(null);
 
   const toggleActive = useMutation({
     mutationFn: ({ userId, value }: { userId: string; value: boolean }) =>
@@ -417,13 +420,14 @@ function AdminTeam() {
                     size="icon"
                     variant="ghost"
                     className="h-9 w-9"
-                    aria-label={`Cambiar el mail o la contraseña de ${member.full_name}`}
-                    title="Cambiar mail o contraseña"
+                    aria-label={`Cambiar el mail, la contraseña o el teléfono de ${member.full_name}`}
+                    title="Cambiar mail, contraseña o teléfono"
                     onClick={() =>
                       setEditando({
                         id: member.id,
                         name: member.full_name,
                         email: member.email,
+                        phone: member.phone ?? null,
                       })
                     }
                   >
@@ -758,12 +762,13 @@ function CambiarAcceso({
   empleada,
   onClose,
 }: {
-  empleada: { id: string; name: string; email: string } | null;
+  empleada: { id: string; name: string; email: string; phone: string | null } | null;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [telefono, setTelefono] = useState("");
 
   // El mail arranca con el que tiene. Se sincroniza contra el id y no contra el
   // objeto: sin la comparación, cada renderizado del padre pisaría lo que la
@@ -773,11 +778,12 @@ function CambiarAcceso({
     setParaId(empleada.id);
     setEmail(empleada.email);
     setPassword("");
+    setTelefono(empleada.phone ?? "");
   }
 
   const guardar = useMutation({
     mutationFn: async () => {
-      const cambios: { userId: string; email?: string; password?: string } = {
+      const cambios: { userId: string; email?: string; password?: string; phone?: string } = {
         userId: empleada!.id,
       };
       // Sólo lo que cambió de verdad. El mail se compara en minúscula porque el
@@ -787,17 +793,44 @@ function CambiarAcceso({
       const mail = email.trim().toLowerCase();
       if (mail !== empleada!.email.toLowerCase()) cambios.email = mail;
       if (password !== "") cambios.password = password;
+      // El teléfono se compara contra lo que tenía, y la cadena vacía viaja
+      // igual: es cómo se borra uno cargado por error. Por eso se manda cuando
+      // hay diferencia y no cuando hay algo escrito.
+      if (telefono.trim() !== (empleada!.phone ?? "")) cambios.phone = telefono.trim();
       return await updateEmployeeAccess({ data: cambios });
     },
     onSuccess: async (r) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-team"] });
-      const que =
-        r.emailCambiado && r.claveCambiada
-          ? "Mail y contraseña actualizados."
-          : r.emailCambiado
-            ? "Mail actualizado."
-            : "Contraseña actualizada.";
-      toast.success(que);
+      // Se nombra lo que se tocó, en vez de un "listo" genérico: la dueña acaba
+      // de cambiar datos con los que otra persona entra al panel y le llegan los
+      // avisos, y conviene que lea qué quedó cambiado.
+      const tocado = [
+        r.emailCambiado ? "mail" : null,
+        r.claveCambiada ? "contraseña" : null,
+        r.telefonoCambiado ? "teléfono" : null,
+      ].filter((x): x is string => x !== null);
+
+      // No debería pasar —el servidor rechaza un pedido sin cambios— pero el
+      // aviso se arma con `tocado[0]`, y sin esta salida sería un texto roto en
+      // pantalla en vez de un caso que no existe.
+      if (tocado.length === 0) {
+        toast.success("Listo.");
+        onClose();
+        return;
+      }
+
+      // Todos en minúscula y se capitaliza el resultado: así "teléfono" solo no
+      // queda con minúscula al empezar la frase.
+      const lista =
+        tocado.length > 1
+          ? `${tocado.slice(0, -1).join(", ")} y ${tocado.at(-1)}`
+          : (tocado[0] as string);
+
+      toast.success(
+        `${lista.charAt(0).toUpperCase()}${lista.slice(1)} ${
+          tocado.length > 1 ? "actualizados" : "actualizado"
+        }.`,
+      );
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -805,7 +838,8 @@ function CambiarAcceso({
 
   const mailNuevo =
     empleada !== null && email.trim().toLowerCase() !== empleada.email.toLowerCase();
-  const hayAlgo = mailNuevo || password !== "";
+  const telefonoNuevo = empleada !== null && telefono.trim() !== (empleada.phone ?? "");
+  const hayAlgo = mailNuevo || telefonoNuevo || password !== "";
   const claveCorta = password !== "" && password.length < 8;
 
   return (
@@ -836,6 +870,21 @@ function CambiarAcceso({
               placeholder="empleada@ejemplo.com"
             />
             <p className="text-xs text-muted-foreground">Es con lo que entra al panel.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="empleada-telefono">Teléfono</Label>
+            <Input
+              id="empleada-telefono"
+              type="tel"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+              placeholder="11 5555-5555"
+            />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Si es profesional, es a donde le llegan por WhatsApp los turnos que le cargan, mueven
+              o cancelan. Vacío lo borra.
+            </p>
           </div>
 
           <div className="space-y-2">
