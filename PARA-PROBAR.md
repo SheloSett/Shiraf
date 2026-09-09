@@ -11,11 +11,17 @@ probaron.
 
 ---
 
-## 🔴 Tanda del 4-8/9 — el WhatsApp automático, escrito y SIN PROBAR
+## ✅ Tanda del 4-9/9 — el WhatsApp automático, ANDANDO
 
-**Esta tanda es distinta de todas las de abajo: no se probó nada.** El código
-está commiteado (`b979c22`) y apagado, y la primera vez que corra va a ser en el
-VPS. Lo que sigue es para que esa primera corrida no sea a ciegas.
+**Encendido el 9/9/2026 y probado en el VPS**: chip vinculado, mensaje suelto por
+la API y turno de prueba desde el panel. Los avisos salen por los dos canales.
+
+> ⚠️ Está **vivo en producción**: un turno que se confirma ahora le manda el
+> WhatsApp a la clienta de verdad, desde el número nuevo.
+
+La versión anterior de esta sección decía que no se había probado nada, y tenía
+razón en preocuparse: **de los cuatro riesgos que listaba, uno se cumplió**. La
+imagen fijada (`v2.2.3`) no conectaba nunca. Está contado abajo.
 
 ### Qué hay
 
@@ -35,38 +41,56 @@ número por el que atiende el centro: es la vía no oficial y el castigo es que
 banean el número. El porqué completo está en `evolution.service.ts` y en
 `docs/whatsapp-automatico.md` §5.
 
-### ⚠️ Lo que NO se probó — que es TODO
+### Lo que se verificó el 9/9
 
-- **El compose nunca se validó.** No hay Docker en la máquina de desarrollo. Ni
-  un `docker compose config`.
-- **La imagen de Evolution no se bajó nunca.** Está fijada en
-  `evoapicloud/evolution-api:v2.2.3`. El proyecto cambió de organización más de
-  una vez; si no baja, el nombre viejo es `atendai/evolution-api`, y se pisa con
-  `EVOLUTION_IMAGE` sin tocar el compose.
-- **El endpoint sale de la documentación, no de una llamada real**:
-  `POST /message/sendText/{instancia}`, con header `apikey` — **no** `Bearer`,
-  que es el del transporte de Meta que está al lado.
-- **No se mandó ni un mensaje.** Hasta el 8/9 no había chip.
-- **Los tres contenedores nuevos** (Evolution, su Postgres y su Redis) nunca
-  levantaron, así que tampoco se sabe cuánta RAM se comen en el VPS.
+- Los tres contenedores levantan (`--profile whatsapp`) y quedan `healthy`.
+- La instancia vincula el chip y queda en `connectionStatus: "open"`.
+- Un mensaje suelto por la API llega al teléfono.
+- Un turno de prueba desde el panel llega por WhatsApp **y** por mail.
 
-### Qué mirar cuando se encienda, en orden
+### ⚠️ Lo que TODAVÍA no se probó
 
-1. Que los tres contenedores levanten:
-   `docker compose --profile whatsapp up -d`. **Sin `--profile` no levantan**, y
-   el síntoma es "No se pudo llamar a Evolution" en cada aviso.
-2. Que el QR se escanee y la instancia quede vinculada, con el nombre **exacto**
-   de `EVOLUTION_INSTANCIA`. Un **404** al mandar casi siempre es que ese nombre
-   no coincide, no que la URL esté mal.
-3. Un turno de prueba, mirando que llegue **por los dos canales** y que digan lo
-   mismo. Por Evolution el texto es el mismo `buildAppointmentMessage()` del
-   mail, así que no deberían poder divergir.
-4. El recordatorio de la mañana con **varios turnos**: es la única ráfaga del
-   sistema. Verificar que el `delay` de 1,2 segundos los espacie y no salgan
-   todos juntos — es lo que más llama la atención de WhatsApp.
-5. Que la sesión **sobreviva a un reinicio** del contenedor sin pedir el QR de
-   nuevo. Para eso está el volumen `shiraf-evolution-instances`; si no
-   sobrevive, el volumen no está montado bien.
+- **El recordatorio de la mañana con varios turnos.** Es la única ráfaga del
+  sistema y el momento de más riesgo: hay que ver que el `delay` de 1,2 segundos
+  los espacie de verdad y no salgan diez juntos. Se ve recién la primera mañana
+  con varios turnos confirmados para el día siguiente.
+- **Que la sesión sobreviva a un reinicio** del contenedor sin volver a pedir el
+  QR. Para eso está el volumen `shiraf-evolution-instances`; si no sobrevive, el
+  volumen no está montado bien. Se prueba con un `docker compose restart
+  evolution`.
+- **Cuánta RAM se comen** los tres contenedores en el VPS, que comparte máquina
+  con los otros proyectos.
+- **Los avisos que van al centro por WhatsApp**: sólo se probaron los que van a
+  la clienta.
+- **Qué pasa cuando el teléfono del chip se queda sin batería o sin señal.** Es
+  un dispositivo vinculado, así que en teoría aguanta un rato solo, pero no se
+  midió cuánto.
+
+### 🔴 Lo que salió mal al encenderlo
+
+**El riesgo que se había anotado se cumplió**: la imagen fijada sin poder
+probarla (`v2.2.3`) **no conectaba nunca**, y de la peor forma — sin un solo
+error. Baileys entraba en bucle de reconexión cada tres segundos y
+`/instance/connect` devolvía siempre `{"count":0}`, así que el QR no aparecía ni
+por el manager ni por la API.
+
+Era la versión de cliente que trae clavada, `2.3000.1015901307`, que está rota
+(issue 2430 de Evolution). Se arregló con **v2.3.7** y
+`CONFIG_SESSION_PHONE_VERSION=2.3000.1020885143`.
+
+Y dos cosas más que costaron tiempo y conviene tener a mano:
+
+- **`LOG_LEVEL=ERROR` tapaba el diagnóstico.** Durante el bucle no salía un solo
+  renglón: los logs se veían impecables mientras nada andaba. Para diagnosticar,
+  `EVOLUTION_LOG_LEVEL=ERROR,WARN,INFO,LOG`; para el día a día, ERROR.
+- **WhatsApp no deja vincular dispositivos en una cuenta recién creada.** Con
+  todo funcionando, el teléfono contestaba "no se pueden incluir nuevos
+  dispositivos en este momento". Se destrabó usando el chip como una persona
+  —mandar y recibir unos mensajes reales— y reintentando.
+
+El paso a paso completo, con los detalles chicos (que `/instance/restart` es POST
+y no PUT, que el número va con `549` adelante, que en Windows no hay `openssl`),
+quedó en `TODO.md`.
 
 ### Lo otro de esta tanda: el aviso a la profesional (4/9)
 

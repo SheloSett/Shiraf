@@ -381,11 +381,17 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       `bf77a3c`. Un solo mail a la mañana con los turnos del día, con su propia
       columna aparte de `reminded_at` porque son dos avisos distintos.
 
-## 🔴 WhatsApp automático — lo único que falta es encenderlo
+## ✅ WhatsApp automático — ANDANDO desde el 9/9/2026
 
-**Estado al 8/9/2026: el código está entero, commiteado (`b979c22`) y apagado.**
-Sobrevivió intacto a la migración al VPS nuevo — el override de Caddy no toca
-esos contenedores. **No hay nada que programar.**
+**Está encendido y mandando.** El chip quedó vinculado, Evolution corre en el VPS
+detrás del perfil `whatsapp`, y los avisos de turno salen por los dos canales.
+
+> ⚠️ **Está vivo en producción.** Un turno que se confirma ahora le manda el
+> WhatsApp a la clienta de verdad, desde el número nuevo. No es un ensayo.
+
+Lo que sigue de esta sección son las notas de cómo se encendió, y hay que
+conservarlas: **el día que baneen el chip esto se rehace entero**, y sin esto se
+vuelven a perder las mismas dos horas.
 
 Se eligió el camino que **no le cuesta nada a la dueña**: un chip prepago
 descartable vinculado a **Evolution API** en el VPS. Es la vía no oficial (va
@@ -399,52 +405,78 @@ regla está escrita también en `evolution.service.ts` y en el `.env.example`.
 El porqué de cada decisión, los precios que se descartaron y las otras tres
 salidas están en [`docs/whatsapp-automatico.md`](docs/whatsapp-automatico.md).
 
-### Los pasos que faltan, en orden
+### Los pasos, tal como se hicieron
 
-- [x] Comprar el chip prepago y activarlo. Hecho el 8/9/2026.
-- [ ] **Instalar WhatsApp _Business_ en el celular y registrar el chip ahí.**
+- [x] Comprar el chip prepago y activarlo (8/9/2026).
+- [x] **WhatsApp _Business_** en el celular, con el chip registrado ahí.
       Business y no el normal, por tres motivos: es una app aparte, así que **no
-      te pisa tu WhatsApp personal**; la clienta ve una cuenta de empresa en vez
-      de un número pelado; y tiene **mensaje de ausencia automático**, que es la
-      única forma de contestarle a alguien que responda a un número que no
-      atiende nadie. No choca con el Business del centro: son números y teléfonos
-      distintos.
-- [ ] **Cargarle el perfil**: nombre "Shiraf", dirección, horarios, sitio. Es lo
-      que la clienta ve al tocar el contacto, y lo que hace que el aviso no
-      parezca spam.
-- [ ] **Dejar armado el mensaje de ausencia** apuntando al número real del
-      centro. Lo genera la app en el teléfono, así que necesita que el celular
-      tenga conexión.
-- [ ] **Generar la llave** en el VPS: `openssl rand -hex 32`. Va en
-      `EVOLUTION_API_KEY`, y tiene que ser al azar: es la **única** puerta de
+      pisa el WhatsApp personal** del teléfono donde vive el chip; la clienta ve
+      una cuenta de empresa en vez de un número pelado; y tiene **mensaje de
+      ausencia automático**, que es la única forma de contestarle a alguien que
+      responda a un número que no atiende nadie. No choca con el Business del
+      centro: son números y teléfonos distintos.
+- [x] **El perfil cargado**: nombre, dirección, horarios y sitio, con los datos
+      de `contact.ts`. Es lo que la clienta ve al tocar el contacto.
+- [x] **Mensaje de ausencia** apuntando al número real del centro, configurado
+      para mandarse **siempre** y no sólo fuera de horario: a ese número no lo
+      atiende nadie, ni a las tres de la tarde.
+- [x] **La llave**, al azar, en `EVOLUTION_API_KEY`. Es la **única** puerta de
       Evolution —no hay usuario ni contraseña— y cualquier contenedor del VPS
       puede pegarle a `evolution:8080`.
-- [ ] **Las variables `EVOLUTION_*`** en el `.env` del VPS. Están documentadas
-      una por una en `.env.example`.
-- [ ] **Levantar**: `docker compose --profile whatsapp up -d`.
+      ⚠️ En Windows **no existe `openssl`**. El equivalente:
+      `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+      Que sea **hexadecimal** no es capricho: la de la base viaja adentro de una
+      URL de conexión, y un `@` o un `:` la parten al medio.
+- [x] **Las variables `EVOLUTION_*`** en el `.env` **del VPS** (`~/shiraf`), no
+      en el local. Documentadas una por una en `.env.example`.
+- [x] **Levantar**: `docker compose --profile whatsapp up -d`.
       ⚠️ Sin el `--profile` los contenedores no levantan y las variables solas no
       alcanzan. El síntoma es "No se pudo llamar a Evolution" en cada aviso.
-- [ ] **Vincular el chip**: túnel `ssh -L 8080:127.0.0.1:8080 usuario@vps`, abrir
-      `localhost:8080`, crear la instancia con el nombre exacto de
-      `EVOLUTION_INSTANCIA` y escanear el QR desde el teléfono del chip.
+- [x] **Vincular el chip**: túnel `ssh -L 8080:127.0.0.1:8080 shelo@82.25.74.242`,
+      abrir `localhost:8080/manager`, entrar con la llave, crear la instancia con
+      el nombre exacto de `EVOLUTION_INSTANCIA` y escanear el QR.
       El panel **no sale a internet a propósito**: con la llave se puede mandar y
       leer todo.
-- [ ] **Probar con un turno de prueba** antes de que lo vea una clienta.
+- [x] **Probado**: mensaje suelto por la API y turno de prueba desde el panel.
 
-### ⚠️ Lo que nunca se probó
+### 🔴 Lo que salió mal, y cómo se resolvió
 
-El código pasa `tsc` y `eslint`, y los textos de los avisos se leyeron uno por
-uno. Pero **nada de esto se levantó ni una vez**, así que la primera corrida va a
-ser en el VPS. Si algo falla, empezar por acá:
+**Esto es lo que hay que leer el día que haya que rehacerlo.** Nada de esto
+estaba previsto y las cuatro cosas costaron tiempo.
 
-- **El compose no se validó.** No hay Docker en la máquina de desarrollo.
-- **La imagen de Evolution no se probó.** Está fijada en
-  `evoapicloud/evolution-api:v2.2.3`. El proyecto cambió de organización más de
-  una vez; si esa imagen no baja, el nombre viejo es `atendai/evolution-api`. Se
-  puede pisar con `EVOLUTION_IMAGE` sin tocar el compose.
-- **El endpoint sale de la documentación, no de una llamada real**:
-  `POST /message/sendText/{instancia}`, con header `apikey` (no `Bearer`).
-- **No se mandó ningún mensaje**, obviamente: no había chip.
+**1. Evolution 2.2.3 no conectaba nunca, y sin dar un solo error.**
+Baileys entraba en un bucle de reconexión —`Browser: / Baileys version: / Group
+Ignore:` cada tres segundos— y `/instance/connect` devolvía siempre
+`{"count":0}`, así que el QR no se generaba ni por el manager ni por la API.
+La culpa es de la versión de cliente que trae clavada, `2.3000.1015901307`, que
+está rota ([issue 2430](https://github.com/EvolutionAPI/evolution-api/issues/2430)).
+Se arregló subiendo a **v2.3.7** y fijando `CONFIG_SESSION_PHONE_VERSION` en
+`2.3000.1020885143`. Las dos cosas están en el compose, comentadas.
+👉 **Si algún día vuelve a pasar: mirar la versión ANTES que la red o el
+firewall.** El síntoma no parece un problema de versión.
+
+**2. `LOG_LEVEL=ERROR` tapaba el diagnóstico.**
+Ese es el default del compose y está bien para el día a día, pero durante el
+bucle **no emitía un solo renglón**: los logs se veían impecables mientras nada
+funcionaba. Con `EVOLUTION_LOG_LEVEL=ERROR,WARN,INFO,LOG` apareció el bucle a
+simple vista. **Volver a bajarlo cuando termine el diagnóstico**, o llena el
+disco.
+
+**3. WhatsApp no deja vincular dispositivos en una cuenta recién creada.**
+Con todo funcionando, el teléfono contestaba *"no se pueden incluir nuevos
+dispositivos en este momento"*. No es Evolution: es WhatsApp protegiéndose de
+cuentas nuevas que automatizan a los diez minutos de registrarse.
+Se destrabó **usando el chip como una persona** —mandar y recibir unos mensajes
+de verdad— y reintentando. **No insistir a lo bruto**: cada intento fallido suma
+sospecha sobre una cuenta que ya está mirada de cerca.
+
+**4. Detalles chicos que hicieron perder tiempo.**
+`/instance/restart` es **POST**, no PUT (con PUT da 404). El número va en formato
+internacional completo —`549` + área sin 0 + número sin 15—; sin el `549`, el
+pairing code sale mal y no avisa. Y si el QR no aparece, el **código de
+vinculación** de 8 caracteres es la alternativa:
+`GET /instance/connect/shiraf?number=549…`, campo `pairingCode`, que se ingresa
+en el teléfono con "Vincular con número de teléfono".
 
 ### Los tres errores que van a aparecer
 
