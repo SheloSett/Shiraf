@@ -166,6 +166,8 @@ function AdminProfessionals() {
   const [granting, setGranting] = useState<{ id: string; name: string } | null>(null);
   const [grantEmail, setGrantEmail] = useState("");
   const [grantPassword, setGrantPassword] = useState("");
+  /** Igual que `altaTelefono`, para la otra puerta que crea la cuenta. */
+  const [grantTelefono, setGrantTelefono] = useState("");
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -187,6 +189,12 @@ function AdminProfessionals() {
    */
   const [altaEmail, setAltaEmail] = useState("");
   const [altaPassword, setAltaPassword] = useState("");
+  /**
+   * Su teléfono, para el WhatsApp de los avisos. Opcional: si queda vacío, la
+   * cuenta se crea igual y ella lo carga desde «Mi cuenta». Va al `profile`, que
+   * es donde vive también el de las clientas.
+   */
+  const [altaTelefono, setAltaTelefono] = useState("");
 
   // Tratamientos y horarios se editan en el mismo diálogo que los datos. En un
   // alta no hay id todavía, así que se juntan acá y se graban recién cuando la
@@ -409,6 +417,11 @@ function AdminProfessionals() {
             email: altaEmail.trim(),
             password: altaPassword,
             fullName: payload.full_name,
+            // Vacío viaja como undefined y no como "": `createEmployee` guarda
+            // null en el profile, que es lo que después distingue "no cargó
+            // teléfono" de "cargó una cadena vacía" a la hora de mandar el
+            // WhatsApp.
+            phone: altaTelefono.trim() || undefined,
             // Los mismos que el botón de la tarjeta: ve su agenda y maneja
             // turnos. Lo demás se decide en Accesos. Ver ACCESOS_DE_PROFESIONAL.
             permissions: ACCESOS_DE_PROFESIONAL,
@@ -555,6 +568,7 @@ function AdminProfessionals() {
           email: grantEmail.trim(),
           password: grantPassword,
           fullName: granting.name,
+          phone: grantTelefono.trim() || undefined,
           permissions: ACCESOS_DE_PROFESIONAL,
         },
       });
@@ -611,12 +625,17 @@ function AdminProfessionals() {
     // qué seguir ahí cuando se vuelve a abrir el formulario para otra persona.
     setAltaEmail("");
     setAltaPassword("");
+    // El teléfono, por lo mismo y con una consecuencia peor: si sobreviviera al
+    // cierre, la próxima profesional se daría de alta con el número de la
+    // anterior, y los WhatsApp de sus turnos irían a la persona equivocada.
+    setAltaTelefono("");
   }
 
   function closeGrant() {
     setGranting(null);
     setGrantEmail("");
     setGrantPassword("");
+    setGrantTelefono("");
   }
 
   function openCreate() {
@@ -976,6 +995,22 @@ function AdminProfessionals() {
                 value={grantEmail}
                 onChange={(e) => setGrantEmail(e.target.value)}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="gr-telefono">Teléfono</Label>
+              <Input
+                id="gr-telefono"
+                type="tel"
+                autoComplete="off"
+                placeholder="11 5555-5555"
+                value={grantTelefono}
+                onChange={(e) => setGrantTelefono(e.target.value)}
+              />
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Para avisarle por WhatsApp de los turnos que le tocan. Si lo dejás vacío, ella lo
+                carga después desde Mi cuenta.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -1373,6 +1408,23 @@ function AdminProfessionals() {
                       <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       Se muestra en texto plano a propósito: tenés que poder copiarla para dársela.
                       Después ella la cambia desde Mi cuenta.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="alta-telefono">Teléfono</Label>
+                    <Input
+                      id="alta-telefono"
+                      type="tel"
+                      autoComplete="off"
+                      placeholder="11 5555-5555"
+                      value={altaTelefono}
+                      onChange={(e) => setAltaTelefono(e.target.value)}
+                    />
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Para avisarle por WhatsApp cuando le cargan, mueven o cancelan un turno. Sin
+                      esto sólo le llega el mail, que en medio de la jornada nadie mira. Si lo dejás
+                      vacío, ella lo puede cargar después desde Mi cuenta.
                     </p>
                   </div>
                 </div>

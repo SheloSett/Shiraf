@@ -381,6 +381,29 @@ Las plantillas se pueden mirar sin mandar nada, con el dev server levantado:
       `bf77a3c`. Un solo mail a la mañana con los turnos del día, con su propia
       columna aparte de `reminded_at` porque son dos avisos distintos.
 
+## A quién le llega cada aviso, hoy
+
+| Quién | Por WhatsApp | Por mail |
+| --- | --- | --- |
+| **La clienta** | los 5 suyos: reservó, confirmado, cancelado, movido, recordatorio | los mismos |
+| **El centro** | los 4 internos, al número que esté cargado en el panel | a las dueñas y a quien tenga la casilla tildada en Accesos |
+| **La profesional** | los 6 que le cambian la agenda (desde el 9/9/2026) | los mismos, más su agenda del día a la mañana |
+
+Notas que no son obvias:
+
+- **El teléfono de la profesional vive en `profiles.phone`**, el mismo campo que
+  el de las clientas, y no en una columna de `professionals`. Lo pide el alta
+  —las dos puertas: el formulario nuevo y «Darle acceso»— y ella lo puede
+  corregir desde «Mi cuenta». Las fichas creadas antes del 9/9 lo tienen vacío:
+  ahí el WhatsApp no sale y el mail sí, sin que falle nada.
+- **A la profesional no le llega el recordatorio del día previo turno por
+  turno**: recibe UN resumen con toda su agenda de mañana. Cinco turnos serían
+  cinco mensajes iguales en la misma mañana.
+- **Los avisos a la profesional no tienen plantilla de Meta.** Salen por
+  Evolution, que manda texto libre. Si algún día se paga la vía oficial, hay que
+  darlas de alta o ese canal se queda sin ellos — está marcado en
+  `whatsappALaProfesional`.
+
 ## ✅ WhatsApp automático — ANDANDO desde el 9/9/2026
 
 **Está encendido y mandando.** El chip quedó vinculado, Evolution corre en el VPS

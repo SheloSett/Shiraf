@@ -288,6 +288,12 @@ type DatosDelAviso = {
    * su ficha no está vinculada a ninguna cuenta.
    */
   professionalEmail: string | null;
+  /**
+   * Su teléfono, si lo cargó. Null es lo normal en las fichas viejas: el campo
+   * existía en `profiles` pero el alta de profesional no lo pedía hasta el
+   * 9/9/2026.
+   */
+  professionalPhone: string | null;
   /** La cuenta de la profesional, para no avisarle de lo que hizo ella misma. */
   professionalUserId: string | null;
 };
@@ -338,7 +344,15 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
       // `user_id` viaja además del mail porque con él se compara quién disparó
       // la acción: ver `deliverAppointmentToProfessional`.
       professional: {
-        select: { full_name: true, user_id: true, user: { select: { email: true } } },
+        select: {
+          full_name: true,
+          user_id: true,
+          // El teléfono sale del `profile` de su cuenta, igual que el de la
+          // clienta, y no de una columna en `professionals`: es el mismo dato y
+          // ya tenía dónde vivir. Lo carga el alta, y ella misma lo puede
+          // corregir desde «Mi cuenta».
+          user: { select: { email: true, profile: { select: { phone: true } } } },
+        },
       },
       // El teléfono del profile entró con el WhatsApp: hasta entonces sólo
       // viajaba `guest_phone`, así que de una clienta CON cuenta no se sabía el
@@ -377,6 +391,7 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
     notifiable,
     clientEmail,
     professionalEmail: appointment.professional?.user?.email ?? null,
+    professionalPhone: appointment.professional?.user?.profile?.phone ?? null,
     professionalUserId: appointment.professional?.user_id ?? null,
   };
 }
@@ -500,7 +515,7 @@ export async function deliverAppointmentToProfessional(
   appointmentId: string,
   event: AppointmentEvent,
   quienLoHizo?: string,
-): Promise<DeliveryResult> {
+): Promise<DeliveryResult & { whatsapp?: DeliveryResult }> {
   // Se pregunta ANTES de ir a la base, igual que en el WhatsApp: para los dos
   // eventos que no le corresponden a la profesional, esto ahorra una consulta
   // por cada recordatorio del día.
@@ -535,13 +550,15 @@ export async function deliverAppointmentToProfessional(
     return { sent: false, reason: "Este aviso no le corresponde a la profesional." };
   }
 
+  const centro = await datosDelCentroSeguro();
+
   // Se devolvía directo; ahora se guarda para poder loguear el fallo abajo.
   // return sendEmail({
   const envio = await sendEmail({
     to: datos.professionalEmail,
     subject: message.subject,
     text: message.lines.join("\n"),
-    html: renderEmailHtml(message, await datosDelCentroSeguro()),
+    html: renderEmailHtml(message, centro),
   });
 
   /*
@@ -556,7 +573,79 @@ export async function deliverAppointmentToProfessional(
     console.error(`[aviso] ${event} · turno ${appointmentId} · a la profesional: ${envio.reason}`);
   }
 
-  return envio;
+  return { ...envio, whatsapp: await whatsappALaProfesional(appointmentId, datos, message) };
+}
+
+/**
+ * El mismo aviso a la profesional, por WhatsApp. 9/9/2026.
+ *
+ * ── POR QUÉ NO ALCANZABA CON EL MAIL ──────────────────────────────────────
+ *
+ * Porque nadie mira el mail en medio de la jornada. El centro lo pidió con esa
+ * frase: los avisos que le importan a quien está atendiendo —te cancelaron el de
+ * las 4, te movieron el de mañana— tienen que llegar por donde ella mira, que es
+ * WhatsApp. El mail queda como respaldo y como registro.
+ *
+ * ── DE DÓNDE SALE EL NÚMERO ───────────────────────────────────────────────
+ *
+ * De `profiles.phone` de su cuenta: el mismo campo que el de las clientas, no
+ * una columna nueva en `professionals`. Ya existía; lo que faltaba era pedirlo
+ * en el alta, que hasta hoy no lo hacía. Las fichas viejas lo tienen en null y
+ * ahí esto no manda nada — sin drama, el mail sale igual. Se completa desde el
+ * alta, o ella misma desde «Mi cuenta».
+ *
+ * ── LO QUE NO SE REPITE ───────────────────────────────────────────────────
+ *
+ * Los filtros de a quién y cuándo ya los resolvió quien llama: los dos eventos
+ * que no le tocan, la ficha sin cuenta y el "lo hizo ella misma" se descartaron
+ * antes. Acá sólo queda mandar, o no mandar si no hay número.
+ *
+ * Tampoco lleva la firma de "este número no se lee" que sí llevan los avisos a
+ * la clienta: la profesional es del centro y sabe perfectamente de dónde sale
+ * ese mensaje.
+ */
+async function whatsappALaProfesional(
+  appointmentId: string,
+  datos: DatosDelAviso,
+  message: AppointmentMessage,
+): Promise<DeliveryResult> {
+  const transporte = await transporteWhatsapp();
+  if (!transporte) {
+    return { sent: false, reason: "El envío de WhatsApp todavía no está configurado." };
+  }
+
+  const numero = toWhatsappNumber(datos.professionalPhone);
+  if (!numero) {
+    return {
+      sent: false,
+      reason: datos.professionalPhone
+        ? "El teléfono de la profesional no tiene forma de número argentino."
+        : "La profesional no tiene teléfono cargado.",
+    };
+  }
+
+  /*
+   * Por Meta esto no sale, y no es un olvido.
+   *
+   * Las ocho plantillas aprobadas están escritas para la clienta y para el
+   * centro; los avisos a la profesional son textos propios y no tienen plantilla
+   * —habría que darlas de alta y esperar que Meta las apruebe una por una—. Como
+   * el canal que está encendido es Evolution, que manda texto libre, esto
+   * funciona hoy; el día que se pague la vía oficial, hay que acordarse de este
+   * renglón.
+   */
+  if (transporte !== "evolution") {
+    return { sent: false, reason: "Los avisos a la profesional no tienen plantilla de Meta." };
+  }
+
+  const { enviarPorEvolution } = await import("@/server/services/evolution.service");
+  const envio = await enviarPorEvolution({ to: numero, texto: message.lines.join("\n") });
+
+  if (!envio.ok) {
+    console.error(`[aviso] turno ${appointmentId} · wa a la profesional: ${envio.motivo}`);
+  }
+
+  return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
 }
 
 /**
