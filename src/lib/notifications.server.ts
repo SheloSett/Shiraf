@@ -85,6 +85,11 @@ import { PLANTILLAS } from "@/lib/whatsapp-plantillas";
  *
  * Meter cualquiera de los dos acá adentro le manda a la clienta un mail escrito
  * para el panel, con el enlace a /admin/turnos.
+ *
+ * 9/9/2026 — son cuatro los que van al centro: se sumó
+ *
+ *   staff-created      · alguien del equipo cargó un turno desde el panel. La
+ *                        clienta recibe "confirmed" por el mismo alta.
  */
 const TO_CLIENT: readonly AppointmentEvent[] = [
   "requested",
@@ -353,27 +358,63 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
 export async function deliverAppointmentEmail(
   appointmentId: string,
   event: AppointmentEvent,
+  /**
+   * Quién disparó el aviso desde el panel, si fue una persona. Lo usan los
+   * avisos al centro desde el 9/9/2026: el mail nombra a quien cargó el turno y
+   * no se lo manda a esa misma persona, por el mismo motivo que a la
+   * profesional no se le avisa de lo que hizo ella (ver más abajo).
+   */
+  quienLoHizo?: string,
 ): Promise<DeliveryResult> {
   const datos = await datosDelAviso(appointmentId);
   if (!datos) return { sent: false, reason: "El turno no existe." };
+
+  /*
+   * Quién lo hizo, con nombre y mail. Sólo para los avisos al centro: en los
+   * que van a la clienta no se nombra a nadie del equipo, y la consulta se
+   * ahorra.
+   */
+  const actor =
+    quienLoHizo && !TO_CLIENT.includes(event)
+      ? await (
+          await import("@/server/db")
+        ).prisma.users.findUnique({
+          where: { id: quienLoHizo },
+          select: { email: true, profile: { select: { full_name: true } } },
+        })
+      : null;
 
   // 8/9/2026 — los avisos al centro dejaron de ir a una sola casilla fija. Ahora
   // van a las dueñas, a las empleadas con la casilla tildada en Accesos y al
   // Gmail del centro; la regla entera está en `mailsDelCentro`. Dinámico como
   // prisma, por el mismo motivo. La línea vieja, comentada por la regla del repo:
   //   const recipient = TO_CLIENT.includes(event) ? datos.clientEmail : CONTACT.email;
+  //
+  // 9/9/2026 — y a quien disparó el aviso no se le manda: la secretaria que
+  // carga un turno no necesita un mail diciéndole lo que acaba de hacer. Si
+  // era la única destinataria (una sola dueña, sin casillas tildadas, y es
+  // ella la que carga), el aviso no sale y lo dice.
+  const actorEmail = actor?.email.trim().toLowerCase() ?? null;
   const recipient = TO_CLIENT.includes(event)
     ? datos.clientEmail
-    : await (await import("@/server/services/destinatarios.service")).mailsDelCentro();
+    : (await (await import("@/server/services/destinatarios.service")).mailsDelCentro()).filter(
+        (m) => m !== actorEmail,
+      );
 
   if (!recipient || recipient.length === 0) {
+    if (actor && !TO_CLIENT.includes(event)) {
+      return { sent: false, reason: "No hay nadie más del centro a quien avisar." };
+    }
     // El caso real: una invitada cargada por teléfono, de la que el centro tiene
     // el celular y no el mail. No es un error — es el motivo por el que WhatsApp
     // sigue siendo el canal principal.
     return { sent: false, reason: "Esta clienta no tiene mail cargado." };
   }
 
-  const message = buildAppointmentMessage(event, datos.notifiable);
+  const message = buildAppointmentMessage(event, {
+    ...datos.notifiable,
+    actorName: actor?.profile?.full_name ?? null,
+  });
 
   return sendEmail({
     to: recipient,

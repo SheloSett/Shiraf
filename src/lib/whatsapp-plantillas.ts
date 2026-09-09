@@ -228,6 +228,21 @@ Queda {{2}} para {{3}}.
 Se liberó el horario que tenía antes: ${CONTACT.siteUrl}/admin/turnos`,
     params: (a) => [quienEs(a), cuando(a), queCosa(a)],
   },
+
+  // 9/9/2026 — el alta desde el panel, al WhatsApp del centro. Está acá porque
+  // el registro es por evento y sin la entrada no compila; si el canal de Meta
+  // se enciende algún día, esta plantilla hay que mandarla a aprobar como las
+  // otras. Por mail ya sale (ver `buildAppointmentMessage`).
+  "staff-created": {
+    nombre: "centro_turno_cargado",
+    cuerpo: `Se cargó un turno desde el panel y ya está confirmado.
+
+{{1}}
+Turno {{2}} para {{3}}.
+
+La agenda: ${CONTACT.siteUrl}/admin/turnos`,
+    params: (a) => [quienEs(a), cuando(a), queCosa(a)],
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

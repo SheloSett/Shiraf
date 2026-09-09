@@ -145,9 +145,21 @@ export function NextSessionDialog({
       // El mismo aviso que al cargar un turno nuevo, y por el mismo motivo: la
       // sesión nace confirmada y sin esto nadie se enteraba. El porqué largo
       // está en new-appointment-dialog.tsx.
-      return await notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
-        (e: Error) => ({ sent: false as const, reason: e.message }),
-      );
+      //
+      // 9/9/2026 — y al centro, igual que el alta: agendar la sesión siguiente
+      // también es cargar un turno desde el panel. Antes:
+      //   return await notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
+      //     (e: Error) => ({ sent: false as const, reason: e.message }),
+      //   );
+      const [mail] = await Promise.all([
+        notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
+          (e: Error) => ({ sent: false as const, reason: e.message }),
+        ),
+        notifyAppointment({ data: { appointmentId: id, event: "staff-created" } }).catch(
+          (e: Error) => console.error("[panel] no se pudo avisar al centro:", e.message),
+        ),
+      ]);
+      return mail;
     },
     // Antes no recibía nada: la mutación no devolvía el resultado del mail.
     // onSuccess: async () => {

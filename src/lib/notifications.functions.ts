@@ -42,6 +42,9 @@ const NotifyInput = z.object({
     "new-request",
     "client-cancelled",
     "client-rescheduled",
+    // 9/9/2026 — el alta desde el panel, al centro. Lo manda el equipo, así
+    // que NO va en LOS_DISPARA_LA_CLIENTA: exige `appointments` como los demás.
+    "staff-created",
   ]),
 });
 
@@ -139,7 +142,11 @@ export const notifyAppointment = createServerFn({ method: "POST" })
      * miran `sent` y `reason` siguen andando sin tocar una línea, y el día que
      * el canal se encienda hay dónde mirar cómo le fue.
      */
-    const mail = await deliverAppointmentEmail(data.appointmentId, data.event);
+    // `context.userId` entra desde el 9/9/2026, por "staff-created": el mail al
+    // centro nombra a quien cargó el turno y no se lo manda a esa misma
+    // persona. Para los demás eventos no cambia nada.
+    //   const mail = await deliverAppointmentEmail(data.appointmentId, data.event);
+    const mail = await deliverAppointmentEmail(data.appointmentId, data.event, context.userId);
     const whatsapp = await deliverAppointmentWhatsapp(data.appointmentId, data.event);
 
     /*

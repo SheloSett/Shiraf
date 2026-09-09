@@ -63,7 +63,19 @@ export type AppointmentEvent =
    * —acaba de elegir el horario nuevo en pantalla—; el centro sí, porque la
    * agenda del día le cambió sin que nadie del equipo lo tocara.
    */
-  | "client-rescheduled";
+  | "client-rescheduled"
+  /**
+   * Alguien del centro cargó un turno desde el panel. Va AL CENTRO.
+   *
+   * 9/9/2026. Hasta hoy el alta desde el panel avisaba a la clienta y a la
+   * profesional ("confirmed") y a nadie más, así que si lo cargaba la
+   * secretaria, la dueña se enteraba sólo mirando la agenda. Es a
+   * "new-request" lo que "confirmed" es a "requested": el mismo hecho —entró
+   * un turno— pero lo hizo el equipo y no la clienta. Se dispara junto con
+   * "confirmed" desde los dos diálogos del panel, y a quien lo cargó no le
+   * llega: ya sabe.
+   */
+  | "staff-created";
 
 /** Lo mínimo para poder redactar cualquiera de los avisos. */
 export type NotifiableAppointment = {
@@ -92,6 +104,13 @@ export type NotifiableAppointment = {
    */
   sessionNumber?: number;
   sessionsTotal?: number;
+  /**
+   * Quién hizo la acción desde el panel, si se sabe. Sólo lo mira
+   * "staff-created": el mail al centro dice "lo cargó Camila" en vez de "se
+   * cargó", que es lo que la dueña quiere leer. Lo rellena el servidor con el
+   * nombre de la sesión que disparó el aviso.
+   */
+  actorName?: string | null;
 };
 
 export type AppointmentMessage = {
@@ -377,6 +396,30 @@ export function buildAppointmentMessage(
           `Miralo desde el panel: ${CONTACT.siteUrl}/admin/turnos?estado=sin-ver`,
         ],
       };
+
+    /*
+     * 9/9/2026 — el alta desde el panel, contada al centro. Nace confirmado y
+     * VISTO (lo cargó el equipo), así que el enlace va a la lista y no a
+     * «Sin ver», y no hay nada que mirar: es para enterarse.
+     */
+    case "staff-created":
+      return {
+        subject: `Turno cargado desde el panel — ${appointment.clientName}`,
+        lines: [
+          appointment.actorName
+            ? `${appointment.actorName} cargó un turno desde el panel. Ya está confirmado.`
+            : "Se cargó un turno desde el panel. Ya está confirmado.",
+          "",
+          `${appointment.clientName}${appointment.clientPhone ? ` · ${appointment.clientPhone}` : ""}`,
+          `Turno ${when}`,
+          ...(what ? [what] : []),
+          ...(sesion
+            ? [`Sesión ${appointment.sessionNumber} de ${appointment.sessionsTotal}.`]
+            : []),
+          "",
+          `La agenda: ${CONTACT.siteUrl}/admin/turnos`,
+        ],
+      };
   }
 }
 
@@ -422,6 +465,10 @@ export function buildProfessionalMessage(
   appointment: NotifiableAppointment,
 ): AppointmentMessage | null {
   if (event === "requested" || event === "reminder") return null;
+  // "staff-created" sale del panel JUNTO con "confirmed", y "confirmed" ya le
+  // dice a la profesional que tiene ese turno en la agenda. Mandarle los dos
+  // serían dos mails por la misma carga, igual que el par requested/new-request.
+  if (event === "staff-created") return null;
   if (!appointment.professionalName) return null;
 
   const pro = firstName(appointment.professionalName);

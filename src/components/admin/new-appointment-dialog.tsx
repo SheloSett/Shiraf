@@ -234,11 +234,31 @@ export function NewAppointmentDialog({
        * está en la agenda, y un mail que no sale no puede convertirse en "no se
        * pudo cargar", que haría cargarlo dos veces.
        */
-      return {
-        mail: await notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
+      /*
+       * 9/9/2026 — y al centro. Sin esto, un turno que cargaba la secretaria
+       * no se lo contaba a nadie más: la dueña se enteraba mirando la agenda o
+       * porque se lo decían. "staff-created" va a las dueñas y a quien tenga
+       * tildado recibir los avisos, menos a quien lo cargó. Los dos en
+       * paralelo, y el toast informa del de la clienta, que es el que ella
+       * está esperando ver salir; el del centro se traga el fallo como hace la
+       * reserva del sitio, y queda en el log del servidor.
+       *
+       * Antes:
+       *   return {
+       *     mail: await notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
+       *       (e: Error) => ({ sent: false as const, reason: e.message }),
+       *     ),
+       *   };
+       */
+      const [mail] = await Promise.all([
+        notifyAppointment({ data: { appointmentId: id, event: "confirmed" } }).catch(
           (e: Error) => ({ sent: false as const, reason: e.message }),
         ),
-      };
+        notifyAppointment({ data: { appointmentId: id, event: "staff-created" } }).catch(
+          (e: Error) => console.error("[panel] no se pudo avisar al centro:", e.message),
+        ),
+      ]);
+      return { mail };
     },
     // Antes no recibía nada: la mutación no devolvía el resultado del mail.
     // onSuccess: async () => {
