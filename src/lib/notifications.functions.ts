@@ -191,5 +191,16 @@ export const notifyAppointment = createServerFn({ method: "POST" })
       console.error(`[aviso] ${data.event} · turno ${data.appointmentId}: ${mail.reason}`);
     }
 
+    // El párrafo de arriba que dice que el WhatsApp NO se loguea dejó de valer
+    // el 9/9/2026: el canal está encendido. Y el mismo día la dueña reclamó
+    // que a los turnos cargados a mano no les llegaba el WhatsApp, sin una
+    // línea que dijera por qué. Se calla sólo el "no está configurado", que es
+    // el único motivo que no es un fallo.
+    if (!whatsapp.sent && !whatsapp.reason.includes("no está configurado")) {
+      console.error(
+        `[aviso] ${data.event} · turno ${data.appointmentId} · whatsapp: ${whatsapp.reason}`,
+      );
+    }
+
     return { ...mail, whatsapp, professional };
   });

@@ -911,6 +911,118 @@ export async function reprogramar(ctx: Ctx) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Reenviar los avisos en lote
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Manda de nuevo el aviso de "turno confirmado" a un grupo de turnos por venir.
+ * `POST /api/turnos/avisar-pendientes`. Permiso `appointments`.
+ *
+ * ── PARA QUÉ EXISTE (9/9/2026) ────────────────────────────────────────────
+ *
+ * Los turnos cargados a mano desde el panel no avisaban a la clienta hasta el
+ * 8/9, y el WhatsApp recién se encendió el 9/9. Quedó un lote de turnos ya
+ * cargados a los que nunca les salió nada, y la dueña pidió un comando para
+ * mandárselos desde el VPS. El envío vive adentro de la app —los textos están
+ * en un solo lugar a propósito— así que el comando es un script que entra por
+ * acá con una sesión del panel: `scripts/avisar-turnos.mjs`.
+ *
+ * No es sólo para esa vez: cada vez que un canal se caiga un rato, esto es lo
+ * que vuelve a mandar lo que faltó.
+ *
+ * ── QUÉ RECIBE ───────────────────────────────────────────────────────────
+ *
+ *   desde       AAAA-MM-DD. Turnos CARGADOS desde ese día (created_at).
+ *   ids         O una lista de ids, en vez de la fecha.
+ *   canales     ["whatsapp"], ["mail"] o los dos. Obligatorio: mandar por los
+ *               dos "sin querer" es justo lo que no puede pasar acá.
+ *   profesional true para avisarle también a quien atiende. Por defecto no:
+ *               la profesional ya tiene su resumen del día antes.
+ *   listar      true para ver qué turnos entrarían, sin mandar nada.
+ *
+ * Sólo confirmados y por venir: a uno que ya pasó no hay nada que avisarle.
+ *
+ * Los envíos van EN SERIE, uno atrás del otro, por lo mismo que en el
+ * recordatorio: una ráfaga por Evolution es lo que hace que a un número lo
+ * miren de cerca (ver `reminders.service.ts`).
+ */
+export async function avisarPendientes(ctx: Ctx) {
+  const canalesCrudos = Array.isArray(ctx.body["canales"]) ? ctx.body["canales"] : [];
+  const canales = canalesCrudos.filter(
+    (c): c is "mail" | "whatsapp" => c === "mail" || c === "whatsapp",
+  );
+  const listar = ctx.body["listar"] === true;
+  const profesional = ctx.body["profesional"] === true;
+
+  if (!listar && canales.length === 0) {
+    return json({ error: "Decí por qué canal: mail, whatsapp o los dos." }, 400);
+  }
+
+  const ids = Array.isArray(ctx.body["ids"])
+    ? ctx.body["ids"].filter((x): x is string => typeof x === "string")
+    : [];
+  const desde = typeof ctx.body["desde"] === "string" ? new Date(ctx.body["desde"]) : null;
+
+  if (ids.length === 0 && (!desde || Number.isNaN(desde.getTime()))) {
+    return json({ error: "Falta `desde` (AAAA-MM-DD) o `ids`." }, 400);
+  }
+
+  const turnos = await prisma.appointments.findMany({
+    where: {
+      status: "confirmed",
+      starts_at: { gt: new Date() },
+      ...(ids.length > 0 ? { id: { in: ids } } : { created_at: { gte: desde! } }),
+    },
+    orderBy: { starts_at: "asc" },
+    select: {
+      id: true,
+      starts_at: true,
+      client_id: true,
+      guest_name: true,
+      guest_phone: true,
+      guest_email: true,
+      client: { select: { email: true, profile: { select: { full_name: true, phone: true } } } },
+      professional: { select: { full_name: true } },
+    },
+  });
+
+  const { deliverAppointmentEmail, deliverAppointmentWhatsapp, deliverAppointmentToProfessional } =
+    await import("@/lib/notifications.server");
+
+  const resultados = [];
+  for (const t of turnos) {
+    const fila: Record<string, unknown> = {
+      id: t.id,
+      cuando: t.starts_at.toISOString(),
+      quien: personaDe(t).name,
+      telefono: personaDe(t).phone,
+      mail: t.client?.email ?? t.guest_email ?? null,
+      profesional: t.professional?.full_name ?? null,
+    };
+
+    if (!listar) {
+      if (canales.includes("mail")) {
+        fila["envio_mail"] = await deliverAppointmentEmail(t.id, "confirmed", ctx.user!.id);
+      }
+      if (canales.includes("whatsapp")) {
+        fila["envio_whatsapp"] = await deliverAppointmentWhatsapp(t.id, "confirmed");
+      }
+      if (profesional) {
+        fila["envio_profesional"] = await deliverAppointmentToProfessional(
+          t.id,
+          "confirmed",
+          ctx.user!.id,
+        );
+      }
+    }
+
+    resultados.push(fila);
+  }
+
+  return json({ listar, canales, total: resultados.length, turnos: resultados });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Mi agenda
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { authMiddleware, exigeMiddleware } from "@/server/middleware/auth.middle
 import {
   agendarSiguienteSesion,
   alcanceDeInvitada,
+  avisarPendientes,
   avisosDeManana,
   borrar,
   calendario,
@@ -53,6 +54,10 @@ turnosRouter.put("/:id/horario", ...gestionarTurnos, reprogramar);
 turnosRouter.get("/:id/profesionales", ...gestionarTurnos, profesionalesParaElTurno);
 turnosRouter.put("/:id/profesional", ...gestionarTurnos, cambiarProfesional);
 turnosRouter.post("/", ...gestionarTurnos, crear);
+
+// Reenviar el aviso de "confirmado" a un lote de turnos por venir. Lo usa
+// `scripts/avisar-turnos.mjs` desde el VPS; el porqué está en el controlador.
+turnosRouter.post("/avisar-pendientes", ...gestionarTurnos, avisarPendientes);
 
 // La sesion siguiente de un tratamiento de varias. Va como POST sobre el turno
 // anterior y no como un alta suelta porque de ahi sale todo: la clienta, el

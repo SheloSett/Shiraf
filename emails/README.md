@@ -87,6 +87,20 @@ reclamó juntos —"no llegan mails ni a mí ni a las profesionales"—:
 "Marcar realizado" no avisa nada a propósito: es una anotación interna que pasa
 después de que la clienta ya estuvo en el centro.
 
+## Reenviar los avisos en lote, desde el VPS
+
+Para cuando un canal estuvo caído o apagado y quedaron turnos cargados sin
+aviso —pasó el 9/9/2026 al encender el WhatsApp—. El comando entra al panel
+con una cuenta del centro y le pide a la app que mande; no redacta nada por su
+cuenta. Primero **siempre** con `--listar`, que muestra sin mandar:
+
+    docker exec -e SHIRAF_MAIL=duena@mail.com -e SHIRAF_PASS='la clave'       shiraf-app node scripts/avisar-turnos.mjs --desde 2026-09-08 --listar
+
+Después, el mismo comando con `--whatsapp`, `--mail` o los dos en lugar de
+`--listar`. Sólo entran los confirmados y por venir. Las opciones están en la
+cabecera de [`scripts/avisar-turnos.mjs`](../scripts/avisar-turnos.mjs); el
+endpoint es `POST /api/turnos/avisar-pendientes`.
+
 ## WhatsApp: por qué no sale solo
 
 El aviso no se manda: se **abre WhatsApp con el mensaje ya escrito** y alguien

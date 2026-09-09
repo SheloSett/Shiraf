@@ -270,8 +270,18 @@ export function NewAppointmentDialog({
       ]);
       // El toast pelado no decía si el mail salió; ahora lo dice en la bajada.
       // toast.success("Turno cargado y confirmado.");
+      // 9/9/2026: con el WhatsApp encendido, la bajada cuenta los dos canales.
+      // Antes: description: mail.sent ? "Le avisamos por mail." : `Por mail no salió: ${mail.reason}`
+      const porMail = mail.sent ? "Le avisamos por mail." : `Por mail no salió: ${mail.reason}`;
+      const wa = "whatsapp" in mail ? mail.whatsapp : undefined;
+      const porWhatsapp =
+        wa && !wa.sent && !wa.reason.includes("no está configurado")
+          ? ` Por WhatsApp no salió: ${wa.reason}`
+          : wa?.sent
+            ? " Y por WhatsApp."
+            : "";
       toast.success("Turno cargado y confirmado.", {
-        description: mail.sent ? "Le avisamos por mail." : `Por mail no salió: ${mail.reason}`,
+        description: porMail + porWhatsapp,
       });
       reset();
       onOpenChange(false);
