@@ -308,10 +308,22 @@ services:
     #    sesión de WhatsApp que se desvincula sola hay que volver a escanearla
     #    desde el teléfono del centro. Subirla es una decisión, no un arranque.
     #
+    # 🔴 ACÁ DECÍA v2.2.3 Y NO CONECTABA NUNCA (9/9/2026).
+    #
+    #    Esa versión trae clavada la versión de cliente `2.3000.1015901307`, que
+    #    está rota: Baileys entra en un **bucle infinito de reconexión** —un
+    #    "Browser: / Baileys version: / Group Ignore:" cada 3 segundos, sin un
+    #    solo error— y `/instance/connect` devuelve siempre `{"count":0}`, o sea
+    #    que el QR no se genera nunca. Desde afuera parece que no pasa nada.
+    #
+    #    Es el issue 2430 del repo de Evolution, arreglado en la v2.3.7. El
+    #    síntoma es idéntico con el manager y con la API, así que si algún día
+    #    reaparece, mirar la versión ANTES que la red o el firewall.
+    #
     #    Si esta imagen no baja, el proyecto se movió de organización más de una
     #    vez y el nombre viejo es `atendai/evolution-api`. Verificar contra el
     #    repo antes de cambiarla.
-    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.2.3}
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
     container_name: shiraf-evolution
     profiles: ["whatsapp"]
     restart: unless-stopped
@@ -360,6 +372,24 @@ services:
       CACHE_REDIS_SAVE_INSTANCES: "false"
       CACHE_LOCAL_ENABLED: "false"
 
+      # La versión de cliente con la que Baileys se presenta ante WhatsApp.
+      #
+      # Va explícita y no se deja la que trae la imagen: es exactamente el dato
+      # que rompió el primer intento (ver el comentario de `image`). Una versión
+      # que WhatsApp no acepta no da error — da un bucle de reconexión mudo.
+      #
+      # Si algún día vuelve a pasar, acá es donde se toca, y el valor nuevo sale
+      # de los issues del repo de Evolution, no de inventarlo.
+      CONFIG_SESSION_PHONE_VERSION: ${EVOLUTION_PHONE_VERSION:-2.3000.1020885143}
+
+      # Por defecto ERROR, que es lo justo para el día a día.
+      #
+      # ⚠️ Pero para diagnosticar un problema de conexión ERROR es DEMASIADO
+      # callado: el bucle de reconexión del 9/9/2026 no emitía un solo error, así
+      # que los logs se veían perfectos mientras nada funcionaba. Si algo no
+      # conecta, lo primero es subirlo:
+      #
+      #     EVOLUTION_LOG_LEVEL=ERROR,WARN,INFO,LOG
       LOG_LEVEL: ${EVOLUTION_LOG_LEVEL:-ERROR}
       DEL_INSTANCE: "false"
 
