@@ -810,7 +810,27 @@ export function toWhatsappNumber(raw: string | null | undefined): string | null 
 
   // Sin código de país: el 0 de larga distancia y el 15 de celular no viajan al
   // formato internacional, así que se descartan antes de anteponer el 549.
-  const local = digits.replace(/^0/, "").replace(/^(\d{2,4})15/, "$1");
+  //   const local = digits.replace(/^0/, "").replace(/^(\d{2,4})15/, "$1");
+  // ↑ Esto cubría "11 15 3385 2327" pero no "15 3385 2327" pelado, que es como
+  //   la gente de Buenos Aires dicta su celular: sin el 11, porque nunca lo
+  //   marca. Salía 549 15 3385 2327, un número que no existe, y el WhatsApp
+  //   se perdía sin error (9/9/2026, dos clientas sin cuenta cargadas así).
+  //   Ningún código de área argentino empieza con 15, así que diez dígitos
+  //   que arrancan con 15 son siempre 15 + ocho de abonado del 11.
+  //
+  //   Y el recorte viejo tenía otro agujero, visto al probar esto: un número
+  //   de diez dígitos —área más abonado, ya completo— no tiene ningún 15 que
+  //   sacar, pero el regex igual lo buscaba y a "341 555 1234" le comía el
+  //   "15" de adentro, dejando ocho dígitos y ningún número. Un 15 sólo puede
+  //   estar de más cuando sobran dígitos, así que sólo se recorta con más de
+  //   diez.
+  const sinCero = digits.replace(/^0/, "");
+  const local =
+    sinCero.length === 10 && sinCero.startsWith("15")
+      ? `11${sinCero.slice(2)}`
+      : sinCero.length > 10
+        ? sinCero.replace(/^(\d{2,4})15/, "$1")
+        : sinCero;
   if (local.length >= 10) return `549${local}`;
 
   return null;
