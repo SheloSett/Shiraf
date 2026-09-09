@@ -192,6 +192,25 @@ function whatPhrase(appointment: NotifiableAppointment): string | null {
 }
 
 /**
+ * Los datos del centro que necesitan los mensajes, como están HOY en el panel.
+ *
+ * Es opcional en todas las funciones que lo reciben, y sin él caen a
+ * `contact.ts` — el mismo patrón que `buildWhatsappUrl({ numero })` de ese
+ * archivo, y por el mismo motivo: los llamados del navegador (el botón «Avisar»
+ * del panel) no tienen a mano el contenido del sitio y siguen andando igual,
+ * mientras que el servidor, que sí puede leerlo, pasa lo que está guardado.
+ *
+ * Los lee `datosDelCentro()` en `src/server/services/datos-centro.service.ts`,
+ * donde está explicado por qué hacía falta.
+ */
+export type DatosDelCentroParaMensaje = {
+  /** "Vuelta de Obligado 2443, Oficina 302, Buenos Aires", ya armado. */
+  lugar?: string;
+  /** El teléfono como se lee. Lo usa la firma del WhatsApp. */
+  telefonoVisible?: string;
+};
+
+/**
  * El aviso que corresponde a un evento, ya redactado.
  *
  * Los tres primeros hablan de vos a la clienta; "new-request" es interno y va
@@ -201,12 +220,13 @@ function whatPhrase(appointment: NotifiableAppointment): string | null {
 export function buildAppointmentMessage(
   event: AppointmentEvent,
   appointment: NotifiableAppointment,
+  centro?: DatosDelCentroParaMensaje,
 ): AppointmentMessage {
   const who = firstName(appointment.clientName);
   const when = whenPhrase(appointment.startsAt);
   const what = whatPhrase(appointment);
   const sesion = sessionPhrase(appointment);
-  const place = `${CONTACT.address}, ${CONTACT.city}`;
+  const place = centro?.lugar?.trim() || `${CONTACT.address}, ${CONTACT.city}`;
 
   /*
    * Lo que hay que aclarar la PRIMERA vez de un tratamiento de varias sesiones,
@@ -741,6 +761,41 @@ export function buildProfessionalDayDigest(
       `Tu agenda: ${CONTACT.siteUrl}/admin/mi-agenda`,
     ],
   };
+}
+
+/**
+ * El cierre de los avisos que salen por WhatsApp a una clienta.
+ *
+ * ── POR QUÉ EXISTE ────────────────────────────────────────────────────────
+ *
+ * Porque los avisos automáticos salen de un **chip aparte que no lee nadie**.
+ * Sin esta línea, una clienta que conteste "gracias, ahí voy" —o peor, "no puedo
+ * ir, cancelame"— le escribe a un teléfono guardado en un cajón. Del lado de
+ * ella queda como que el centro la ignoró; del lado del centro, como una clienta
+ * que no vino y no avisó.
+ *
+ * Es el precio de mandar desde un número que no es el de siempre (ver
+ * `docs/whatsapp-automatico.md` §6-D), y esta línea es lo único que lo paga.
+ * Pedido por el centro el 9/9/2026.
+ *
+ * ── DÓNDE VA Y DÓNDE NO ───────────────────────────────────────────────────
+ *
+ * Sólo en los avisos **a la clienta**, y sólo por **WhatsApp**:
+ *
+ *   · Al mail no se le agrega. La casilla del centro sí la lee alguien, así que
+ *     ahí responder es lo correcto y decirle que no lo haga sería absurdo.
+ *   · A los avisos internos tampoco: van al centro, que ya sabe.
+ *
+ * El número sale del panel, no de `contact.ts`. Es justamente el dato que puede
+ * cambiar sin que nadie toque el código, y mandar a una clienta a un número
+ * viejo es peor que no poner la línea.
+ */
+export function firmaDeWhatsapp(centro?: DatosDelCentroParaMensaje): string[] {
+  const telefono = centro?.telefonoVisible?.trim() || CONTACT.phoneDisplay;
+  return [
+    "",
+    `Este número solo envía avisos y no se lee. Si necesitás algo, escribinos al ${telefono}.`,
+  ];
 }
 
 export function toWhatsappNumber(raw: string | null | undefined): string | null {

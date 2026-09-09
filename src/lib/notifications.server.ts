@@ -11,7 +11,11 @@ import {
   toWhatsappNumber,
   type NotifiableAppointment,
 } from "@/lib/notifications";
+import { firmaDeWhatsapp } from "@/lib/notifications";
 import { PLANTILLAS } from "@/lib/whatsapp-plantillas";
+// Sólo el tipo: `import type` desaparece al compilar, así que esto NO arrastra
+// prisma al bundle del navegador. La función se importa dinámico, más abajo.
+import type { DatosDelCentro } from "@/server/services/datos-centro.service";
 
 /**
  * El envío de los mails de turnos. **Sólo servidor.**
@@ -130,7 +134,7 @@ function escapeHtml(value: string): string {
  * Las líneas vacías que `buildAppointmentMessage` usa para separar párrafos se
  * descartan: acá la separación la da el margen del <p>, no un renglón en blanco.
  */
-function renderEmailHtml(message: AppointmentMessage): string {
+function renderEmailHtml(message: AppointmentMessage, centro?: DatosDelCentro): string {
   const paragraphs = message.lines
     .filter((line) => line.trim() !== "")
     .map(
@@ -164,8 +168,8 @@ function renderEmailHtml(message: AppointmentMessage): string {
             </tr>
             <tr>
               <td align="center" style="padding:24px 8px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.6;color:${PALETTE.muted}">
-                ${escapeHtml(CONTACT.address)}, ${escapeHtml(CONTACT.city)}<br />
-                ${escapeHtml(CONTACT.phoneDisplay)}
+                ${escapeHtml(centro?.lugar ?? `${CONTACT.address}, ${CONTACT.city}`)}<br />
+                ${escapeHtml(centro?.telefonoVisible ?? CONTACT.phoneDisplay)}
               </td>
             </tr>
           </table>
@@ -232,6 +236,28 @@ async function sendEmail(input: {
   const { enviarMail } = await import("@/server/services/email.service");
   const envio = await enviarMail(input);
   return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
+}
+
+/**
+ * Los datos del centro, y si no se pueden leer, los de `contact.ts`.
+ *
+ * El import va adentro —igual que el de prisma y el de email.service— porque
+ * `datos-centro.service` importa prisma de nivel superior, y este archivo se
+ * compila también para el navegador.
+ *
+ * El try/catch es el segundo cinturón: el servicio ya se traga sus propios
+ * errores y devuelve el respaldo. Está igual porque acá el costo de equivocarse
+ * es que un turno confirmado se quede sin aviso por un dato de pie de página, y
+ * eso no puede pasar ni aunque el módulo entero falle al cargar.
+ */
+async function datosDelCentroSeguro(): Promise<DatosDelCentro | undefined> {
+  try {
+    const { datosDelCentro } = await import("@/server/services/datos-centro.service");
+    return await datosDelCentro();
+  } catch (error) {
+    console.error("[aviso] No se pudieron leer los datos del centro:", error);
+    return undefined;
+  }
 }
 
 /**
@@ -411,16 +437,27 @@ export async function deliverAppointmentEmail(
     return { sent: false, reason: "Esta clienta no tiene mail cargado." };
   }
 
-  const message = buildAppointmentMessage(event, {
-    ...datos.notifiable,
-    actorName: actor?.profile?.full_name ?? null,
-  });
+  // La dirección y el teléfono como están HOY en el panel, no como quedaron
+  // escritos en contact.ts. Ver `datos-centro.service.ts`: hasta el 9/9/2026
+  // estos mails firmaban con los del código, así que el día que la dueña
+  // cambiara el número o se mudara el local, el sitio iba a decir una cosa y los
+  // avisos otra.
+  const centro = await datosDelCentroSeguro();
+
+  const message = buildAppointmentMessage(
+    event,
+    {
+      ...datos.notifiable,
+      actorName: actor?.profile?.full_name ?? null,
+    },
+    centro,
+  );
 
   return sendEmail({
     to: recipient,
     subject: message.subject,
     text: message.lines.join("\n"),
-    html: renderEmailHtml(message),
+    html: renderEmailHtml(message, centro),
   });
 }
 
@@ -504,7 +541,7 @@ export async function deliverAppointmentToProfessional(
     to: datos.professionalEmail,
     subject: message.subject,
     text: message.lines.join("\n"),
-    html: renderEmailHtml(message),
+    html: renderEmailHtml(message, await datosDelCentroSeguro()),
   });
 
   /*
@@ -542,7 +579,7 @@ export async function deliverProfessionalDigest(input: {
     to: input.email,
     subject: message.subject,
     text: message.lines.join("\n"),
-    html: renderEmailHtml(message),
+    html: renderEmailHtml(message, await datosDelCentroSeguro()),
   });
 }
 
@@ -616,7 +653,14 @@ export async function deliverAppointmentWhatsapp(
   const datos = await datosDelAviso(appointmentId);
   if (!datos) return { sent: false, reason: "El turno no existe." };
 
-  const crudo = TO_CLIENT.includes(event) ? datos.notifiable.clientPhone : CONTACT.whatsappNumber;
+  const centro = await datosDelCentroSeguro();
+
+  // El número del centro sale del panel y no de `contact.ts` (9/9/2026). Es el
+  // mismo arreglo que el del pie del mail: `destinatarios.service.ts` ya había
+  // dejado anotado que el WhatsApp interno seguía yendo a un número fijo.
+  const crudo = TO_CLIENT.includes(event)
+    ? datos.notifiable.clientPhone
+    : (centro?.whatsappNumero ?? CONTACT.whatsappNumber);
 
   // La misma normalización que usa el enlace `wa.me` del panel: agrega el 9 de
   // los celulares argentinos y descarta el 0 y el 15, que no viajan al formato
@@ -641,8 +685,24 @@ export async function deliverAppointmentWhatsapp(
 
     // El mismo texto que el mail, sin segunda redacción. Es la ventaja de que
     // este canal acepte texto libre; ver el comentario de evolution.service.ts.
-    const { lines } = buildAppointmentMessage(event, datos.notifiable);
-    const envio = await enviarPorEvolution({ to: numero, texto: lines.join("\n") });
+    const { lines } = buildAppointmentMessage(event, datos.notifiable, centro);
+
+    /*
+     * Y al final, sólo para la clienta, la aclaración de que ese número no se
+     * lee (9/9/2026, pedido por el centro).
+     *
+     * Va acá y no adentro de `buildAppointmentMessage` porque no es parte del
+     * aviso: es una particularidad de ESTE transporte. El mail no la lleva
+     * —esa casilla sí la mira alguien— y por Meta tampoco se podría, porque el
+     * texto de las plantillas lo arma Meta y está aprobado palabra por palabra.
+     *
+     * A los avisos internos no se les agrega: van al centro, que ya sabe.
+     */
+    const texto = [...lines, ...(TO_CLIENT.includes(event) ? firmaDeWhatsapp(centro) : [])].join(
+      "\n",
+    );
+
+    const envio = await enviarPorEvolution({ to: numero, texto });
 
     return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
   }
@@ -687,6 +747,6 @@ export async function deliverOverdueDigest(
     to: await mailsDelCentro(),
     subject: message.subject,
     text: message.lines.join("\n"),
-    html: renderEmailHtml(message),
+    html: renderEmailHtml(message, await datosDelCentroSeguro()),
   });
 }
