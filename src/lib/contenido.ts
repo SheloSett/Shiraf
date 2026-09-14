@@ -349,8 +349,41 @@ export const PAGINAS: Pagina[] = [
         type: "text",
         default: CONTACT.tiktokUrl,
       },
-      { key: "direccion", label: "Dirección", type: "text", default: CONTACT.address },
+      {
+        key: "direccion",
+        label: "Dirección que se muestra en el sitio",
+        type: "text",
+        default: CONTACT.address,
+        ayuda:
+          "La que ve cualquiera que entre a la web, sin haber reservado nada. Podés poner sólo el barrio si no querés la dirección exacta a la vista.",
+      },
       { key: "ciudad", label: "Ciudad", type: "text", default: CONTACT.city },
+      /*
+       * La dirección de verdad, la que necesita quien SÍ tiene turno.
+       *
+       * ── POR QUÉ SON DOS CAMPOS Y NO UNO ───────────────────────────────────
+       *
+       * 14/9/2026. El centro no quiere la dirección exacta a la vista en el
+       * sitio —puso "Barrio Belgrano"— y está bien: quien entra a mirar
+       * tratamientos no necesita saber el piso y la oficina.
+       *
+       * Pero a la clienta que reservó hay que decirle a dónde ir, y hasta hoy
+       * los avisos usaban el MISMO campo que el sitio. O sea que esconder la
+       * dirección en la web dejaba a las clientas con turno sin saber la
+       * dirección: el mail decía "Te esperamos en Barrio Belgrano".
+       *
+       * No se puede resolver con un solo campo porque son dos públicos
+       * distintos. Éste no aparece en ninguna pantalla del sitio: lo leen sólo
+       * el mail y el WhatsApp de los avisos de turno.
+       */
+      {
+        key: "direccionExacta",
+        label: "Dirección completa, para los avisos de turno",
+        type: "text",
+        default: CONTACT.address,
+        ayuda:
+          "Con piso y oficina. NO se muestra en el sitio: va sólo en el mail y el WhatsApp de quien ya tiene turno, que necesita saber a dónde ir.",
+      },
       {
         key: "mapsUrl",
         label: "Enlace de Google Maps",

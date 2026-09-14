@@ -37,9 +37,18 @@ export type DatosDelCentro = {
   whatsappNumero: string;
   /** El teléfono como se lee, para mostrarlo escrito. */
   telefonoVisible: string;
+  /** La de vitrina: la que el sitio muestra a cualquiera. Puede ser el barrio. */
   direccion: string;
   ciudad: string;
-  /** "Vuelta de Obligado 2443, Oficina 302, Buenos Aires", ya armado. */
+  /**
+   * La dirección completa con la ciudad, ya armada — "Vuelta de Obligado 2443,
+   * Oficina 302, Buenos Aires".
+   *
+   * ⚠️ Sale de `direccionExacta`, **no** de `direccion`. Son dos campos porque
+   * son dos públicos: el sitio puede decir sólo el barrio, pero a quien ya tiene
+   * turno hay que decirle a dónde ir. Ver el comentario del campo en
+   * `contenido.ts`.
+   */
   lugar: string;
 };
 
@@ -95,11 +104,25 @@ export async function datosDelCentro(): Promise<DatosDelCentro> {
   const direccion = valor("direccion", respaldo.direccion);
   const ciudad = valor("ciudad", respaldo.ciudad);
 
+  /*
+   * 🔴 El `lugar` de los avisos sale de `direccionExacta` y NO de `direccion`.
+   *
+   * Es el bug del 14/9/2026 y conviene que quede dicho acá, que es donde alguien
+   * va a venir a "simplificar" esto: el centro escondió la dirección del sitio
+   * —dejó sólo el barrio— y como los avisos leían el mismo campo, a las clientas
+   * con turno les llegaba "Te esperamos en Barrio Belgrano". Sin el piso ni la
+   * oficina.
+   *
+   * Si el campo está vacío cae al de `contact.ts`, que es la dirección real, y
+   * NO a `direccion`: caer ahí sería reponer el mismo problema en silencio.
+   */
+  const exacta = valor("direccionExacta", respaldo.direccion);
+
   return {
     whatsappNumero: valor("whatsappNumero", respaldo.whatsappNumero),
     telefonoVisible: valor("telefonoVisible", respaldo.telefonoVisible),
     direccion,
     ciudad,
-    lugar: `${direccion}, ${ciudad}`,
+    lugar: `${exacta}, ${ciudad}`,
   };
 }
