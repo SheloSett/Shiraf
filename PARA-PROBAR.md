@@ -65,6 +65,17 @@ banean el número. El porqué completo está en `evolution.service.ts` y en
 - **Qué pasa cuando el teléfono del chip se queda sin batería o sin señal.** Es
   un dispositivo vinculado, así que en teoría aguanta un rato solo, pero no se
   midió cuánto.
+  → **Se midió sin querer el 14/9/2026:** el teléfono del chip se apagó el
+  viernes y el lunes a la mañana Evolution contestaba
+  `400 {"message":["Error: Connection Closed"]}` a cada envío. O sea: **dos
+  días y medio apagado alcanzan para que la sesión se cierre**, y no se
+  levanta sola. El mail salió igual. Qué hacer: prender el teléfono con
+  internet, `POST /instance/restart/<instancia>` y mirar
+  `GET /instance/connectionState/<instancia>` hasta que diga `"open"`; si no
+  vuelve, QR de nuevo por el manager. Los avisos que fallaron mientras tanto
+  se reenvían con `scripts/avisar-turnos.mjs --whatsapp`. Conclusión: el
+  teléfono del chip **no se apaga**; si se apaga, el lunes hay que
+  reconectar antes de cargar turnos.
 
 ### 🔴 Lo que salió mal al encenderlo
 
