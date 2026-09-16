@@ -134,7 +134,10 @@ function escapeHtml(value: string): string {
  * Las líneas vacías que `buildAppointmentMessage` usa para separar párrafos se
  * descartan: acá la separación la da el margen del <p>, no un renglón en blanco.
  */
-function renderEmailHtml(message: AppointmentMessage, centro?: DatosDelCentro): string {
+// Exportada desde el 16/9/2026: el vigilante de WhatsApp manda su aviso al
+// centro con el mismo diseño que los avisos de turno.
+// function renderEmailHtml(message: AppointmentMessage, centro?: DatosDelCentro): string {
+export function renderEmailHtml(message: AppointmentMessage, centro?: DatosDelCentro): string {
   const paragraphs = message.lines
     .filter((line) => line.trim() !== "")
     .map(

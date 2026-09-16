@@ -76,6 +76,13 @@ banean el número. El porqué completo está en `evolution.service.ts` y en
   se reenvían con `scripts/avisar-turnos.mjs --whatsapp`. Conclusión: el
   teléfono del chip **no se apaga**; si se apaga, el lunes hay que
   reconectar antes de cargar turnos.
+  → **16/9/2026, segunda vez:** apagado un rato, la sesión quedó en `close`
+  pero viva, y alcanzó con `POST /instance/restart`, sin QR. Desde ese día
+  hay un **vigilante** en la app (`whatsapp-vigilante.service.ts`): cada diez
+  minutos pregunta el estado, reinicia la instancia si no está `open`, y si
+  después del reinicio sigue cerrada manda UN mail al centro diciendo que hay
+  que vincular el chip de nuevo. En el log: `docker logs shiraf-app 2>&1 |
+  grep "\[whatsapp\]"`.
 
 ### 🔴 Lo que salió mal al encenderlo
 

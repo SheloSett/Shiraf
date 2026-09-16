@@ -181,3 +181,80 @@ export async function enviarPorEvolution(mensaje: { to: string; texto: string })
     };
   }
 }
+
+// ── La sesión: preguntar y reiniciar ────────────────────────────────────────
+//
+// Las dos llamadas que usa el vigilante (`whatsapp-vigilante.service.ts`,
+// 16/9/2026). Son las mismas que se corrían a mano desde el VPS cada vez que
+// el teléfono del chip se apagaba:
+//
+//   GET  /instance/connectionState/<instancia>  → { instance: { state } }
+//   POST /instance/restart/<instancia>
+//
+// `restart` es POST y no PUT: con PUT da 404 (ya costó tiempo una vez, ver
+// TODO.md).
+
+export type EstadoDeSesion = "open" | "close" | "connecting";
+
+/**
+ * En qué estado está la sesión del chip. `null` si no se pudo preguntar: sin
+ * configurar, Evolution apagado, o una respuesta que no se entiende. El motivo
+ * queda en el log; quien llama sólo necesita saber que no hay estado.
+ */
+export async function estadoDeEvolution(): Promise<EstadoDeSesion | null> {
+  const url = variable("EVOLUTION_URL");
+  const apiKey = variable("EVOLUTION_API_KEY");
+  const instancia = variable("EVOLUTION_INSTANCIA");
+  if (!url || !apiKey || !instancia) return null;
+
+  try {
+    const respuesta = await fetch(
+      `${url.replace(/\/+$/, "")}/instance/connectionState/${encodeURIComponent(instancia)}`,
+      { headers: { apikey: apiKey }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (!respuesta.ok) {
+      console.error(`[whatsapp] Evolution respondió ${respuesta.status} al preguntar el estado.`);
+      return null;
+    }
+    const cuerpo = (await respuesta.json()) as { instance?: { state?: string } };
+    const estado = cuerpo.instance?.state;
+    if (estado === "open" || estado === "close" || estado === "connecting") return estado;
+    console.error(`[whatsapp] Estado desconocido de la sesión: ${JSON.stringify(cuerpo)}`);
+    return null;
+  } catch (error) {
+    console.error(
+      `[whatsapp] No se pudo preguntar el estado: ${error instanceof Error ? error.message : error}`,
+    );
+    return null;
+  }
+}
+
+/** Reinicia la instancia. Es lo que reabre una sesión cerrada pero todavía válida. */
+export async function reiniciarEvolution(): Promise<Envio> {
+  const url = variable("EVOLUTION_URL");
+  const apiKey = variable("EVOLUTION_API_KEY");
+  const instancia = variable("EVOLUTION_INSTANCIA");
+  if (!url || !apiKey || !instancia) {
+    return { ok: false, motivo: "El envío por Evolution todavía no está configurado." };
+  }
+
+  try {
+    const respuesta = await fetch(
+      `${url.replace(/\/+$/, "")}/instance/restart/${encodeURIComponent(instancia)}`,
+      { method: "POST", headers: { apikey: apiKey }, signal: AbortSignal.timeout(30_000) },
+    );
+    if (!respuesta.ok) {
+      const detalle = await respuesta.text().catch(() => "");
+      return {
+        ok: false,
+        motivo: `Evolution respondió ${respuesta.status}: ${detalle.slice(0, 300)}`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      motivo: error instanceof Error ? `No se pudo llamar a Evolution: ${error.message}` : "Falló.",
+    };
+  }
+}

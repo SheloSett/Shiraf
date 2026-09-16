@@ -41,6 +41,14 @@ void import("./server/services/reminders.service")
   .then((m) => m.iniciarRecordatorios())
   .catch((error: unknown) => console.error("[recordatorios] No se pudieron programar:", error));
 
+// El vigilante de la sesión de WhatsApp (16/9/2026): cada diez minutos mira
+// si el chip sigue conectado, reinicia la instancia si se cerró y avisa al
+// centro por mail si no vuelve. Mismo trato que los recordatorios: import
+// dinámico y un `.catch` para que no tumbe el arranque.
+void import("./server/services/whatsapp-vigilante.service")
+  .then((m) => m.iniciarVigilanteDeWhatsapp())
+  .catch((error: unknown) => console.error("[whatsapp] No se pudo programar el vigilante:", error));
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {

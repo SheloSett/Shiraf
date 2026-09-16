@@ -655,6 +655,29 @@ export type TurnoVencido = {
  * Se repite todos los días mientras el turno siga abierto. Es a propósito: es
  * una lista de tareas, y deja de aparecer cuando alguien la resuelve.
  */
+/**
+ * El aviso al centro de que el WhatsApp de avisos se desconectó y no volvió
+ * solo (16/9/2026). Lo manda el vigilante, una vez por caída. Va con el resto
+ * de los textos por la regla de siempre: todo lo que se le dice a alguien está
+ * en este archivo.
+ */
+export function buildWhatsappDownNotice(): AppointmentMessage {
+  return {
+    subject: "El WhatsApp de avisos se desconectó",
+    lines: [
+      "El teléfono del chip de avisos perdió la sesión de WhatsApp y el sistema no pudo volver a conectarla solo.",
+      "",
+      "Mientras tanto, los avisos a las clientas siguen saliendo por mail. Por WhatsApp no sale ninguno.",
+      "",
+      "Qué hacer:",
+      "1. Fijate que el teléfono del chip esté prendido, cargado y con internet. Si estaba apagado, prendelo y esperá diez minutos: el sistema reintenta solo.",
+      "2. Si pasados esos diez minutos no llega otro mail diciendo que volvió, hay que vincular el chip de nuevo escaneando el QR, como la primera vez.",
+      "",
+      "Los WhatsApp que no salieron mientras estuvo caído se pueden reenviar después, con el comando del VPS.",
+    ],
+  };
+}
+
 export function buildOverdueDigest(turnos: TurnoVencido[], total: number): AppointmentMessage {
   const uno = total === 1;
 
