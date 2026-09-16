@@ -37,6 +37,8 @@ function TeamAccountPage() {
   const queryClient = useQueryClient();
   const { isAdmin, permissions } = useAccess();
   const [fullName, setFullName] = useState("");
+  /** El teléfono al que llegan los avisos del centro por WhatsApp. */
+  const [phone, setPhone] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordAgain, setNewPasswordAgain] = useState("");
@@ -54,20 +56,25 @@ function TeamAccountPage() {
 
   useEffect(() => {
     if (profile.data?.full_name) setFullName(profile.data.full_name);
+    // El teléfono se sincroniza aunque venga vacío, al revés que el nombre: el
+    // caso normal HOY es que esté vacío, y saltearlo dejaría el campo mostrando
+    // lo que se estaba tipeando cuando llega la respuesta.
+    setPhone(profile.data?.phone ?? "");
   }, [profile.data]);
 
   const saveName = useMutation({
-    // Se mandan también el teléfono y la nota como están: el endpoint guarda la
-    // ficha entera, y omitirlos los borraría.
+    // La nota se manda como está: el endpoint guarda la ficha entera, y omitirla
+    // la borraría. El teléfono ya no —16/9/2026—, porque ahora es un campo de
+    // esta pantalla y no un valor que pasa de largo.
     mutationFn: () =>
       apiPut("/api/mi-cuenta", {
         full_name: fullName,
-        phone: profile.data?.phone ?? "",
+        phone,
         notes: profile.data?.notes ?? "",
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-team-profile"] });
-      toast.success("Nombre actualizado.");
+      toast.success("Datos actualizados.");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -115,6 +122,30 @@ function TeamAccountPage() {
             <Input id="email" value={profile.data?.email ?? ""} disabled />
             <p className="text-xs text-muted-foreground">
               Con este mail ingresás. Para cambiarlo, pedíselo a la dueña.
+            </p>
+          </div>
+          {/*
+            El teléfono, 16/9/2026.
+
+            Estaba en la ficha desde siempre pero esta pantalla lo reenviaba sin
+            mostrarlo, así que no había forma de cargarlo. Para una empleada daba
+            igual —se lo carga la dueña desde Accesos— pero para una DUEÑA no:
+            ese guardado rechaza a las administradoras a propósito, y entonces no
+            le quedaba ningún lugar. Resultado: los avisos del centro por
+            WhatsApp llegaban sólo al número del centro y a ninguna de las dos.
+          */}
+          <div className="space-y-2">
+            <Label htmlFor="phone">Teléfono</Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="11 5555-5555"
+            />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              A este número te llegan por WhatsApp los avisos del centro: cada turno que entra, y
+              los que una clienta cancela o mueve. Dejalo vacío si no los querés.
             </p>
           </div>
           <div className="sm:col-span-2">
