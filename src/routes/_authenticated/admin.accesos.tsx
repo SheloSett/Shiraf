@@ -263,8 +263,10 @@ function AdminTeam() {
   });
 
   /**
-   * Si le llegan por mail los avisos del centro: entró una reserva, una
-   * clienta canceló o se movió el turno, el resumen de vencidos.
+   * Si le llegan los avisos del centro: entró una reserva, una clienta
+   * canceló o se movió el turno, el resumen de vencidos. Por mail y, desde el
+   * 16/9/2026, también por WhatsApp al teléfono de su cuenta —una sola casilla
+   * para los dos canales, porque es una sola decisión—.
    *
    * 8/9/2026 — hasta hoy esos avisos iban a una sola casilla fija, el Gmail
    * del centro, y a ninguna persona. La dueña le dio acceso a su secretaria y
@@ -506,11 +508,13 @@ function AdminTeam() {
                 <span className="min-w-0">
                   <span className="flex items-center gap-2 text-sm text-foreground">
                     <MailCheck className="h-4 w-4 shrink-0 text-gold" />
-                    Recibe los avisos del centro por mail
+                    {/* Decía "por mail"; desde el 16/9/2026 vale para los dos. */}
+                    Recibe los avisos del centro por mail y WhatsApp
                   </span>
                   <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                     Cada vez que una clienta reserva, cancela o se mueve el turno, y el resumen
-                    diario de turnos vencidos. A vos te llegan siempre.
+                    diario de turnos vencidos. El WhatsApp va al teléfono de su cuenta. A vos te
+                    llegan siempre.
                     {!member.is_active && " Una cuenta dada de baja no recibe nada."}
                   </span>
                 </span>

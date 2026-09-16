@@ -750,31 +750,53 @@ export async function deliverAppointmentWhatsapp(
   // El número del centro sale del panel y no de `contact.ts` (9/9/2026). Es el
   // mismo arreglo que el del pie del mail: `destinatarios.service.ts` ya había
   // dejado anotado que el WhatsApp interno seguía yendo a un número fijo.
-  const crudo = TO_CLIENT.includes(event)
-    ? datos.notifiable.clientPhone
-    : (centro?.whatsappNumero ?? CONTACT.whatsappNumber);
+  //
+  // 16/9/2026: el aviso interno ya no va a UN número sino a la lista de
+  // `telefonosDelCentro` —el del centro más las dueñas y quien tenga la
+  // casilla de Accesos—, con la misma regla que los mails. A la clienta le
+  // sigue llegando a ella sola; lo que cambió es sólo el otro lado.
+  //
+  //   const crudo = TO_CLIENT.includes(event)
+  //     ? datos.notifiable.clientPhone
+  //     : (centro?.whatsappNumero ?? CONTACT.whatsappNumber);
+  //   const numero = toWhatsappNumber(crudo);
+  //   if (!numero) { return { sent: false, reason: … }; }
+  const paraLaClienta = TO_CLIENT.includes(event);
+  let destinos: string[];
 
-  // La misma normalización que usa el enlace `wa.me` del panel: agrega el 9 de
-  // los celulares argentinos y descarta el 0 y el 15, que no viajan al formato
-  // internacional. Devuelve null cuando el número no da para nada confiable.
-  const numero = toWhatsappNumber(crudo);
+  if (paraLaClienta) {
+    // La misma normalización que usa el enlace `wa.me` del panel: agrega el 9 de
+    // los celulares argentinos y descarta el 0 y el 15, que no viajan al formato
+    // internacional. Devuelve null cuando el número no da para nada confiable.
+    const crudo = datos.notifiable.clientPhone;
+    const numero = toWhatsappNumber(crudo);
 
-  if (!numero) {
-    return {
-      sent: false,
-      reason: crudo
-        ? "El teléfono cargado no tiene forma de número argentino."
-        : "Esta clienta no tiene teléfono cargado.",
-    };
+    if (!numero) {
+      return {
+        sent: false,
+        reason: crudo
+          ? "El teléfono cargado no tiene forma de número argentino."
+          : "Esta clienta no tiene teléfono cargado.",
+      };
+    }
+    destinos = [numero];
+  } else {
+    const { telefonosDelCentro } = await import("@/server/services/destinatarios.service");
+    destinos = await telefonosDelCentro(centro?.whatsappNumero);
+    if (destinos.length === 0) {
+      return { sent: false, reason: "Nadie del centro tiene un teléfono cargado." };
+    }
   }
 
   // Por Evolution viaja el texto entero; por Meta, el nombre de una plantilla y
   // los valores de sus huecos. La diferencia está explicada en cada servicio; lo
   // que importa acá es que el destinatario y el reparto se resolvieron una sola
   // vez, arriba, y valen para los dos.
-  if (transporte === "evolution") {
-    const { enviarPorEvolution } = await import("@/server/services/evolution.service");
-
+  // El texto por Evolution se arma una sola vez por aviso, aunque salga a
+  // varios números: es el mismo para todos.
+  // Flecha y no `function`: a una declaración TypeScript no le conserva el
+  // `datos` ya verificado arriba, y a un cierre sí.
+  const textoDeEvolution = (): string => {
     // El mismo texto que el mail, sin segunda redacción. Es la ventaja de que
     // este canal acepte texto libre; ver el comentario de evolution.service.ts.
     const { lines } = buildAppointmentMessage(event, datos.notifiable, centro);
@@ -790,25 +812,46 @@ export async function deliverAppointmentWhatsapp(
      *
      * A los avisos internos no se les agrega: van al centro, que ya sabe.
      */
-    const texto = [...lines, ...(TO_CLIENT.includes(event) ? firmaDeWhatsapp(centro) : [])].join(
-      "\n",
-    );
+    // Antes el envío estaba acá mismo, un solo número:
+    //   const texto = [...lines, ...(TO_CLIENT.includes(event) ? firmaDeWhatsapp(centro) : [])].join("\n");
+    //   const envio = await enviarPorEvolution({ to: numero, texto });
+    //   return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
+    // y abajo el de Meta, igual. Los dos viven ahora en `mandarA`, arriba.
+    return [...lines, ...(paraLaClienta ? firmaDeWhatsapp(centro) : [])].join("\n");
+  };
 
-    const envio = await enviarPorEvolution({ to: numero, texto });
+  // Un envío por destino, EN SERIE y nunca en paralelo: para la clienta es uno
+  // solo, y para el centro son dos o tres seguidos por el mismo chip —justo la
+  // ráfaga que evolution.service.ts pide evitar—. El `delay` de cada envío los
+  // espacia. Sale bien si le llegó al menos a una persona; los que fallaron
+  // van juntos en el motivo, para que el log diga a quién no.
+  const mandarA = async (numero: string): Promise<DeliveryResult> => {
+    if (transporte === "evolution") {
+      const { enviarPorEvolution } = await import("@/server/services/evolution.service");
+      const envio = await enviarPorEvolution({ to: numero, texto: textoDeEvolution() });
+      return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
+    }
 
+    const { enviarWhatsapp } = await import("@/server/services/whatsapp.service");
+    const plantilla = PLANTILLAS[event];
+    const envio = await enviarWhatsapp({
+      to: numero,
+      plantilla: plantilla.nombre,
+      params: plantilla.params(datos.notifiable),
+    });
     return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
+  };
+
+  const fallas: string[] = [];
+  let alguno = false;
+  for (const numero of destinos) {
+    const r = await mandarA(numero);
+    if (r.sent) alguno = true;
+    else fallas.push(destinos.length > 1 ? `${numero}: ${r.reason}` : r.reason);
   }
 
-  const { enviarWhatsapp } = await import("@/server/services/whatsapp.service");
-
-  const plantilla = PLANTILLAS[event];
-  const envio = await enviarWhatsapp({
-    to: numero,
-    plantilla: plantilla.nombre,
-    params: plantilla.params(datos.notifiable),
-  });
-
-  return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
+  if (alguno) return { sent: true };
+  return { sent: false, reason: fallas.join(" · ") };
 }
 
 /**
