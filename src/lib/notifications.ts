@@ -14,9 +14,19 @@ import { TOLERANCIA_MINUTOS } from "@/lib/shiraf";
  * junta a su manera: WhatsApp con saltos de línea, el mail con párrafos. El
  * texto es el mismo.
  *
- * Sin emojis a propósito. El resto del sitio no usa ninguno, y un mensaje que
- * llega con caritas cuando la marca en todo lo demás es sobria se lee como
- * mandado por otra persona.
+ * ── SOBRE LOS EMOJIS ──────────────────────────────────────────────────────
+ *
+ * Acá decía "sin emojis a propósito", con el argumento de que el resto del
+ * sitio no usa ninguno y un mensaje con caritas se lee como mandado por otra
+ * persona. **Lo cambió la dueña el 24/9/2026**, que escribió ella misma el
+ * mensaje de reserva con ✨, 💚 y 🌿 y pidió que saliera así.
+ *
+ * Es su marca y su voz, así que manda ella. Pero el criterio viejo no era
+ * caprichoso y conviene no perderlo: los emojis quedaron **sólo en los dos
+ * mensajes de turno confirmado**, que son los alegres. Los de cancelación y
+ * reprogramación siguen sobrios — una carita arriba de "tuvimos que cancelar tu
+ * turno" no acompaña, y los avisos internos al centro son notificaciones de
+ * trabajo, no atención al público.
  */
 
 export type AppointmentEvent =
@@ -134,16 +144,29 @@ const TIMEZONE = "America/Argentina/Buenos_Aires";
 /**
  * La frase de la tolerancia, escrita una vez.
  *
- * Va en los dos mails que la clienta lee ANTES de venir —el del pedido y el de
- * la confirmación— y también en la pantalla de reserva. Que esté dicho de
+ * Va en los dos mensajes que la clienta lee ANTES de venir —el de la reserva y
+ * el de la confirmación— y también en la pantalla de reserva. Que esté dicho de
  * antemano y por escrito es lo que permite sostenerlo el día que alguien llega
  * media hora tarde: no es una regla nueva inventada en el momento.
  *
  * El número sale de `shiraf.ts`, donde viven las decisiones del negocio, y no
  * está escrito acá adentro: si el centro pasa a esperar 15 minutos, se cambia
- * en un solo lugar y la pantalla y el mail dicen lo mismo.
+ * en un solo lugar y la pantalla y el mensaje dicen lo mismo.
+ *
+ * 24/9/2026: la redacción la cambió la dueña junto con el resto del mensaje de
+ * reserva. Dice lo mismo que antes —cuántos minutos y qué pasa después— con las
+ * palabras que ella eligió.
  */
-const tolerancia = `Te esperamos hasta ${TOLERANCIA_MINUTOS} minutos; pasado ese rato el turno se libera.`;
+const tolerancia = `⏰ Te recomendamos llegar unos minutos antes para comenzar tu experiencia con tranquilidad. Contamos con una tolerancia de ${TOLERANCIA_MINUTOS} minutos: pasado ese tiempo, el turno podrá liberarse para mantener nuestra agenda organizada.`;
+
+/**
+ * El cierre de marca de los mensajes a la clienta. Lo escribió la dueña
+ * (24/9/2026).
+ *
+ * Va en los dos mensajes de turno confirmado y no en los otros: un "tu momento,
+ * tu espacio" debajo de "tuvimos que cancelar tu turno" se lee como burla.
+ */
+const firma = ["SHIRAF 🌿", "Estética & Bienestar", "✨ Tu momento. Tu espacio. Tu bienestar."];
 
 /** Primer nombre a secas: "Hola María" y no "Hola María Fernanda Gómez". */
 function firstName(fullName: string): string {
@@ -265,38 +288,57 @@ export function buildAppointmentMessage(
      *   `Recibimos tu pedido de turno ${when}.`,
      *   "Todavía no está confirmado: lo revisamos y te avisamos por este mismo medio.",
      */
+    /*
+     * Los dos mensajes de turno confirmado, con el texto que escribió la dueña
+     * el 24/9/2026.
+     *
+     * ── LO QUE SE LE AGREGÓ AL TEXTO QUE ELLA PASÓ ────────────────────────
+     *
+     * El que mandó decía "tu turno ya está reservado" y nada más: sin fecha,
+     * sin hora y sin tratamiento. Está bien como voz de marca, pero mandado así
+     * la clienta recibe una confirmación que no le dice cuándo tiene que venir.
+     * Los datos del turno se metieron adentro del texto suyo, sin tocarle las
+     * palabras.
+     *
+     * La dirección y la tolerancia venían escritas a mano en su mensaje. Acá
+     * salen del panel y de `shiraf.ts`, que es donde se cambian una sola vez;
+     * si algún día se mudan o pasan a esperar 15 minutos, esto se entera solo.
+     *
+     * ── SON DOS CASOS Y UN SOLO TEXTO ─────────────────────────────────────
+     *
+     * "requested" es reservar por el sitio —que desde el 6/9 confirma— y
+     * "confirmed" es el turno que carga o acepta el centro. Para la clienta los
+     * dos son el mismo hecho: su turno está. Lo único que cambia es el renglón
+     * del medio, porque "ya está reservado" suena raro cuando el turno se lo
+     * acaba de dar el centro por teléfono.
+     */
     case "requested":
-      return {
-        subject: "Tu turno en Shiraf quedó reservado",
-        lines: [
-          `Hola ${who}, te escribimos de Shiraf.`,
-          "",
-          `Tu turno ${when} quedó reservado y confirmado.`,
-          ...(what ? [what] : []),
-          ...(sesion ? [sesion] : []),
-          ...(avisoDeSerie ? [avisoDeSerie] : []),
-          "",
-          "No hace falta que hagas nada más. Si no vas a poder venir, avisanos.",
-          "",
-          `Te esperamos en ${place}.`,
-          tolerancia,
-        ],
-      };
-
     case "confirmed":
       return {
-        subject: "Tu turno en Shiraf quedó confirmado",
+        // El asunto va sin emojis, al revés que el cuerpo: los filtros de spam
+        // miran el asunto con más lupa que el texto, y este mail es justamente
+        // el que no puede terminar en la carpeta equivocada.
+        subject: "Tu experiencia en SHIRAF está confirmada",
         lines: [
-          `Hola ${who}, te escribimos de Shiraf.`,
+          "✨ Tu experiencia SHIRAF está confirmada ✨",
           "",
-          `Tu turno ${when} quedó confirmado.`,
+          `Hola ${who} 💚`,
+          "",
+          event === "requested"
+            ? `Tu turno ya está reservado: ${when}.`
+            : `Tu turno quedó confirmado: ${when}.`,
           ...(what ? [what] : []),
           ...(sesion ? [sesion] : []),
           ...(avisoDeSerie ? [avisoDeSerie] : []),
           "",
-          `Te esperamos en ${place}.`,
+          "En SHIRAF preparamos cada detalle para que tu visita sea mucho más que un tratamiento: un momento para desconectar, disfrutar y volver a vos.",
+          "",
+          `📍 ${place}`,
           tolerancia,
-          "Si no podés venir, avisanos y lo reprogramamos.",
+          "",
+          "Si por algún motivo no podés asistir, avisanos con anticipación y con gusto te ayudamos a reprogramar tu experiencia.",
+          "",
+          ...firma,
         ],
       };
 
