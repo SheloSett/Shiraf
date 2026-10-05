@@ -129,11 +129,27 @@ function AdminContenido() {
     return Array.isArray(valor) ? valor : [];
   }
 
+  /*
+   * Parte de lo que hay AHORA en el estado, y no de `itemsDe()`, que lee la
+   * foto de este renderizado. Para una tecla da lo mismo; para una foto no: la
+   * subida tarda, y cuando vuelve con la URL, lo que se haya escrito en la
+   * lista mientras tanto ya no está en la copia que tenía esta función al
+   * arrancar. Así quedaba:
+   *
+   *   const items = itemsDe(campo).map((item, i) =>
+   *     i === indice ? { ...item, [sub]: valor } : item,
+   *   );
+   *   escribir(campo, items);
+   */
   function escribirItem(campo: string, indice: number, sub: string, valor: string) {
-    const items = itemsDe(campo).map((item, i) =>
-      i === indice ? { ...item, [sub]: valor } : item,
-    );
-    escribir(campo, items);
+    setValores((previo) => {
+      const pagina = previo[paginaActiva] ?? {};
+      const guardados = pagina[campo];
+      const items = (Array.isArray(guardados) ? guardados : []).map((item, i) =>
+        i === indice ? { ...item, [sub]: valor } : item,
+      );
+      return { ...previo, [paginaActiva]: { ...pagina, [campo]: items } };
+    });
   }
 
   function agregarItem(campo: Campo) {
@@ -331,17 +347,83 @@ function AdminContenido() {
                           className="flex items-start gap-3 rounded-sm border border-border bg-background p-3"
                         >
                           <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                            {campo.itemFields.map((sub) => (
-                              <div key={sub.key} className="space-y-1.5">
-                                <Label className="text-xs text-muted-foreground">{sub.label}</Label>
-                                <Input
-                                  value={item[sub.key] ?? ""}
-                                  onChange={(e) =>
-                                    escribirItem(campo.key, indice, sub.key, e.target.value)
-                                  }
-                                />
-                              </div>
-                            ))}
+                            {campo.itemFields.map((sub) => {
+                              // La foto de un ítem (5/10/2026, por las tarjetas
+                              // de la portada). Misma subida que la del campo
+                              // suelto de arriba, en chico: adentro de una fila
+                              // de la lista no entra la vista previa grande.
+                              // La clave lleva el índice porque hay un botón
+                              // por ítem y «Subiendo…» es de uno solo.
+                              const clave = `${campo.key}.${indice}.${sub.key}`;
+                              return (
+                                <div key={sub.key} className="space-y-1.5">
+                                  <Label className="text-xs text-muted-foreground">
+                                    {sub.label}
+                                  </Label>
+                                  {sub.type === "image" ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-border bg-muted">
+                                        {item[sub.key] ? (
+                                          <img
+                                            src={item[sub.key]}
+                                            alt={sub.label}
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : (
+                                          <ImagePlus className="h-4 w-4 text-muted-foreground" />
+                                        )}
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={subiendo === clave}
+                                        onClick={() => inputsDeArchivo.current[clave]?.click()}
+                                      >
+                                        {subiendo === clave
+                                          ? "Subiendo…"
+                                          : item[sub.key]
+                                            ? "Cambiar la foto"
+                                            : "Subir una foto"}
+                                      </Button>
+                                      {item[sub.key] ? (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            escribirItem(campo.key, indice, sub.key, "")
+                                          }
+                                        >
+                                          Quitar
+                                        </Button>
+                                      ) : null}
+                                      <input
+                                        ref={(el) => {
+                                          inputsDeArchivo.current[clave] = el;
+                                        }}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          void subirFoto(clave, e.target.files?.[0], (url) =>
+                                            escribirItem(campo.key, indice, sub.key, url),
+                                          );
+                                          e.target.value = "";
+                                        }}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <Input
+                                      value={item[sub.key] ?? ""}
+                                      onChange={(e) =>
+                                        escribirItem(campo.key, indice, sub.key, e.target.value)
+                                      }
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                           <Button
                             type="button"

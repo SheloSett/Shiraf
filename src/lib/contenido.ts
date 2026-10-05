@@ -98,7 +98,8 @@ export const PAGINAS: Pagina[] = [
     key: "inicio",
     label: "Inicio",
     icon: "Home",
-    descripcion: "La portada: el titular grande, la foto y el cierre con los datos del centro.",
+    descripcion:
+      "La portada: el titular sobre la foto, la franja de valores, las tarjetas de tratamientos y el cierre con los datos del centro.",
     fields: [
       {
         key: "heroEyebrow",
@@ -106,13 +107,40 @@ export const PAGINAS: Pagina[] = [
         type: "text",
         default: "Centro de estética",
       },
+      /*
+       * El titular de la portada nueva (5/10/2026) tiene campo PROPIO, y el de
+       * la anterior —`heroTitulo`, acá abajo— no se tocó.
+       *
+       * No es prolijidad: son dos frases distintas para dos diseños distintos,
+       * y `heroTitulo` puede estar guardado en la base con el texto viejo. Con
+       * un campo solo, la portada nueva saldría con el titular anterior hasta
+       * que alguien lo edite, y si después se vuelve atrás, la anterior saldría
+       * con el nuevo y sus asteriscos a la vista. Así cada portada conserva el
+       * suyo y el interruptor de index.tsx (`PORTADA_NUEVA`) cambia las dos
+       * cosas juntas.
+       */
+      {
+        key: "portadaTitulo",
+        label: "Titular grande",
+        type: "textarea",
+        default: "Tu momento\nde *calma,*\nbelleza y\nbienestar.",
+        ayuda:
+          "Cada renglón se muestra en una línea distinta. Lo que encierres entre asteriscos sale en dorado: *calma,*",
+      },
+      {
+        key: "portadaBajada",
+        label: "Texto debajo del titular",
+        type: "textarea",
+        default: "Tratamientos personalizados\nen un espacio pensado para vos.",
+        ayuda: "Cada renglón se muestra en una línea distinta.",
+      },
       {
         key: "heroTitulo",
-        label: "Titular grande",
+        label: "Titular grande (portada anterior)",
         type: "textarea",
         default: "Calma,\nbelleza\ny bienestar",
         ayuda:
-          "Cada renglón se muestra en una línea distinta. Los cortes son parte del diseño del titular.",
+          "No se muestra con la portada nueva: queda guardado por si se vuelve a la anterior. Cada renglón se muestra en una línea distinta.",
       },
       {
         key: "heroImagen",
@@ -140,6 +168,85 @@ export const PAGINAS: Pagina[] = [
         label: "Enlace de al lado",
         type: "text",
         default: "Ver tratamientos",
+      },
+
+      // ── La franja de valores, debajo de la foto ──────────────────────────
+      {
+        key: "valores",
+        label: "Franja de valores",
+        type: "lista",
+        itemLabel: "valor",
+        itemFields: [{ key: "texto", label: "Texto", type: "text", default: "" }],
+        default: [
+          { texto: "Bienestar para cuerpo y mente" },
+          { texto: "Tratamientos personalizados" },
+          { texto: "Productos de alta calidad" },
+          { texto: "Vida sana, belleza real" },
+        ],
+        ayuda:
+          "Los íconos van en orden fijo —hoja, rostro, flor de loto, corazón— y se repiten si agregás más de cuatro. Sin ninguno, la franja no se muestra.",
+      },
+
+      // ── Las tarjetas de tratamientos ─────────────────────────────────────
+      {
+        key: "experienciasEyebrow",
+        label: "Línea chica de las tarjetas",
+        type: "text",
+        default: "Nuestros tratamientos",
+      },
+      {
+        key: "experienciasTitulo",
+        label: "Título de las tarjetas",
+        type: "text",
+        default: "Elegí tu experiencia",
+      },
+      /*
+       * Las tarjetas NO salen del catálogo, y es a propósito.
+       *
+       * Una categoría del catálogo es un nombre y nada más: no tiene foto ni
+       * descripción, y las fotos de los tratamientos son flyers con el texto ya
+       * dibujado, que debajo de un título quedan ilegibles. Acá cada tarjeta
+       * trae lo suyo, y `categoria` es sólo a dónde lleva al tocarla.
+       */
+      {
+        key: "experiencias",
+        label: "Tarjetas de tratamientos",
+        type: "lista",
+        itemLabel: "tarjeta",
+        itemFields: [
+          { key: "titulo", label: "Título", type: "text", default: "" },
+          { key: "texto", label: "Descripción", type: "text", default: "" },
+          { key: "imagen", label: "Foto", type: "image", default: "" },
+          { key: "categoria", label: "Categoría que abre", type: "text", default: "" },
+        ],
+        default: [
+          {
+            titulo: "Faciales",
+            texto: "Limpieza, hidratación y rejuvenecimiento.",
+            imagen: "",
+            categoria: "",
+          },
+          {
+            titulo: "Masajes y terapias",
+            texto: "Relajación, alivio y equilibrio para tu cuerpo.",
+            imagen: "",
+            categoria: "",
+          },
+          {
+            titulo: "Tratamientos corporales",
+            texto: "Reafirmación, tonificación y modelado.",
+            imagen: "",
+            categoria: "",
+          },
+          {
+            titulo: "Mirada y belleza",
+            texto: "Cejas, pestañas y tratamientos especiales.",
+            imagen: "",
+            categoria: "",
+          },
+        ],
+        ayuda:
+          "La foto conviene vertical, y sin texto encima: el título y la descripción se escriben sobre ella. En «Categoría que abre» va el nombre de la categoría tal como está en Servicios; vacío, la tarjeta abre todos los tratamientos.",
       },
 
       {
@@ -541,4 +648,20 @@ export function lista(contenido: ContenidoDePagina, key: string): Record<string,
  */
 export function renglones(valor: string): string[] {
   return valor.split("\n");
+}
+
+/**
+ * Un renglón partido en tramos, para pintar de dorado lo que venga entre
+ * asteriscos: "de *calma,*" → "de " normal y "calma," en dorado.
+ *
+ * Es la única marca que entiende un titular, y es una sola a propósito: el
+ * campo lo escribe la dueña en un textarea, no en un editor. Un asterisco sin
+ * su par deja en dorado todo lo que sigue hasta el final del renglón, que se ve
+ * en el acto y se arregla cerrándolo.
+ */
+export function tramos(renglon: string): { texto: string; dorado: boolean }[] {
+  return renglon
+    .split("*")
+    .map((texto, i) => ({ texto, dorado: i % 2 === 1 }))
+    .filter((tramo) => tramo.texto !== "");
 }

@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { MapPin, MessageCircle } from "lucide-react";
+import { ArrowRight, Heart, Leaf, MapPin, MessageCircle } from "lucide-react";
 import heroImage from "@/assets/hero-spa.jpg";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -17,10 +17,10 @@ import { imageUrl } from "@/lib/cloudinary";
 // sí sigue: es la que arma el mensaje, y ahora recibe el número editado.
 //   import { buildWhatsappUrl, CONTACT, OPENING_HOURS } from "@/lib/contact";
 import { buildWhatsappUrl } from "@/lib/contact";
-import { lista, renglones, texto } from "@/lib/contenido";
+import { lista, renglones, texto, tramos, type ContenidoDePagina } from "@/lib/contenido";
 import { useContenido } from "@/hooks/useContenido";
 import { urlDe } from "@/lib/seo";
-import { formatMoney } from "@/lib/shiraf";
+import { aSlug, formatMoney } from "@/lib/shiraf";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -88,6 +88,28 @@ const MOSTRAR_TRATAMIENTOS: boolean = false;
  */
 const MOSTRAR_PROFESIONALES: boolean = false;
 
+/*
+ * La portada nueva (5/10/2026): el diseño que le armaron a la dueña y que
+ * pidió ver puesto en el sitio.
+ *
+ * Son tres bloques que reemplazan al hero de antes —la foto a sangre con el
+ * titular encima, la franja de cuatro valores y las tarjetas de tratamientos—
+ * y viven al final de este archivo: `HeroDelRender`, `FranjaDeValores` y
+ * `Experiencias`. Del cierre con los horarios para abajo, la página es la misma.
+ *
+ * Va con bandera por lo mismo que las dos de arriba, y acá pesa más: es una
+ * prueba. Si no convence, poner `false` devuelve la portada anterior tal como
+ * estaba, con su titular —que tiene campo propio en el panel, ver
+ * `portadaTitulo` en contenido.ts— y sin tocar nada más.
+ *
+ * ⚠️ Trae de vuelta tres cosas que este archivo había sacado a propósito, y
+ * los comentarios que lo explican siguen abajo: la palabra en dorado dentro
+ * del titular, la franja de íconos y una sección de tratamientos en la
+ * portada. No es un descuido: es lo que muestra el diseño, y la decisión es de
+ * la dueña.
+ */
+const PORTADA_NUEVA: boolean = true;
+
 function Home() {
   // Los textos de la portada y los datos del centro, editables desde el panel.
   // Vienen del loader de la raíz, así que ya están cuando esto se dibuja: no
@@ -128,7 +150,15 @@ function Home() {
     <div className="min-h-screen overflow-x-clip">
       <SiteHeader />
 
-      {/*
+      {PORTADA_NUEVA ? (
+        <>
+          <HeroDelRender c={c} />
+          <FranjaDeValores c={c} />
+          <Experiencias c={c} />
+        </>
+      ) : (
+        <>
+          {/*
         Hero asimétrico a sangre. El texto arranca en la columna 2 y termina en
         la 6; la foto va de la 8 al borde derecho. La columna 7 queda vacía a
         propósito: ese respiro descentrado es lo que separa "ordenado" de
@@ -145,19 +175,19 @@ function Home() {
         vez de `vh` para que en mobile no cuente la barra del navegador que
         aparece y desaparece al scrollear.
       */}
-      {/* <section className="grid items-stretch gap-y-10 lg:min-h-[86vh] lg:grid-cols-12"> */}
-      <section className="grid items-stretch gap-y-10 lg:min-h-[calc(100svh_-_5rem)] lg:grid-cols-12">
-        {/* py-20 → py-16: con la altura ya ajustada al viewport, 20 de padding
+          {/* <section className="grid items-stretch gap-y-10 lg:min-h-[86vh] lg:grid-cols-12"> */}
+          <section className="grid items-stretch gap-y-10 lg:min-h-[calc(100svh_-_5rem)] lg:grid-cols-12">
+            {/* py-20 → py-16: con la altura ya ajustada al viewport, 20 de padding
             arriba y abajo hacía que en notebooks de pantalla baja el texto
             empujara la sección más allá de la pantalla otra vez. */}
-        <div className="px-5 pt-14 lg:col-span-5 lg:col-start-2 lg:flex lg:flex-col lg:justify-center lg:px-0 lg:py-16">
-          <Reveal>
-            {/* Antes: <p ...>Centro de estética</p> */}
-            <p className="text-eyebrow text-muted-foreground">{texto(c, "heroEyebrow")}</p>
-          </Reveal>
+            <div className="px-5 pt-14 lg:col-span-5 lg:col-start-2 lg:flex lg:flex-col lg:justify-center lg:px-0 lg:py-16">
+              <Reveal>
+                {/* Antes: <p ...>Centro de estética</p> */}
+                <p className="text-eyebrow text-muted-foreground">{texto(c, "heroEyebrow")}</p>
+              </Reveal>
 
-          <Reveal delay={90}>
-            {/* Sin una palabra en color de acento: ese recurso es la firma más
+              <Reveal delay={90}>
+                {/* Sin una palabra en color de acento: ese recurso es la firma más
                 reconocible de las landings generadas. El énfasis lo da el
                 tamaño, no el color.
 
@@ -174,17 +204,17 @@ function Home() {
                 es un textarea: cada renglón que escriban ahí sale en su propia
                 línea, tal como acá. Si escriben todo seguido, es UNA línea y el
                 navegador la parte donde le toque. */}
-            <h1 className="display-hero mt-7 text-foreground">
-              {renglones(texto(c, "heroTitulo")).map((linea, i) => (
-                <span key={i}>
-                  {i > 0 && <br />}
-                  {linea}
-                </span>
-              ))}
-            </h1>
-          </Reveal>
+                <h1 className="display-hero mt-7 text-foreground">
+                  {renglones(texto(c, "heroTitulo")).map((linea, i) => (
+                    <span key={i}>
+                      {i > 0 && <br />}
+                      {linea}
+                    </span>
+                  ))}
+                </h1>
+              </Reveal>
 
-          {/*
+              {/*
             Acá estaba el párrafo "Tratamientos faciales, corporales y
             aparatología…". No lo borré: se mudó al encabezado de Servicios,
             donde había una franja vacía a la derecha del título y donde además
@@ -206,7 +236,7 @@ function Home() {
             chico — el orden de lectura queda fuera de discusión.
           */}
 
-          {/*
+              {/*
             Y acá estaba esa frase, "Cada piel es distinta. / El tratamiento
             también.". La saco a pedido del centro. Comentada y no borrada por
             si la quieren de vuelta, o por si aparece en otra sección como pasó
@@ -230,33 +260,33 @@ function Home() {
             bloque no cambia.
           */}
 
-          <Reveal delay={260}>
-            <div className="mt-9 flex flex-wrap items-center gap-6">
-              {/* Antes los dos textos estaban fijos: "Reservar turno" y "Ver
+              <Reveal delay={260}>
+                <div className="mt-9 flex flex-wrap items-center gap-6">
+                  {/* Antes los dos textos estaban fijos: "Reservar turno" y "Ver
                   tratamientos". A dónde llevan NO se edita —son rutas del
                   sitio, no texto— y eso es a propósito: un enlace apuntando a
                   una página que no existe no se arregla desde el panel. */}
-              <Button asChild size="lg">
-                <Link to="/reservar">{texto(c, "heroBotonPrimario")}</Link>
-              </Button>
-              <Link
-                to="/servicios"
-                className="text-eyebrow text-muted-foreground underline-offset-8 transition-colors hover:text-foreground hover:underline"
-              >
-                {texto(c, "heroBotonSecundario")}
-              </Link>
+                  <Button asChild size="lg">
+                    <Link to="/reservar">{texto(c, "heroBotonPrimario")}</Link>
+                  </Button>
+                  <Link
+                    to="/servicios"
+                    className="text-eyebrow text-muted-foreground underline-offset-8 transition-colors hover:text-foreground hover:underline"
+                  >
+                    {texto(c, "heroBotonSecundario")}
+                  </Link>
+                </div>
+              </Reveal>
             </div>
-          </Reveal>
-        </div>
 
-        <div className="lg:col-span-5 lg:col-start-8">
-          {/* object-position alto: el original es 4:3 y el contenedor es más
+            <div className="lg:col-span-5 lg:col-start-8">
+              {/* object-position alto: el original es 4:3 y el contenedor es más
               alto que ancho, así que al recortar conviene privilegiar la parte
               superior de la escena en vez de centrarla. */}
-          {/* 58vh → 58svh por el mismo motivo que la sección: en mobile `vh`
+              {/* 58vh → 58svh por el mismo motivo que la sección: en mobile `vh`
               mide la pantalla sin la barra del navegador y la foto se pasaba.
               Valor anterior: className="h-[58vh] w-full object-cover object-[50%_28%] lg:h-full" */}
-          {/* La foto se puede cambiar desde el panel. Si el campo está vacío
+              {/* La foto se puede cambiar desde el panel. Si el campo está vacío
               —que es como nace— se usa `heroImage`, el archivo que viene con el
               sitio: la portada nunca queda sin foto.
 
@@ -267,15 +297,17 @@ function Home() {
               proporción que el navegador reserva antes de bajarla, para que el
               texto de al lado no salte cuando aparece. Una foto de otra
               proporción hace saltar un poco menos de lo que saltaría sin nada. */}
-          <img
-            src={texto(c, "heroImagen") || heroImage}
-            alt={texto(c, "heroImagenAlt")}
-            width={1408}
-            height={1008}
-            className="h-[58svh] w-full object-cover object-[50%_28%] lg:h-full"
-          />
-        </div>
-      </section>
+              <img
+                src={texto(c, "heroImagen") || heroImage}
+                alt={texto(c, "heroImagenAlt")}
+                width={1408}
+                height={1008}
+                className="h-[58svh] w-full object-cover object-[50%_28%] lg:h-full"
+              />
+            </div>
+          </section>
+        </>
+      )}
 
       {/*
         El filete que marcaste separando el hero del resto.
@@ -730,5 +762,276 @@ function Home() {
 
       <SiteFooter />
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La portada nueva. Ver `PORTADA_NUEVA`, arriba.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La foto a sangre con el titular encima.
+ *
+ * ── EL VERDE DE LA IZQUIERDA ES LO QUE DEJA LEER ──────────────────────────
+ *
+ * La foto ocupa toda la sección y el texto va apoyado sobre ella, así que
+ * entre los dos hay un degradado oliva que arranca lleno a la izquierda y se
+ * apaga hacia la derecha. En pantalla ancha se apaga del todo y la foto queda
+ * limpia donde no hay texto; en el teléfono el texto ocupa el ancho entero y
+ * el degradado no llega nunca a cero, o el titular crema se pierde sobre la
+ * camilla, que es igual de clara.
+ *
+ * `object-position` corrido a la derecha por lo mismo: lo que tiene para
+ * mostrar la foto —la camilla, la ventana— está de ese lado, y el izquierdo
+ * queda tapado por el verde de todos modos.
+ */
+function HeroDelRender({ c }: { c: ContenidoDePagina }) {
+  return (
+    // `isolate`: los z negativos de la foto y el degradado quedan adentro de
+    // la sección en vez de irse por debajo del fondo de la página.
+    <section className="surface-olive relative isolate overflow-hidden">
+      {/* Misma foto y mismo campo del panel que la portada anterior: vacío,
+          cae a la que viene con el sitio. */}
+      <img
+        src={texto(c, "heroImagen") || heroImage}
+        alt={texto(c, "heroImagenAlt")}
+        width={1408}
+        height={1008}
+        className="absolute inset-0 -z-20 h-full w-full object-cover object-[78%_50%]"
+      />
+      <div className="absolute inset-0 -z-10 bg-gradient-to-r from-primary from-10% via-primary/80 via-55% to-primary/45 md:from-20% md:via-primary/65 md:via-45% md:to-transparent md:to-75%" />
+
+      {/* La altura deja asomar la franja de valores en la primera pantalla,
+          como en el diseño: al alto visible se le descuentan el header (5rem)
+          y la franja (8rem). Es un mínimo — si el texto pide más, crece. */}
+      <div className="mx-auto flex min-h-[34rem] max-w-6xl flex-col justify-center px-5 py-14 lg:min-h-[calc(100svh_-_13rem)] lg:py-16">
+        <div className="max-w-xl">
+          <Reveal>
+            <p className="font-sans text-[13px] font-semibold tracking-[0.22em] text-gold uppercase">
+              {texto(c, "heroEyebrow")}
+            </p>
+          </Reveal>
+
+          <Reveal delay={90}>
+            {/* Más chico que `display-hero`: aquél está pensado para tres
+                palabras sueltas sobre crema, y éste es una frase de cuatro
+                renglones que comparte la pantalla con la foto. */}
+            <h1 className="mt-6 font-display text-[clamp(2.75rem,5vw,4.5rem)] leading-[1.08] text-primary-foreground">
+              {renglones(texto(c, "portadaTitulo")).map((renglon, i) => (
+                <span key={i}>
+                  {i > 0 && <br />}
+                  {tramos(renglon).map((tramo, j) => (
+                    <span key={j} className={tramo.dorado ? "text-gold" : undefined}>
+                      {tramo.texto}
+                    </span>
+                  ))}
+                </span>
+              ))}
+            </h1>
+          </Reveal>
+
+          <Reveal delay={180}>
+            <div className="mt-8 h-0.5 w-14 bg-gold" />
+            <p className="mt-7 text-[17px] leading-relaxed text-primary-foreground/90">
+              {renglones(texto(c, "portadaBajada")).map((renglon, i) => (
+                <span key={i}>
+                  {i > 0 && <br />}
+                  {renglon}
+                </span>
+              ))}
+            </p>
+          </Reveal>
+
+          <Reveal delay={260}>
+            {/* A dónde llevan no se edita, igual que en la portada anterior:
+                son rutas del sitio, no texto. */}
+            <div className="mt-9 flex flex-col items-start gap-7">
+              <Button
+                asChild
+                size="lg"
+                className="h-14 rounded-sm bg-gold px-9 text-[13px] font-semibold tracking-[0.2em] text-accent-foreground uppercase shadow-none hover:bg-gold/85"
+              >
+                <Link to="/reservar">
+                  {texto(c, "heroBotonPrimario")}
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+              <Link
+                to="/servicios"
+                className="inline-flex items-center gap-2 border-b border-gold/60 pb-1 text-[15px] text-gold transition-colors hover:border-gold"
+              >
+                {texto(c, "heroBotonSecundario")}
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </div>
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+type PropsDeIcono = { className?: string; strokeWidth?: number };
+
+/** Los dos íconos del diseño que lucide no trae, dibujados con su mismo trazo. */
+function IconoPerfil({ className, strokeWidth = 1.25 }: PropsDeIcono) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M11.5 3.2c2.9 0 4.9 2.2 4.9 5l1.7 3.2c.2.4 0 .8-.4.9l-1.1.3v1.8c0 1.1-.9 1.9-2 1.8l-1.4-.1v3.4" />
+      <path d="M11.5 3.2C7.6 3.2 5 6 5 9.6c0 2.8 1.4 4.4 2.6 5.8.8 1 1 2.4.8 4.1" />
+      <path d="M11.5 3.2c-.9 3.2.5 5.8 3.1 6.6" />
+    </svg>
+  );
+}
+
+function IconoLoto({ className, strokeWidth = 1.25 }: PropsDeIcono) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M12 3.5c2.2 2.8 3.3 5.7 3.3 8.5 0 2.9-1.3 5.4-3.3 7-2-1.6-3.3-4.1-3.3-7 0-2.8 1.1-5.7 3.3-8.5Z" />
+      <path d="M5.2 7.5c.4 6.1 2.8 10.1 6.8 11.5M5.2 7.5c1.6.4 3 1.2 4.1 2.2" />
+      <path d="M18.8 7.5c-.4 6.1-2.8 10.1-6.8 11.5M18.8 7.5c-1.6.4-3 1.2-4.1 2.2" />
+      <path d="M2 13c1.4 3.6 5 6 10 6M2 13c1.4-.4 2.8-.5 4.1-.3" />
+      <path d="M22 13c-1.4 3.6-5 6-10 6M22 13c-1.4-.4-2.8-.5-4.1-.3" />
+    </svg>
+  );
+}
+
+/** En el orden del diseño. Con más de cuatro valores, vuelven a empezar. */
+const ICONOS_DE_VALORES: ComponentType<PropsDeIcono>[] = [Leaf, IconoPerfil, IconoLoto, Heart];
+
+/**
+ * La franja de cuatro valores, pegada debajo de la foto.
+ *
+ * En el teléfono son dos columnas y no cuatro: a cuatro, cada texto quedaba en
+ * 80px de ancho y se partía de a una palabra por renglón.
+ */
+function FranjaDeValores({ c }: { c: ContenidoDePagina }) {
+  const valores = lista(c, "valores");
+  if (valores.length === 0) return null;
+
+  return (
+    <section className="border-b border-border bg-secondary/60">
+      <ul className="mx-auto grid max-w-6xl grid-cols-2 gap-y-8 px-2 py-8 md:grid-cols-4">
+        {valores.map((valor, i) => {
+          const Icono = ICONOS_DE_VALORES[i % ICONOS_DE_VALORES.length]!;
+          return (
+            // El filete entre columnas es el borde izquierdo de cada una menos
+            // la primera de su fila: las pares en el teléfono, todas menos la
+            // primera en pantalla ancha.
+            <li
+              key={i}
+              className="flex flex-col items-center border-border px-4 text-center [&:nth-child(even)]:border-l md:[&:not(:first-child)]:border-l"
+            >
+              <Icono className="h-10 w-10 text-primary" strokeWidth={1.25} />
+              <p className="mt-3 max-w-44 text-[15px] leading-snug text-balance text-foreground">
+                {valor["texto"]}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * «Elegí tu experiencia»: las tarjetas de tratamientos.
+ *
+ * Cada tarjeta es un ítem de la lista `experiencias` del panel —título,
+ * descripción, foto y a qué categoría lleva— y no una categoría del catálogo.
+ * El porqué está al lado del campo, en contenido.ts.
+ *
+ * ── SIN FOTO TAMBIÉN TIENE QUE VERSE ENTERA ───────────────────────────────
+ *
+ * Las tarjetas nacen sin foto: se suben desde el panel. Mientras tanto —o si
+ * el archivo deja de existir en Cloudinary, ver `rotas`— queda el oliva con
+ * grano y la inicial, el mismo recurso que usa la carta de Servicios para un
+ * tratamiento sin foto: que el hueco se lea como decisión y no como imagen
+ * rota.
+ */
+function Experiencias({ c }: { c: ContenidoDePagina }) {
+  const tarjetas = lista(c, "experiencias");
+  const [rotas, setRotas] = useState<Set<number>>(new Set());
+  if (tarjetas.length === 0) return null;
+
+  return (
+    <section className="mx-auto max-w-6xl px-5 pt-14 lg:pt-20">
+      <Reveal className="text-center">
+        {/* El dorado va mezclado con el color del texto: el del logo, solo,
+            sobre la crema da 1.9:1 y a este tamaño no se lee. */}
+        <p className="text-eyebrow text-[color-mix(in_oklch,var(--gold)_70%,var(--foreground))]">
+          {texto(c, "experienciasEyebrow")}
+        </p>
+        <h2 className="mt-3 font-display text-[clamp(2rem,4vw,3rem)] leading-tight text-foreground">
+          {texto(c, "experienciasTitulo")}
+        </h2>
+        <div className="mx-auto mt-4 h-0.5 w-10 bg-gold" />
+      </Reveal>
+
+      <ul className="mt-9 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        {tarjetas.map((tarjeta, i) => {
+          const foto = rotas.has(i) ? null : imageUrl(tarjeta["imagen"], "card");
+          const categoria = tarjeta["categoria"]?.trim();
+          return (
+            <Reveal as="li" key={i} delay={i * 70}>
+              {/* Una categoría que no exista no rompe nada: /servicios cae al
+                  catálogo completo. */}
+              <Link
+                to="/servicios"
+                search={categoria ? { categoria: aSlug(categoria) } : {}}
+                className="group surface-olive grain relative flex aspect-[2/3] flex-col justify-end overflow-hidden rounded-2xl shadow-soft transition-shadow duration-500 hover:shadow-lift"
+              >
+                {foto ? (
+                  <>
+                    <img
+                      src={foto}
+                      alt=""
+                      loading="lazy"
+                      onError={() => setRotas((previo) => new Set(previo).add(i))}
+                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                    />
+                    {/* Degradado desde abajo: sin esto el texto crema se pierde
+                        sobre las zonas claras de la foto. */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/60 via-35% to-transparent to-65%" />
+                  </>
+                ) : (
+                  <span className="absolute inset-x-0 top-[18%] text-center font-display text-7xl text-primary-foreground/15">
+                    {tarjeta["titulo"]?.charAt(0)}
+                  </span>
+                )}
+
+                <div className="relative z-10 px-3 pb-6 text-center sm:px-5 sm:pb-8">
+                  <h3 className="font-sans text-lg leading-snug font-medium text-balance text-primary-foreground sm:text-xl">
+                    {tarjeta["titulo"]}
+                  </h3>
+                  <div className="mx-auto mt-3 h-px w-8 bg-gold" />
+                  <p className="mt-3 text-[13px] leading-snug text-balance text-primary-foreground/85 sm:text-sm">
+                    {tarjeta["texto"]}
+                  </p>
+                </div>
+              </Link>
+            </Reveal>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
