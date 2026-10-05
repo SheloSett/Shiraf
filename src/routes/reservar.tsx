@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Clock } from "lucide-react";
+import { Check, Clock, MessageCircle } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 // 6/9/2026 - la flecha se mudo a `__root.tsx`: ahora va en todo el sitio.
 // import { VolverArriba } from "@/components/volver-arriba";
@@ -10,10 +10,21 @@ import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CalendarioDeLaProfesional } from "@/components/calendario-de-la-profesional";
+import { SacarSesionDialog } from "@/components/sacar-sesion-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/useAuth";
+import { useSesionesPendientes } from "@/hooks/useSesionesPendientes";
 import { api, apiPost } from "@/lib/api";
 import { imageUrl } from "@/lib/cloudinary";
-import type { RtaDisponibilidad, RtaProfesionalesConHorarios, RtaServicios } from "@/lib/api-tipos";
+import type {
+  RtaDisponibilidad,
+  RtaProfesionalesConHorarios,
+  RtaReserva,
+  RtaServicios,
+  SesionPendiente,
+} from "@/lib/api-tipos";
 import {
   buildSlots,
   formatMoney,
@@ -23,6 +34,8 @@ import {
   TOLERANCIA_MINUTOS,
 } from "@/lib/shiraf";
 import { parseDateKey } from "@/lib/horarios";
+import { desdeCuando } from "@/lib/sesiones";
+import { recordarReserva } from "@/lib/volver-a-reservar";
 import { isTeamAccount } from "@/lib/roles";
 import { notifyAppointment } from "@/lib/notifications.functions";
 
@@ -31,7 +44,25 @@ import { notifyAppointment } from "@/lib/notifications.functions";
 // `search` en cada <Link to="/reservar">, aunque los dos params sean opcionales.
 type Search = { service?: string; professional?: string };
 
-export const Route = createFileRoute("/_authenticated/reservar")({
+/**
+ * 5/10/2026 — esta pantalla vivía en `_authenticated/reservar.tsx` y pedía
+ * cuenta para entrar. Se mudó acá, afuera del guard, porque desde hoy se puede
+ * sacar turno con nombre y teléfono, sin registrarse: la dueña lo pidió porque
+ * las clientas que no se animaban al registro terminaban pidiéndole el turno a
+ * la secretaria. La dirección es la misma de siempre, /reservar.
+ *
+ * Quien tiene cuenta y está conectada reserva igual que antes, a su nombre. La
+ * diferencia la hace el servidor mirando si hay sesión, no esta pantalla.
+ */
+export const Route = createFileRoute("/reservar")({
+  /*
+   * Sin render en el servidor, como cuando colgaba de `_authenticated`, que lo
+   * tenía apagado para todas sus hijas. Esta pantalla nunca se renderizó del
+   * lado del servidor y no gana nada con empezar ahora: está fuera de
+   * robots.txt, y arranca con `new Date()` en el estado — que en el servidor,
+   * que corre en UTC, a la noche ya es el día siguiente.
+   */
+  ssr: false,
   validateSearch: (search: Record<string, unknown>): Search => {
     const parsed: Search = {};
     if (typeof search["service"] === "string") parsed.service = search["service"];
@@ -97,6 +128,91 @@ function BookingPage() {
   const [slot, setSlot] = useState<string | undefined>();
   const [notes, setNotes] = useState("");
 
+  /*
+   * Quién reserva: la clienta conectada, o alguien sin cuenta (5/10/2026).
+   *
+   * `sinCuenta` espera a que la sesión termine de cargar. Sin esa espera, a
+   * quien SÍ tiene cuenta se le dibujarían los campos de nombre y teléfono
+   * durante medio segundo y después se le irían — un formulario que cambia solo
+   * mientras lo estás leyendo.
+   *
+   * No es lo que decide de quién queda el turno: eso lo resuelve el servidor
+   * mirando la cookie. Esto es sólo qué campos mostrar.
+   */
+  const { user, loading: cargandoSesion } = useAuth();
+  const sinCuenta = !cargandoSesion && !user;
+  const [guestName, setGuestName] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
+
+  /*
+   * Ya contestó la pregunta de la entrada: quiere reservar sin cuenta.
+   *
+   * A quien llega sin sesión, lo primero que se le muestra es eso —seguir sin
+   * registrarse o ingresar— y recién después los pasos. Lo pidió la dueña así:
+   * que se decida ahí, de entrada, y no que la opción de la cuenta aparezca
+   * como letra chica en el último paso.
+   *
+   * Se recuerda mientras dure la pestaña. Sin eso, la que vuelve de mirar la
+   * ficha de un tratamiento tendría que contestar lo mismo cada vez. Se lee en
+   * el inicializador y no en un efecto para que la pregunta no parpadee un
+   * instante antes de irse — se puede porque esta ruta no se renderiza en el
+   * servidor, así que `sessionStorage` existe desde el primer render.
+   */
+  const [sinRegistrarse, setSinRegistrarse] = useState(() => {
+    try {
+      return sessionStorage.getItem(ELIGIO_SIN_CUENTA) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  /** A ingresar o crear la cuenta, dejando anotado que tiene que volver acá. */
+  function irAIngresar() {
+    // Con lo que ya tenía elegido, para que al volver no arranque de cero. El
+    // horario no viaja: en el rato que tarda en ingresar lo puede tomar otra.
+    recordarReserva({
+      ...(serviceId ? { service: serviceId } : {}),
+      ...(professionalId ? { professional: professionalId } : {}),
+    });
+    navigate({ to: "/auth" });
+  }
+
+  // Lo que escribió la última vez que reservó sin cuenta, para no pedírselo de
+  // nuevo. Es una comodidad de este navegador y nada más: no identifica a nadie
+  // ni le abre nada. En un efecto porque `localStorage` no existe hasta montar,
+  // y con try/catch porque en una ventana privada puede tirar.
+  useEffect(() => {
+    try {
+      const guardado = JSON.parse(localStorage.getItem(DATOS_DE_INVITADA) ?? "null") as {
+        nombre?: unknown;
+        telefono?: unknown;
+      } | null;
+      if (typeof guardado?.nombre === "string") setGuestName(guardado.nombre);
+      if (typeof guardado?.telefono === "string") setGuestPhone(guardado.telefono);
+    } catch {
+      // Sin nada guardado, o guardado roto: los campos arrancan vacíos.
+    }
+  }, []);
+
+  /** El turno que acaba de sacar alguien sin cuenta, para el cartel del final. */
+  const [reservado, setReservado] = useState<Reservado | null>(null);
+
+  /*
+   * Las sesiones que le falta sacar a la clienta conectada, para avisarle si
+   * está por reservar DE NUEVO un tratamiento que ya tiene empezado.
+   *
+   * Lo pidió la dueña: la clienta que vuelve a "sacar turno de Exosomas" casi
+   * siempre lo que quiere es su sesión 2, que ya pagó, y sin el aviso
+   * reservaría —y se le cobraría— un tratamiento entero nuevo.
+   */
+  const pendientes = useSesionesPendientes();
+  const pendienteDeEste = pendientes.data?.find((p) => p.service_id === serviceId);
+  /** El tratamiento que eligió empezar de nuevo igual, sabiendo que tiene uno a medias. */
+  const [empezarNuevo, setEmpezarNuevo] = useState<string | undefined>();
+  const [sacando, setSacando] = useState<SesionPendiente | null>(null);
+  /** Hasta que no elige una de las dos cosas, los pasos que siguen no aparecen. */
+  const frenadoPorPendiente = !!pendienteDeEste && empezarNuevo !== serviceId;
+
   const services = useQuery({
     queryKey: ["services", "published"],
     // El mismo endpoint que el catálogo público, y a propósito comparten la
@@ -155,7 +271,20 @@ function BookingPage() {
    *
    * Antes: `useEffect(() => { if (elegido) { … } }, [elegido]);`
    */
-  const listoParaBajar = elegido ? `${serviceId}·${variantId ?? ""}` : null;
+  //
+  // 5/10/2026 — `sigue` y no `elegido` a secas: con una sesión pendiente de
+  // ese mismo tratamiento, primero tiene que decidir si quiere esa o empezar
+  // uno nuevo. Hasta entonces no se baja ni se muestran los pasos de abajo.
+  //   const listoParaBajar = elegido ? `${serviceId}·${variantId ?? ""}` : null;
+  const sigue = elegido && !frenadoPorPendiente;
+  /** Todavía está en la pregunta de la entrada: los pasos no están en pantalla. */
+  const enLaPregunta = sinCuenta && !sinRegistrarse;
+  // Con `enLaPregunta` adentro para que baje recién cuando contesta: quien
+  // llega con `?service=` ya tiene el paso 1 resuelto, y sin esto el efecto
+  // corría con la pregunta en pantalla —sin paso 2 al que bajar— y después no
+  // volvía a correr.
+  //   const listoParaBajar = sigue ? `${serviceId}·${variantId ?? ""}` : null;
+  const listoParaBajar = sigue && !enLaPregunta ? `${serviceId}·${variantId ?? ""}` : null;
 
   useEffect(() => {
     if (!listoParaBajar) return;
@@ -205,7 +334,9 @@ function BookingPage() {
       // de la sesión —si viajara desde acá, cualquiera reservaría a nombre de
       // otra— y la duración y el precio los fija el tratamiento, con el precio
       // del día de hoy congelado en el turno.
-      const created = await apiPost<{ id: string }>("/api/reservar", {
+      // Antes: `apiPost<{ id: string }>`. Ahora la respuesta dice además si el
+      // turno quedó a nombre de una cuenta o de una invitada.
+      const created = await apiPost<RtaReserva>("/api/reservar", {
         service_id: serviceId,
         // Viaja el id de la opción, nunca su precio: lo busca el servidor. Es
         // la misma regla que ya valía para el tratamiento.
@@ -213,7 +344,14 @@ function BookingPage() {
         professional_id: professionalId,
         starts_at: slot,
         client_notes: notes || null,
+        // Sólo sin cuenta. Con sesión el servidor los ignora igual —el turno
+        // es de la sesión—, pero no tiene sentido mandarlos.
+        ...(sinCuenta ? { guest_name: guestName.trim(), guest_phone: guestPhone.trim() } : {}),
       });
+
+      // Sin cuenta, los dos avisos de abajo ya los disparó el servidor: esta
+      // pantalla no tiene sesión con la que pedirlos. Ver `avisarSinEsperar`.
+      if (created.invitada) return created;
 
       // Dos avisos, uno para cada lado del mostrador:
       //
@@ -250,8 +388,42 @@ function BookingPage() {
           console.error("[reserva] no se pudo avisar a la clienta:", e.message),
         ),
       ]);
+
+      return created;
     },
-    onSuccess: () => {
+    // Antes no recibía nada: la mutación no devolvía la respuesta.
+    // onSuccess: () => {
+    onSuccess: (created) => {
+      /*
+       * Sin cuenta no hay «Mi cuenta» a donde mandarla. Se queda acá, con un
+       * cartel que dice qué reservó y por dónde le llega el comprobante.
+       *
+       * El enlace a sus turnos NO se muestra en este cartel, y no es que falte:
+       * el servidor no lo devuelve. Llega sólo por WhatsApp, porque acá nadie
+       * comprobó que el teléfono que escribió sea suyo.
+       */
+      if (created.invitada) {
+        try {
+          localStorage.setItem(
+            DATOS_DE_INVITADA,
+            JSON.stringify({ nombre: guestName.trim(), telefono: guestPhone.trim() }),
+          );
+        } catch {
+          // Si no se puede guardar, la próxima vez lo escribe de nuevo.
+        }
+        setReservado({
+          tratamiento: variant ? `${service?.name} — ${variant.name}` : (service?.name ?? ""),
+          profesional: professionals.data?.find((p) => p.id === professionalId)?.full_name ?? "",
+          cuando: slot ?? "",
+          telefono: guestPhone.trim(),
+        });
+        // Los horarios de ese día quedaron viejos: el que acaba de tomar ya no
+        // está libre, y si saca otro turno no se lo tienen que ofrecer.
+        queryClient.invalidateQueries({ queryKey: ["availability"] });
+        window.scrollTo({ top: 0 });
+        return;
+      }
+
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });
       // Decía «¡Turno solicitado! Queda pendiente de confirmación.» — quedó de
       // cuando el turno nacía pendiente. Desde el 6/9/2026 reservar ES la
@@ -276,6 +448,158 @@ function BookingPage() {
       toast.error(error.message);
     },
   });
+
+  /*
+   * El cartel del final, para quien reservó sin cuenta. Reemplaza al formulario
+   * entero y no va debajo: con los cuatro pasos todavía en pantalla, lo que se
+   * lee es que falta algo por completar.
+   */
+  if (reservado) {
+    return (
+      <div className="min-h-screen">
+        <SiteHeader />
+
+        <section className="mx-auto max-w-2xl px-5 pt-14 pb-20">
+          <p className="text-eyebrow text-muted-foreground">Reserva confirmada</p>
+          <h1 className="mt-4 text-5xl text-foreground">¡Listo, tu turno está reservado!</h1>
+          <div className="gold-rule mt-6" />
+
+          <Card className="mt-10 border-border/80 shadow-soft">
+            <CardContent className="space-y-5 p-6">
+              <ul className="space-y-2 text-sm">
+                <li className="flex justify-between gap-6">
+                  <span className="text-muted-foreground">Tratamiento</span>
+                  <span className="text-right text-foreground">{reservado.tratamiento}</span>
+                </li>
+                <li className="flex justify-between gap-6">
+                  <span className="text-muted-foreground">Profesional</span>
+                  <span className="text-foreground">{reservado.profesional}</span>
+                </li>
+                <li className="flex justify-between gap-6">
+                  <span className="text-muted-foreground">Fecha y hora</span>
+                  <span className="text-right text-foreground">
+                    {new Date(reservado.cuando).toLocaleString("es-AR", {
+                      weekday: "long",
+                      day: "2-digit",
+                      month: "long",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hourCycle: "h23",
+                    })}
+                  </span>
+                </li>
+              </ul>
+
+              <p className="flex items-start gap-2.5 rounded-sm border-l-4 border-gold bg-gold-soft/20 p-3.5 text-sm leading-relaxed text-foreground">
+                <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden="true" />
+                <span>
+                  Te mandamos el comprobante por WhatsApp al{" "}
+                  <strong className="font-semibold">{reservado.telefono}</strong>. Ahí viene también
+                  un enlace para ver, cambiar o cancelar tus turnos cuando quieras, sin tener que
+                  registrarte.
+                </span>
+              </p>
+
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Si en unos minutos no te llega, escribinos: puede que el número haya quedado mal
+                anotado. El pago se realiza en el centro.
+              </p>
+
+              <div className="flex flex-wrap gap-3">
+                <Button asChild>
+                  <Link to="/">Volver al inicio</Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Vuelve al formulario limpio. El nombre y el teléfono se
+                    // quedan: es la misma persona sacando otro turno.
+                    setReservado(null);
+                    setServiceId(undefined);
+                    setVariantId(undefined);
+                    setProfessionalId(undefined);
+                    setSlot(undefined);
+                    setNotes("");
+                  }}
+                >
+                  Sacar otro turno
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        <SiteFooter />
+      </div>
+    );
+  }
+
+  /*
+   * La pregunta de la entrada, para quien llega sin sesión: ¿sin registrarte, o
+   * con tu cuenta? Va ANTES de los pasos y en su lugar, no arriba de ellos: es
+   * una decisión que cambia qué se le va a pedir, y con el catálogo ya
+   * desplegado debajo nadie la lee.
+   *
+   * Las dos opciones valen lo mismo y por eso son dos tarjetas iguales. Si una
+   * fuera un botón grande y la otra un enlace chiquito, la pantalla ya habría
+   * elegido por ella — y lo que se pidió es justamente que elija.
+   */
+  if (enLaPregunta) {
+    return (
+      <div className="min-h-screen">
+        <SiteHeader />
+
+        <section className="mx-auto max-w-3xl px-5 pt-14 pb-20">
+          <p className="text-eyebrow text-muted-foreground">Nueva reserva</p>
+          <h1 className="mt-4 text-5xl text-foreground">Sacar turno</h1>
+          <div className="gold-rule mt-6" />
+
+          <h2 className="mt-12 font-display text-2xl text-foreground">¿Cómo querés reservar?</h2>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <Card className="border-border/80 shadow-soft">
+              <CardContent className="flex h-full flex-col p-6">
+                <p className="font-display text-xl text-foreground">Sin registrarme</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground">
+                  Sólo te pedimos tu nombre y tu celular. Te mandamos el comprobante por WhatsApp,
+                  con un enlace para ver, cambiar o cancelar tu turno.
+                </p>
+                <Button
+                  className="mt-6 w-full"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem(ELIGIO_SIN_CUENTA, "1");
+                    } catch {
+                      // Si no se puede guardar, se lo volvemos a preguntar la
+                      // próxima vez. No es motivo para no dejarla seguir.
+                    }
+                    setSinRegistrarse(true);
+                  }}
+                >
+                  Seguir sin cuenta
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/80 shadow-soft">
+              <CardContent className="flex h-full flex-col p-6">
+                <p className="font-display text-xl text-foreground">Con mi cuenta</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground">
+                  Ingresá, o creá tu cuenta en un minuto. Tenés todos tus turnos y tu historial en
+                  un solo lugar, y no hace falta que escribas tus datos cada vez.
+                </p>
+                <Button className="mt-6 w-full" variant="outline" onClick={irAIngresar}>
+                  Ingresar o registrarme
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        <SiteFooter />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -393,9 +717,50 @@ function BookingPage() {
               {service.session_interval_days > 0
                 ? ` con ${service.session_interval_days} días entre una y otra`
                 : ""}
-              . Acá reservás la primera; las siguientes las coordinamos con vos en el centro. El
-              valor es por el tratamiento completo.
+              {/* 5/10/2026 — decía sólo «las siguientes las coordinamos con vos
+                  en el centro». Eso sigue valiendo, y se suma que las puede
+                  sacar ella cuando le toca. Se dicen LAS DOS a pedido de la
+                  dueña: la que no se anima a hacerlo sola tiene que saber que
+                  se lo puede pedir a la secretaria. */}
+              . Acá reservás la primera. Las siguientes las coordinamos con vos cuando vengas, o las
+              reservás vos desde el sitio cuando te toque: te avisamos. El valor es por el
+              tratamiento completo.
             </p>
+          )}
+
+          {/* Ya tiene este tratamiento empezado y le falta una sesión. Va acá,
+              apenas elige el tratamiento y antes de que elija nada más: es el
+              momento en que todavía no perdió tiempo armando un turno que no
+              era el que quería.
+
+              No se le prohíbe empezar uno nuevo —puede querer exactamente
+              eso—, pero tiene que decirlo: los pasos de abajo no aparecen
+              hasta que elige una de las dos cosas. */}
+          {pendienteDeEste && (
+            <div className="mt-6 rounded-sm border border-gold bg-gold/10 p-5">
+              <p className="font-display text-xl text-foreground">
+                Ya tenés este tratamiento empezado
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-foreground">
+                Te falta la sesión {pendienteDeEste.session_number} de{" "}
+                {pendienteDeEste.sessions_total} de {pendienteDeEste.tratamiento}. Está incluida en
+                lo que ya reservaste: no se paga de nuevo. {desdeCuando(pendienteDeEste)}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button type="button" onClick={() => setSacando(pendienteDeEste)}>
+                  Reservar la sesión {pendienteDeEste.session_number}
+                </Button>
+                {frenadoPorPendiente && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEmpezarNuevo(serviceId)}
+                  >
+                    Empezar un tratamiento nuevo
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Las opciones van DENTRO del paso 1 y no en un paso propio: elegir
@@ -439,7 +804,8 @@ function BookingPage() {
           )}
         </Step>
 
-        {elegido && (
+        {/* `sigue` y no `elegido`, acá y en los dos pasos de abajo: ver arriba. */}
+        {sigue && (
           <Step n={2} id="paso-profesional" title="Elegí la profesional" className="mt-12">
             <div className="grid gap-3 sm:grid-cols-3">
               {professionals.data?.map((p) => {
@@ -472,7 +838,7 @@ function BookingPage() {
           </Step>
         )}
 
-        {elegido && professionalId && (
+        {sigue && professionalId && (
           <Step n={3} title="Día y horario" className="mt-12">
             <div className="grid gap-8 md:grid-cols-[auto_1fr]">
               {/* El mismo calendario que usan el panel y «cambiar el turno»:
@@ -533,7 +899,7 @@ function BookingPage() {
           </Step>
         )}
 
-        {slot && service && (
+        {sigue && slot && service && (
           <Step n={4} title="Confirmar" className="mt-12">
             <Card className="border-border/80 shadow-soft">
               <CardContent className="space-y-5 p-6">
@@ -592,6 +958,56 @@ function BookingPage() {
                   </li>
                 </ul>
 
+                {/* Sin cuenta: lo único que se pide para reservar. El teléfono
+                    no es un dato de contacto más — es a donde llega el
+                    comprobante y el enlace a sus turnos, así que el texto de
+                    abajo lo dice antes de que lo escriba mal. */}
+                {sinCuenta && (
+                  <div className="space-y-4 border-t border-border pt-5">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="guest-name">Nombre y apellido</Label>
+                        <Input
+                          id="guest-name"
+                          autoComplete="name"
+                          maxLength={80}
+                          value={guestName}
+                          onChange={(e) => setGuestName(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guest-phone">Celular (con WhatsApp)</Label>
+                        <Input
+                          id="guest-phone"
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
+                          maxLength={30}
+                          placeholder="11 2345 6789"
+                          value={guestPhone}
+                          onChange={(e) => setGuestPhone(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      A ese número te mandamos el comprobante por WhatsApp, con un enlace para ver,
+                      cambiar o cancelar tu turno. No hace falta que te registres.{" "}
+                      {/* Un botón y no un <Link>: además de navegar deja
+                          anotado que tiene que volver a esta reserva. Es la
+                          misma salida que la tarjeta «Con mi cuenta» de la
+                          entrada, por si cambió de idea a mitad de camino. */}
+                      <button
+                        type="button"
+                        onClick={irAIngresar}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        Si preferís usar tu cuenta, ingresá
+                      </button>
+                      .
+                    </p>
+                  </div>
+                )}
+
                 <Textarea
                   placeholder="¿Algo que debamos saber? Alergias, embarazo, tratamientos previos…"
                   value={notes}
@@ -641,10 +1057,19 @@ function BookingPage() {
                   </span>
                 </p>
 
+                {/* Antes: `disabled={book.isPending}`. Sin cuenta, además, hasta
+                    que no estén el nombre y el teléfono: el servidor los exige
+                    y los valida de verdad, esto sólo evita el viaje. Mientras
+                    la sesión carga tampoco, para que el turno no salga antes de
+                    saber qué campos tocaba mostrar. */}
                 <Button
                   className="w-full"
                   size="lg"
-                  disabled={book.isPending}
+                  disabled={
+                    book.isPending ||
+                    cargandoSesion ||
+                    (sinCuenta && (guestName.trim().length < 3 || guestPhone.trim().length < 8))
+                  }
                   onClick={() => book.mutate()}
                 >
                   <Check className="mr-2 h-4 w-4" />
@@ -662,10 +1087,30 @@ function BookingPage() {
 
           <VolverArriba /> */}
 
+      <SacarSesionDialog
+        pendiente={sacando}
+        onOpenChange={(abierto) => !abierto && setSacando(null)}
+      />
+
       <SiteFooter />
     </div>
   );
 }
+
+/** Dónde queda guardado, en este navegador, lo que escribió quien reservó sin cuenta. */
+const DATOS_DE_INVITADA = "shiraf:reserva-sin-cuenta";
+
+/** Que ya eligió «sin registrarme» en la pregunta de la entrada. Dura lo que la pestaña. */
+const ELIGIO_SIN_CUENTA = "shiraf:reservar-sin-registrarme";
+
+/** Lo que muestra el cartel del final. Una foto de lo reservado, no ids. */
+type Reservado = {
+  tratamiento: string;
+  profesional: string;
+  /** El instante del turno, en ISO. */
+  cuando: string;
+  telefono: string;
+};
 
 function Step({
   n,

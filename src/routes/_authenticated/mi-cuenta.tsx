@@ -14,6 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, apiPost, apiPut } from "@/lib/api";
 import { ReprogramarTurnoDialog } from "@/components/reprogramar-turno-dialog";
 import { CancelarTurnoDialog } from "@/components/cancelar-turno-dialog";
+import { SesionesPorReservar } from "@/components/sesiones-por-reservar";
+import { CLAVE_SESIONES_PENDIENTES, useSesionesPendientes } from "@/hooks/useSesionesPendientes";
 import { notifyAppointment } from "@/lib/notifications.functions";
 import type { MiTurno, RtaMiCuenta, RtaMisTurnos } from "@/lib/api-tipos";
 import {
@@ -251,6 +253,10 @@ function AccountPage() {
     queryFn: async () => (await api<RtaMisTurnos>("/api/mi-cuenta/turnos")).turnos,
   });
 
+  // Las sesiones que le falta sacar de un tratamiento de varias. Misma consulta
+  // y misma caché que la franja del header.
+  const pendientes = useSesionesPendientes();
+
   const saveProfile = useMutation({
     // La ficha y la nota se guardan en una transacción del lado del servidor.
     // Antes eran dos pedidos sueltos: si el segundo fallaba, quedaba el nombre
@@ -285,6 +291,9 @@ function AccountPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });
+      // Cancelar la sesión 2 la deja pendiente otra vez: el cartel tiene que
+      // volver sin esperar al minuto de caché.
+      queryClient.invalidateQueries({ queryKey: CLAVE_SESIONES_PENDIENTES });
       setCancelando(null);
       toast.success("Turno cancelado.");
     },
@@ -312,6 +321,11 @@ function AccountPage() {
         <div className="gold-rule mt-6" />
 
         <AvisoMailSinConfirmar />
+
+        {/* Antes que los próximos turnos: es lo único de esta pantalla que le
+            pide hacer algo. Es lo mismo que dice la franja del header, con
+            lugar para todos los tratamientos y no sólo el primero. */}
+        <SesionesPorReservar pendientes={pendientes.data ?? []} />
 
         <div className="mt-12 flex items-center gap-3">
           <CalendarDays className="h-5 w-5 text-gold" />

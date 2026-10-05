@@ -20,6 +20,7 @@ Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
 Disallow: /reservar
+Disallow: /mis-turnos
 Disallow: /auth
 Disallow: /recuperar
 
@@ -28,6 +29,7 @@ Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
 Disallow: /reservar
+Disallow: /mis-turnos
 Disallow: /auth
 Disallow: /recuperar
 
@@ -42,6 +44,7 @@ Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
 Disallow: /reservar
+Disallow: /mis-turnos
 Disallow: /auth
 Disallow: /recuperar
 

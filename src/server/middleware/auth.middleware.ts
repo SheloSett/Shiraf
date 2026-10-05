@@ -162,6 +162,35 @@ export const authMiddleware: Handler = async (ctx: Ctx) => {
   return undefined;
 };
 
+/**
+ * Deja la sesión en el `ctx` si hay una, y si no hay, deja pasar igual.
+ *
+ * Es para las rutas que sirven a las dos: desde el 5/10/2026 reservar acepta a
+ * la clienta con cuenta —y entonces el turno es suyo, por `ctx.user.id`— y a la
+ * que reserva con nombre y teléfono. El controller decide cuál de los dos casos
+ * es mirando si `ctx.user` está.
+ *
+ * ── UNA CUENTA DADA DE BAJA CUENTA COMO «SIN SESIÓN» ──────────────────────
+ *
+ * Mismo chequeo que `authMiddleware`, y por lo mismo: el token dura siete días
+ * y la baja tiene que valer en el acto. La diferencia es qué pasa después. Allá
+ * se contesta 403; acá no hay nada que prohibir —la ruta es pública— así que
+ * simplemente no se le reconoce la cuenta: si reserva, reserva como cualquiera
+ * que llega sin registrarse.
+ */
+export const sesionOpcionalMiddleware: Handler = async (ctx: Ctx) => {
+  const sesion = leerSesion(ctx.req);
+  if (!sesion) return undefined;
+
+  const cuenta = await prisma.users.findUnique({
+    where: { id: sesion.id },
+    select: { is_active: true },
+  });
+  if (cuenta?.is_active) ctx.user = sesion;
+
+  return undefined;
+};
+
 /*
  * ── ACÁ VIVÍA `adminMiddleware`, Y SE BORRÓ A PROPÓSITO ────────────────────
  *

@@ -50,6 +50,84 @@ centro sale (el `findMany` de `mailsDelCentro` la filtra).
 Después del deploy, entrar a Accesos y tildarle la casilla a la secretaria.
 Las dueñas reciben siempre, sin tildar nada.
 
+### 🟡 0c. Reservar sin cuenta y la sesión que sigue: falta `db:sync` y probarlo — act. 5/10/2026
+
+Lo pidió la dueña: las clientas no se registraban y le pedían el turno a la
+secretaria. Quedó escrito, compila y pasa el build, pero **no se ejercitó contra
+la base**: nada de esto reservó un turno ni mandó un WhatsApp todavía.
+
+Qué hay:
+
+- **/reservar ya no pide cuenta.** A quien llega sin sesión le pregunta primero
+  cómo quiere reservar: «Sin registrarme» o «Con mi cuenta». Sin cuenta pide
+  nombre y celular en el último paso y el turno queda de invitada. Si elige la
+  cuenta va a /auth y al terminar vuelve a la reserva, con el tratamiento que
+  tenía elegido. Con sesión es igual que antes.
+- **El enlace personal** (`/mis-turnos/<token>`): viaja en cada WhatsApp a quien
+  no tiene cuenta y le abre sus turnos, para verlos, cambiarlos y cancelarlos.
+- **La clienta saca sola la sesión que sigue** de un tratamiento de varias, y el
+  sitio se lo recuerda: una franja dorada en todas las páginas, una tarjeta en
+  «Mi cuenta» y un aviso si va a reservar de nuevo ese tratamiento. El panel
+  sigue pudiendo agendarla como siempre.
+- **Un aviso nuevo del reloj**: «ya podés reservar tu próxima sesión», por mail
+  y WhatsApp, una semana antes del primer día posible. Sólo para sesiones
+  realizadas del 5/10/2026 en adelante (`AVISOS_DESDE` en series.service.ts).
+
+**Lo que hay que correr.** Dos tablas nuevas, `guest_links` y
+`next_session_notices`; ninguna tabla existente cambia. En local:
+
+    bun run db:sync
+
+y **reiniciar `vite dev`**, que guarda el cliente de Prisma viejo en memoria. En
+el VPS entran solas con el deploy, igual que 0b.
+
+> ⚠️ **Todavía NO se corrió en local, y antes de correrlo hay que mirar el
+> puerto.** El 5/10/2026 el `.env` apuntaba a `localhost:5433` y en ese puerto
+> no estaba la base de Shiraf sino el Postgres de OTRO proyecto (uno embebido,
+> levantado por otra sesión). El cluster de Shiraf (`~/.shiraf-pg`) estaba
+> apagado y no pudo arrancar por eso.
+>
+> Lo traicionero: `bun run db:local` contesta «Postgres escuchando en
+> localhost:5433» igual, porque pregunta con `pg_isready` y le responde el
+> otro. Con ese cartel a la vista, `db:sync` le empujaría el esquema de Shiraf
+> a una base ajena. Antes de correrlo: `bun run db:local:status` tiene que
+> decir que el servidor está en ejecución **en `~/.shiraf-pg`**.
+
+**Cómo probar el enlace personal sin WhatsApp.** En desarrollo no hay chip, así
+que el enlace no tiene por dónde llegar: al reservar sin cuenta, el servidor lo
+escribe en su consola —`[dev] Enlace de la invitada: http://…/mis-turnos/…`— y
+se abre copiándolo de ahí. Sólo fuera de producción: en el VPS no se loguea
+nunca, porque es la llave del historial de esa persona.
+
+Hasta que se corra, reservar anda igual —con y sin cuenta— y lo único que no
+sale es el enlace adentro del WhatsApp y el aviso del reloj; los dos lo dicen
+en el log y no rompen nada.
+
+**Lo que falta probar**, con el chip conectado:
+
+- [ ] Entrar a /reservar sin sesión: que pregunte cómo reservar. Elegir «Con mi
+      cuenta» desde la ficha de un tratamiento, ingresar, y ver que vuelve a la
+      reserva con ese tratamiento elegido.
+- [ ] Reservar sin cuenta: que llegue el WhatsApp con el enlace, y que el turno
+      aparezca en «Sin ver» del panel como invitada.
+- [ ] Abrir el enlace desde el teléfono: ver, cambiar y cancelar. Que al centro
+      le llegue el aviso de cada cosa.
+- [ ] El cuarto turno con el mismo teléfono: tiene que rebotar.
+- [ ] Un tratamiento de 2 sesiones: marcar la 1 como realizada y ver la franja,
+      la tarjeta de «Mi cuenta» y el aviso en /reservar. Sacar la 2 y ver que
+      desaparecen, que el precio diga «Incluida» y que no deje elegir un día
+      anterior al intervalo.
+- [ ] Cancelar esa sesión 2 desde «Mi cuenta»: la franja tiene que volver.
+
+**Dos cosas que quedaron a la vista y no se tocaron:**
+
+- En el panel, una sesión 2 **cancelada** traba la serie: el botón de agendar la
+  siguiente dice que ya está agendada. Desde el sitio la clienta sí la puede
+  sacar de nuevo (las canceladas no cuentan), pero `agendarSiguienteSesion` en
+  turnos.controller sigue con la regla vieja.
+- El botón «Avisar» del panel, que arma el WhatsApp a mano, no lleva el enlace
+  de la invitada: el token no baja al navegador. Sale sólo en los automáticos.
+
 ### 🔴 1. HTTPS — hoy las contraseñas viajan en claro
 
 Se entra por **`http://177.7.59.16:3000`**, con `APP_BIND=0.0.0.0` y sin

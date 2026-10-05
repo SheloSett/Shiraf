@@ -60,6 +60,10 @@ export type SesionAAgendar = {
  * —dos de ellas a veintiún días vista— es la forma más rápida de que abandone el
  * formulario.
  *
+ * 5/10/2026 — ya no lo hace SÓLO el centro: la clienta también puede sacar la
+ * que sigue, desde el sitio, con `SacarSesionDialog`. Este diálogo es el del
+ * panel y no cambió — sigue siendo el único que deja adelantar el intervalo.
+ *
  * ── LA FECHA VIENE PROPUESTA, LOS HORARIOS SON LOS REALES ───────────────────
  *
  * El día se abre en la fecha que corresponde según el intervalo del tratamiento

@@ -4,11 +4,29 @@ import { ausenciasDe, horariosOcupados } from "@/server/services/agenda.service"
 import { accesoDe } from "@/server/services/authz.service";
 import { cierresDelCentro } from "@/server/services/cierres.service";
 import { validarTurno } from "@/server/services/turnos.service";
+import {
+  claveDeTelefono,
+  enlaceDeInvitada,
+  MAX_TURNOS_ABIERTOS_POR_TELEFONO,
+  turnosDelTelefono,
+} from "@/server/services/invitadas.service";
+import {
+  sacarLaSesionSiguiente,
+  sesionAnterior,
+  sesionesPendientes,
+} from "@/server/services/series.service";
 import { comoFecha, comoHora } from "@/server/serializar";
-import type { RtaDisponibilidad } from "@/lib/api-tipos";
+import { avisarSinEsperar } from "@/lib/notifications.server";
+import type { RtaDisponibilidad, RtaReserva, RtaSesionesPendientes } from "@/lib/api-tipos";
 
 /**
- * Reservar un turno. Sólo hace falta sesión: es la pantalla de la clienta.
+ * Reservar un turno.
+ *
+ * 5/10/2026 — decía «Sólo hace falta sesión: es la pantalla de la clienta». Ya
+ * no hace falta ni eso: se puede reservar con nombre y teléfono, sin cuenta.
+ * La dueña lo pidió porque registrarse era la traba — las clientas terminaban
+ * pidiéndole el turno a la secretaria. Qué cambia para quien reserva así está
+ * en `reservar`, más abajo.
  */
 
 /**
@@ -153,6 +171,32 @@ export async function disponibilidad(ctx: Ctx) {
  *    No se chequea acá a propósito: "fijate si está libre" y después "insertá"
  *    son dos operaciones, y entre una y otra entra otra reserva. Es la razón
  *    por la que ese trigger se quedó en SQL — ver la Fase 3 del plan.
+ *
+ * ── SIN CUENTA (5/10/2026) ────────────────────────────────────────────────
+ *
+ * Si no hay sesión, el turno queda a nombre de una INVITADA: `guest_name` y
+ * `guest_phone`, que son los mismos campos que ya usaba el centro para anotar a
+ * alguien por teléfono. No se crea ninguna cuenta ni se pide mail.
+ *
+ * El punto 1 sigue valiendo al pie de la letra: con sesión, el turno es de la
+ * sesión y los datos de invitada que vengan en el cuerpo se ignoran. Nadie con
+ * cuenta puede reservar "como otra".
+ *
+ * Lo que se le exige a la invitada, y por qué cada cosa:
+ *
+ *   · **Un celular argentino que sirva para WhatsApp.** No es burocracia: es la
+ *     dirección. Sin mail, el comprobante y el enlace a sus turnos le llegan
+ *     por ahí o no le llegan.
+ *   · **No más de `MAX_TURNOS_ABIERTOS_POR_TELEFONO` turnos por venir** con el
+ *     mismo número. Es el freno a los turnos falsos; el otro es el tope por
+ *     conexión, que está en la ruta.
+ *
+ * Y lo que NO se le devuelve: el enlace a sus turnos. Viaja sólo adentro del
+ * WhatsApp, porque acá no hay ninguna prueba de que el teléfono que escribió
+ * sea suyo. Ver `guest_links` en el esquema.
+ *
+ * Los avisos de este turno los dispara el servidor, no la pantalla: el porqué
+ * está en `avisarSinEsperar`.
  */
 export async function reservar(ctx: Ctx) {
   const serviceId = ctx.body["service_id"];
@@ -175,7 +219,57 @@ export async function reservar(ctx: Ctx) {
    */
   const variantId = typeof ctx.body["variant_id"] === "string" ? ctx.body["variant_id"] : null;
 
-  const validado = await validarTurno(await accesoDe(ctx.user!.id), {
+  /*
+   * De quién es el turno: de la sesión si hay, y si no de quien dejó su nombre
+   * y su teléfono. Los dos casos escriben campos distintos y nunca los dos a
+   * la vez — el tipo lo dice para que el `create` de abajo no pueda mezclarlos.
+   */
+  let deQuien: { client_id: string } | { guest_name: string; guest_phone: string };
+
+  if (ctx.user) {
+    deQuien = { client_id: ctx.user.id };
+  } else {
+    const nombre = typeof ctx.body["guest_name"] === "string" ? ctx.body["guest_name"].trim() : "";
+    const telefono =
+      typeof ctx.body["guest_phone"] === "string" ? ctx.body["guest_phone"].trim() : "";
+
+    // Tres letras es el mínimo para que no sea una inicial; el máximo es para
+    // que el campo no sirva de buzón: el nombre sale en el panel y en los
+    // avisos al centro.
+    if (nombre.length < 3 || nombre.length > 80) {
+      return json({ error: "Decinos tu nombre y apellido." }, 400);
+    }
+
+    const clave = claveDeTelefono(telefono);
+    if (!clave || telefono.length > 30) {
+      return json(
+        {
+          error:
+            "Ese teléfono no parece un celular argentino. Escribilo con el código de área, por ejemplo 11 2345 6789.",
+        },
+        400,
+      );
+    }
+
+    const abiertos = await turnosDelTelefono(clave, { soloAbiertos: true });
+    if (abiertos.length >= MAX_TURNOS_ABIERTOS_POR_TELEFONO) {
+      return json(
+        {
+          error: `Ya hay ${MAX_TURNOS_ABIERTOS_POR_TELEFONO} turnos por venir con ese teléfono. Para sacar otro, escribinos.`,
+        },
+        422,
+      );
+    }
+
+    // El teléfono se guarda como lo escribió: es lo que va a leer el centro, y
+    // normalizarlo acá le borraría la forma en que la persona se lo sabe.
+    deQuien = { guest_name: nombre, guest_phone: telefono };
+  }
+
+  // Antes: `await validarTurno(await accesoDe(ctx.user!.id), {`. Sin cuenta no
+  // hay acceso que mirar, y `validarTurno` ya sabía recibir null: es "alguien
+  // que no es del centro", que es lo que una invitada es.
+  const validado = await validarTurno(ctx.user ? await accesoDe(ctx.user.id) : null, {
     service_id: serviceId,
     variant_id: variantId,
     professional_id: typeof profesionalId === "string" ? profesionalId : null,
@@ -197,16 +291,96 @@ export async function reservar(ctx: Ctx) {
    */
   const creado = await prisma.appointments.create({
     data: {
-      client_id: ctx.user!.id,
+      // Antes: `client_id: ctx.user!.id,`. Ahora puede ser una invitada.
+      ...deQuien,
       service_id: serviceId,
       variant_id: variantId,
       professional_id: typeof profesionalId === "string" ? profesionalId : null,
       starts_at,
-      client_notes: nota || null,
+      // El tope es por la invitada: la nota la lee el centro y sin cuenta no
+      // hay a quién reclamarle un texto de diez páginas.
+      client_notes: nota.slice(0, 600) || null,
       ...validado,
     },
     select: { id: true },
   });
 
-  return json({ id: creado.id });
+  const invitada = !ctx.user;
+
+  // Con cuenta, los dos avisos los pide la pantalla, como siempre. Sin cuenta
+  // salen de acá. Primero el de ella, que es quien está mirando el teléfono.
+  if (invitada) avisarSinEsperar(creado.id, ["requested", "new-request"]);
+
+  /*
+   * Fuera de producción, el enlace de la invitada se escribe en la consola del
+   * servidor.
+   *
+   * Es para poder probar «Mis turnos» en la máquina de desarrollo, donde no hay
+   * chip de WhatsApp y el enlace no tiene por dónde llegar: se reserva sin
+   * cuenta, se copia de la terminal y se abre.
+   *
+   * 🔴 SÓLO fuera de producción, y el `if` no es decorativo: el enlace es la
+   * llave del historial de esa persona. En el log del VPS lo leería cualquiera
+   * con acceso al servidor. Y sigue sin viajar en la respuesta, acá tampoco.
+   */
+  if (invitada && process.env["NODE_ENV"] !== "production" && "guest_phone" in deQuien) {
+    void enlaceDeInvitada(deQuien.guest_phone)
+      .then((enlace) => console.log(`[dev] Enlace de la invitada: ${enlace ?? "(sin enlace)"}`))
+      .catch((error: unknown) => console.error("[dev] No se pudo armar el enlace:", error));
+  }
+
+  // return json({ id: creado.id });
+  return json({ id: creado.id, invitada } satisfies RtaReserva);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La sesión que sigue, sacada por la clienta
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Las sesiones que le falta sacar a quien está conectada.
+ *
+ * Es lo que alimenta el cartel del sitio y el aviso de la pantalla de reserva.
+ * Sale de la sesión y de nada más, igual que «Mi cuenta».
+ */
+export async function misSesionesPendientes(ctx: Ctx) {
+  return json({
+    pendientes: await sesionesPendientes({ client_id: ctx.user!.id }),
+  } satisfies RtaSesionesPendientes);
+}
+
+/**
+ * La clienta saca la sesión que sigue de un tratamiento suyo.
+ *
+ * Manda de qué turno parte —la sesión que ya se hizo— y el horario. Todo lo
+ * demás lo copia el servidor de ese turno. Las reglas, y en qué se diferencian
+ * de las del panel, están en `sacarLaSesionSiguiente`.
+ */
+export async function sacarMiSesionSiguiente(ctx: Ctx) {
+  const id = ctx.body["appointment_id"];
+  const cuando = ctx.body["starts_at"];
+  if (typeof id !== "string" || typeof cuando !== "string") {
+    return json({ error: "Faltan datos del turno." }, 400);
+  }
+  const starts_at = new Date(cuando);
+  if (Number.isNaN(starts_at.getTime())) return json({ error: "Ese horario no se entiende." }, 400);
+
+  const userId = ctx.user!.id;
+
+  // 404 y no 403 si es de otra: decir "existe pero no es tuyo" ya confirma que
+  // ese turno existe. Mismo criterio que cancelar.
+  const anterior = await sesionAnterior(id, { client_id: userId });
+  if (!anterior) return json({ error: "Ese turno no existe." }, 404);
+
+  const profesionalId = ctx.body["professional_id"];
+  const nota = typeof ctx.body["client_notes"] === "string" ? ctx.body["client_notes"].trim() : "";
+
+  const creado = await sacarLaSesionSiguiente(anterior, {
+    starts_at,
+    professional_id: typeof profesionalId === "string" && profesionalId ? profesionalId : null,
+    client_notes: nota.slice(0, 600) || null,
+    acceso: await accesoDe(userId),
+  });
+
+  return json(creado);
 }

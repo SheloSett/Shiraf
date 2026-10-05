@@ -1,6 +1,7 @@
 import { CONTACT } from "@/lib/contact";
 import {
   buildAppointmentMessage,
+  buildNextSessionNotice,
   buildProfessionalMessage,
   buildOverdueDigest,
   buildProfessionalDayDigest,
@@ -388,6 +389,9 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
     cancelReason: appointment.cancel_reason,
     sessionNumber: appointment.session_number,
     sessionsTotal: appointment.sessions_total,
+    // Sólo quien reservó sin cuenta: es su única puerta a «Mis turnos». Ver
+    // `guestLink` en notifications.ts.
+    guestLink: appointment.client_id ? null : await enlaceSeguro(appointment.guest_phone),
   };
 
   return {
@@ -397,6 +401,115 @@ async function datosDelAviso(appointmentId: string): Promise<DatosDelAviso | nul
     professionalPhone: appointment.professional?.user?.profile?.phone ?? null,
     professionalUserId: appointment.professional?.user_id ?? null,
   };
+}
+
+/**
+ * El enlace personal de una invitada, o null — y null también si algo falla.
+ *
+ * El try/catch es por lo mismo que el de `datosDelCentroSeguro`: el enlace es
+ * un renglón más del mensaje, y un turno confirmado no se puede quedar sin
+ * aviso porque no se pudo armar ese renglón. El caso real es la base todavía
+ * sin la tabla `guest_links` —el código llegó antes que el `db push`—: ahí el
+ * aviso sale igual, sin el enlace, y queda dicho en el log.
+ */
+async function enlaceSeguro(telefono: string | null): Promise<string | null> {
+  try {
+    const { enlaceDeInvitada } = await import("@/server/services/invitadas.service");
+    return await enlaceDeInvitada(telefono);
+  } catch (error) {
+    console.error("[aviso] No se pudo armar el enlace de la invitada:", error);
+    return null;
+  }
+}
+
+/**
+ * Un aviso entero: el mail, el WhatsApp y la profesional, con su rastro en el
+ * log.
+ *
+ * ── DE DÓNDE SALIÓ ────────────────────────────────────────────────────────
+ *
+ * Era el cuerpo del handler de `notifyAppointment`, en notifications.functions.
+ * Se mudó acá el 5/10/2026 porque dejó de tener una sola entrada: hasta ese día
+ * todos los avisos los pedía un navegador con sesión —el panel, o la clienta
+ * sobre su propio turno— y esa server function exige una. Quien reserva sin
+ * cuenta no tiene sesión que mostrar, así que sus avisos los dispara el
+ * servidor mismo, desde el controller que acaba de escribir el turno.
+ *
+ * Con las dos entradas llamando acá, lo que sale por un turno es lo mismo
+ * venga de donde venga. La AUTORIZACIÓN no está acá: cada entrada resuelve la
+ * suya antes de llamar, igual que ya pasaba con `deliverAppointmentEmail`.
+ */
+export async function entregarAviso(
+  appointmentId: string,
+  event: AppointmentEvent,
+  /** Quién lo disparó desde el panel, si fue una persona con sesión. */
+  quienLoHizo?: string,
+): Promise<NotifyResult> {
+  /*
+   * Los dos canales, y el mail manda el resultado.
+   *
+   * En serie y no con `Promise.all`: son dos, tardan poco, y con el paralelo
+   * un fallo de uno no queda claro cuál fue. Lo que gana el paralelo acá son
+   * milisegundos; lo que cuesta es un log confuso a las tres de la mañana.
+   *
+   * ── POR QUÉ EL WHATSAPP VA APARTE Y NO CAMBIA `sent` ──────────────────
+   *
+   * Porque `sent` lo leen los toasts del panel, que ya dicen "por mail no
+   * salió" con su motivo. Si el WhatsApp entrara en ese mismo booleano, un
+   * canal apagado haría que TODOS los avisos se reporten como fallados aunque
+   * el mail haya salido perfecto.
+   *
+   * Entonces viaja en su propio campo, opcional. Las pantallas que sólo miran
+   * `sent` y `reason` siguen andando sin tocar una línea.
+   */
+  const mail = await deliverAppointmentEmail(appointmentId, event, quienLoHizo);
+  const whatsapp = await deliverAppointmentWhatsapp(appointmentId, event);
+
+  /*
+   * El tercer destinatario: la profesional que atiende el turno.
+   *
+   * Se le avisa ADEMÁS del centro, no en vez del centro —decidido con la dueña
+   * el 4/9/2026—, y de los seis eventos que le cambian la agenda. Los otros
+   * dos, y todos los casos en que esto no manda nada sin que haya problema
+   * alguno, están explicados en `deliverAppointmentToProfessional`.
+   *
+   * `quienLoHizo` va para que no le llegue un mail de algo que acaba de hacer
+   * ella misma desde el panel.
+   */
+  const professional = await deliverAppointmentToProfessional(appointmentId, event, quienLoHizo);
+
+  /*
+   * 🔴 El aviso que no sale queda en el log, siempre.
+   *
+   * El panel ya muestra el motivo en un toast, pero el toast dura cinco
+   * segundos y sólo existe si el aviso lo disparó una persona mirando la
+   * pantalla. Los otros caminos no tienen a nadie del centro delante: la
+   * reserva de la clienta, con cuenta o sin ella, y el recordatorio del reloj.
+   *
+   * 4/9/2026: una clienta de Hotmail no recibió el aviso de su turno y no
+   * había forma de saberlo desde acá. Éste es el único lugar por el que pasan
+   * todos los caminos, así que el renglón va acá y no en cada pantalla.
+   *
+   * 5/10/2026 — "no tiene mail cargado" dejó de ser un fallo que valga un
+   * renglón cuando el aviso es para una invitada: ahora es el caso NORMAL de
+   * quien reserva con nombre y teléfono, y logueado en cada reserva taparía
+   * los que sí importan. Se calla sólo si el WhatsApp salió: una invitada a la
+   * que no le llegó nada por ningún lado se sigue anotando.
+   */
+  const sinMailPeroConWhatsapp =
+    !mail.sent && whatsapp.sent && mail.reason.includes("no tiene mail");
+  if (!mail.sent && !sinMailPeroConWhatsapp) {
+    console.error(`[aviso] ${event} · turno ${appointmentId}: ${mail.reason}`);
+  }
+
+  // Se calla sólo el "no está configurado", que es el único motivo que no es
+  // un fallo (9/9/2026: la dueña reclamó que a los turnos cargados a mano no
+  // les llegaba el WhatsApp, sin una línea que dijera por qué).
+  if (!whatsapp.sent && !whatsapp.reason.includes("no está configurado")) {
+    console.error(`[aviso] ${event} · turno ${appointmentId} · whatsapp: ${whatsapp.reason}`);
+  }
+
+  return { ...mail, whatsapp, professional };
 }
 
 export async function deliverAppointmentEmail(
@@ -883,5 +996,165 @@ export async function deliverOverdueDigest(
     subject: message.subject,
     text: message.lines.join("\n"),
     html: renderEmailHtml(message, await datosDelCentroSeguro()),
+  });
+}
+
+/**
+ * «Ya podés reservar tu próxima sesión», a UNA clienta. Lo llama la tarea del
+ * reloj, una vez por cada sesión realizada a la que le falta la que sigue
+ * (5/10/2026).
+ *
+ * No pasa por `datosDelAviso` ni por `entregarAviso` porque no es sobre un
+ * turno que existe sino sobre uno que falta sacar: recibe el turno ANTERIOR
+ * —el que ya se hizo— y de él saca quién es y cómo se le escribe.
+ *
+ * ── A DÓNDE LA MANDA EL ENLACE ────────────────────────────────────────────
+ *
+ * Con cuenta, a «Mi cuenta», donde está el cartel con el botón. Sin cuenta, a
+ * su enlace personal, que es la misma pantalla sin tener que entrar. Una
+ * invitada sin un teléfono que sirva no tiene ni enlace ni a dónde escribirle:
+ * no sale nada y lo dice.
+ *
+ * ── POR META NO SALE ──────────────────────────────────────────────────────
+ *
+ * Igual que los avisos a la profesional: es un texto propio y no tiene
+ * plantilla aprobada. Por el chip sale como texto libre; con sólo la vía
+ * oficial encendida queda el mail, para quien tenga.
+ */
+export async function deliverNextSessionNotice(input: {
+  /** El turno de la sesión que ya se hizo. */
+  anteriorId: string;
+  /** "AAAA-MM-DD": el primer día en que se puede hacer la que sigue. */
+  desde: string | null;
+}): Promise<{ mail: DeliveryResult; whatsapp: DeliveryResult }> {
+  const { prisma } = await import("@/server/db");
+  const { nombreDelTratamiento } = await import("@/server/services/turnos.service");
+  const { urlDelSitio } = await import("@/server/services/invitadas.service");
+
+  const anterior = await prisma.appointments.findUnique({
+    where: { id: input.anteriorId },
+    select: {
+      client_id: true,
+      guest_name: true,
+      guest_phone: true,
+      guest_email: true,
+      session_number: true,
+      sessions_total: true,
+      service: { select: { name: true } },
+      service_name: true,
+      variant: { select: { name: true } },
+      variant_name: true,
+      client: { select: { email: true, profile: { select: { full_name: true, phone: true } } } },
+    },
+  });
+
+  const noExiste: DeliveryResult = { sent: false, reason: "El turno no existe." };
+  if (!anterior) return { mail: noExiste, whatsapp: noExiste };
+
+  const link = anterior.client_id
+    ? `${urlDelSitio()}/mi-cuenta`
+    : await enlaceSeguro(anterior.guest_phone);
+
+  if (!link) {
+    const sinEnlace: DeliveryResult = {
+      sent: false,
+      reason: "Reservó sin cuenta y su teléfono no sirve para mandarle el enlace.",
+    };
+    return { mail: sinEnlace, whatsapp: sinEnlace };
+  }
+
+  const centro = await datosDelCentroSeguro();
+  const message = buildNextSessionNotice({
+    clientName: anterior.client?.profile?.full_name ?? anterior.guest_name ?? "Clienta",
+    serviceName: nombreDelTratamiento(anterior),
+    sessionNumber: anterior.session_number + 1,
+    sessionsTotal: anterior.sessions_total,
+    desde: input.desde,
+    link,
+  });
+
+  const email = anterior.client?.email ?? anterior.guest_email ?? null;
+  const mail: DeliveryResult = email
+    ? await sendEmail({
+        to: email,
+        subject: message.subject,
+        text: message.lines.join("\n"),
+        html: renderEmailHtml(message, centro),
+      })
+    : { sent: false, reason: "Esta clienta no tiene mail cargado." };
+
+  return { mail, whatsapp: await whatsappDeSesionSiguiente(anterior, message, centro) };
+}
+
+/** El mismo aviso, por el chip. Separado sólo para que la de arriba se lea de corrido. */
+async function whatsappDeSesionSiguiente(
+  anterior: {
+    guest_phone: string | null;
+    client: { profile: { phone: string | null } | null } | null;
+  },
+  message: AppointmentMessage,
+  centro: DatosDelCentro | undefined,
+): Promise<DeliveryResult> {
+  const transporte = await transporteWhatsapp();
+  if (!transporte) {
+    return { sent: false, reason: "El envío de WhatsApp todavía no está configurado." };
+  }
+  if (transporte !== "evolution") {
+    return { sent: false, reason: "El aviso de la sesión siguiente no tiene plantilla de Meta." };
+  }
+
+  const crudo = anterior.client?.profile?.phone ?? anterior.guest_phone;
+  const numero = toWhatsappNumber(crudo);
+  if (!numero) {
+    return {
+      sent: false,
+      reason: crudo
+        ? "El teléfono cargado no tiene forma de número argentino."
+        : "Esta clienta no tiene teléfono cargado.",
+    };
+  }
+
+  const { enviarPorEvolution } = await import("@/server/services/evolution.service");
+  const envio = await enviarPorEvolution({
+    to: numero,
+    // Con la firma de "este número no se lee", como todo lo que le llega a una
+    // clienta por el chip.
+    texto: [...message.lines, ...firmaDeWhatsapp(centro)].join("\n"),
+  });
+
+  return envio.ok ? { sent: true } : { sent: false, reason: envio.motivo };
+}
+
+/**
+ * Dispara los avisos de un turno desde el servidor, sin hacer esperar a quien
+ * llamó (5/10/2026).
+ *
+ * Es la entrada de quien NO tiene sesión: la que reserva con nombre y teléfono,
+ * o la que cambia o cancela su turno desde el enlace personal. La clienta con
+ * cuenta sigue pidiendo sus avisos desde el navegador, por `notifyAppointment`;
+ * acá no hay navegador al que confiarle eso —sin sesión no se puede comprobar
+ * de quién es el turno por el que avisa—, así que los manda el mismo controller
+ * que acaba de escribir el turno, que es el único que lo sabe.
+ *
+ * ── POR QUÉ NO SE ESPERA ──────────────────────────────────────────────────
+ *
+ * Porque el turno ya está guardado y eso es lo que le importa a quien apretó el
+ * botón. Un aviso son varios envíos en serie —el WhatsApp a ella, el mail y los
+ * WhatsApp al centro, la profesional— y por el chip cada uno espera más de un
+ * segundo a propósito: atado a la respuesta, reservar tardaría diez segundos en
+ * contestar "listo".
+ *
+ * Los eventos van en serie y no en paralelo, por lo mismo que adentro de
+ * `entregarAviso`: son mensajes por el mismo chip, y la ráfaga es lo que no hay
+ * que hacer.
+ *
+ * El `catch` del final es el que importa: una promesa suelta que rechaza se
+ * lleva puesto el proceso, o sea el sitio, por un aviso que no salió.
+ */
+export function avisarSinEsperar(appointmentId: string, eventos: AppointmentEvent[]): void {
+  void (async () => {
+    for (const evento of eventos) await entregarAviso(appointmentId, evento);
+  })().catch((error: unknown) => {
+    console.error(`[aviso] turno ${appointmentId} · los avisos fallaron enteros:`, error);
   });
 }

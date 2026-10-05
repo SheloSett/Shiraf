@@ -1227,6 +1227,12 @@ export async function crear(ctx: Ctx) {
  * una —dos de ellas a veintiun dias vista, sin saber todavia como le va a
  * quedar la piel— es la forma mas rapida de que abandone el formulario.
  *
+ * 5/10/2026 — ya no lo hace SOLO el centro. La clienta sigue reservando una
+ * sesion por vez, pero la que sigue la puede sacar ella cuando le toca, y el
+ * sitio se lo recuerda. Eso vive en `sacarLaSesionSiguiente` (series.service),
+ * con reglas mas duras que las de aca: para ella el intervalo es un minimo y el
+ * horario tiene que entrar en la agenda. Esta funcion no cambio.
+ *
  * ── QUE SE COPIA Y QUE NO ─────────────────────────────────────────────────
  *
  * Se copia todo lo que identifica el tratamiento y a la persona: el

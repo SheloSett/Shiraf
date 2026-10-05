@@ -118,89 +118,17 @@ export const notifyAppointment = createServerFn({ method: "POST" })
 
     // Dinámico y adentro del handler, como todo lo demás: notifications.server
     // importa Prisma, así que no puede entrar por un import de nivel superior.
-    const {
-      deliverAppointmentEmail,
-      deliverAppointmentWhatsapp,
-      deliverAppointmentToProfessional,
-    } = await import("@/lib/notifications.server");
-
-    /*
-     * Los dos canales, y el mail manda el resultado.
-     *
-     * En serie y no con `Promise.all`: son dos, tardan poco, y con el paralelo
-     * un fallo de uno no queda claro cuál fue. Lo que gana el paralelo acá son
-     * milisegundos; lo que cuesta es un log confuso a las tres de la mañana.
-     *
-     * ── POR QUÉ EL WHATSAPP VA APARTE Y NO CAMBIA `sent` ──────────────────
-     *
-     * Porque `sent` lo leen los toasts del panel, que ya dicen "por mail no
-     * salió" con su motivo. Si el WhatsApp entrara en ese mismo booleano, un
-     * canal apagado —que es el estado normal hoy— haría que TODOS los avisos se
-     * reporten como fallados aunque el mail haya salido perfecto.
-     *
-     * Entonces viaja en su propio campo, opcional. Las pantallas que hoy sólo
-     * miran `sent` y `reason` siguen andando sin tocar una línea, y el día que
-     * el canal se encienda hay dónde mirar cómo le fue.
-     */
-    // `context.userId` entra desde el 9/9/2026, por "staff-created": el mail al
-    // centro nombra a quien cargó el turno y no se lo manda a esa misma
-    // persona. Para los demás eventos no cambia nada.
-    //   const mail = await deliverAppointmentEmail(data.appointmentId, data.event);
-    const mail = await deliverAppointmentEmail(data.appointmentId, data.event, context.userId);
-    const whatsapp = await deliverAppointmentWhatsapp(data.appointmentId, data.event);
-
-    /*
-     * El tercer destinatario: la profesional que atiende el turno.
-     *
-     * Se le avisa ADEMÁS del centro, no en vez del centro —decidido con la dueña
-     * el 4/9/2026—, y de los seis eventos que le cambian la agenda. Los otros
-     * dos, y todos los casos en que esto no manda nada sin que haya problema
-     * alguno, están explicados en `deliverAppointmentToProfessional`.
-     *
-     * `context.userId` va para que no le llegue un mail de algo que acaba de
-     * hacer ella misma desde el panel, que es el caso más frecuente ahora que
-     * todas las profesionales manejan turnos.
-     */
-    const professional = await deliverAppointmentToProfessional(
-      data.appointmentId,
-      data.event,
-      context.userId,
-    );
-
-    /*
-     * 🔴 El aviso que no sale queda en el log, siempre.
-     *
-     * El panel ya muestra el motivo en un toast, pero el toast dura cinco
-     * segundos y sólo existe si el aviso lo disparó una persona mirando la
-     * pantalla. Los otros dos caminos no tienen a nadie del centro delante:
-     *
-     *   · la reserva de la clienta (`reservar.tsx`), que dispara "new-request" y
-     *     "requested" con el fallo tragado a propósito para no romperle la
-     *     reserva por un mail;
-     *   · el recordatorio del reloj, que corre a las 10 de la mañana solo.
-     *
-     * 4/9/2026: una clienta de Hotmail no recibió el aviso de su turno y no
-     * había forma de saberlo desde acá. Éste es el único lugar por el que pasan
-     * los tres caminos, así que el renglón va acá y no en cada pantalla.
-     *
-     * El WhatsApp NO se loguea: hoy está apagado en las dos instalaciones y
-     * contesta "no está configurado" en cada aviso, así que sería una línea de
-     * ruido por turno tapando justamente las que importan.
-     */
-    if (!mail.sent) {
-      console.error(`[aviso] ${data.event} · turno ${data.appointmentId}: ${mail.reason}`);
-    }
-
-    // El párrafo de arriba que dice que el WhatsApp NO se loguea dejó de valer
-    // el 9/9/2026: el canal está encendido. Y el mismo día la dueña reclamó
-    // que a los turnos cargados a mano no les llegaba el WhatsApp, sin una
-    // línea que dijera por qué. Se calla sólo el "no está configurado", que es
-    // el único motivo que no es un fallo.
-    if (!whatsapp.sent && !whatsapp.reason.includes("no está configurado")) {
-      console.error(
-        `[aviso] ${data.event} · turno ${data.appointmentId} · whatsapp: ${whatsapp.reason}`,
-      );
-    }
-
-    return { ...mail, whatsapp, professional };
+    //
+    // 5/10/2026 — acá adentro estaba el envío entero: el mail, el WhatsApp, la
+    // profesional y los dos renglones de log, con sus porqués. Se mudó tal cual
+    // a `entregarAviso`, en notifications.server.ts, porque dejó de tener una
+    // sola entrada: los avisos de quien reserva SIN cuenta los dispara el
+    // servidor —esa persona no tiene sesión con la que pasar por esta puerta— y
+    // tienen que salir exactamente iguales a éstos. Lo que queda acá es lo que
+    // es propio de esta entrada: validar el pedido y decidir quién puede.
+    //
+    // `context.userId` va desde el 9/9/2026, por "staff-created": el mail al
+    // centro nombra a quien cargó el turno y no se lo manda a esa misma persona.
+    const { entregarAviso } = await import("@/lib/notifications.server");
+    return entregarAviso(data.appointmentId, data.event, context.userId);
   });

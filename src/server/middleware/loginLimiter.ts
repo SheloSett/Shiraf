@@ -34,7 +34,7 @@ const MAX_POR_IP = 10;
 const VENTANA_MAIL_MS = 15 * 60 * 1000;
 const MAX_POR_MAIL = 10;
 
-type Registro = { cuenta: number; hasta: number };
+export type Registro = { cuenta: number; hasta: number };
 
 const porIp = new Map<string, Registro>();
 const porMail = new Map<string, Registro>();
@@ -164,7 +164,11 @@ let avisado = false;
  * Con `null` el contador por IP se abstiene, lo dice en el log, y queda
  * trabajando el de por mail, que no necesita saber de dónde vino el pedido.
  */
-function claveDeQuienLlama(ctx: Ctx): string | null {
+// Exportada el 5/10/2026: la usa también `limitePorIp.ts`, que frena las
+// reservas sin cuenta. De dónde sale la IP tiene que estar resuelto en UN
+// lugar — es justo el bug que este archivo ya tuvo una vez.
+// function claveDeQuienLlama(ctx: Ctx): string | null {
+export function claveDeQuienLlama(ctx: Ctx): string | null {
   const socket = ipDelSocket(ctx);
 
   switch (queHayAdelante()) {
@@ -222,7 +226,14 @@ function claveDeQuienLlama(ctx: Ctx): string | null {
  * se iban más. Un `setInterval` sería un reloj más que mantener; hacerlo de a
  * poco en cada pedido cuesta lo mismo y no necesita que nadie lo apague.
  */
-function registrar(mapa: Map<string, Registro>, clave: string, ventana: number, maximo: number) {
+// Exportada junto con `claveDeQuienLlama`, y por lo mismo.
+// function registrar(mapa: Map<string, Registro>, clave: string, ventana: number, maximo: number) {
+export function registrar(
+  mapa: Map<string, Registro>,
+  clave: string,
+  ventana: number,
+  maximo: number,
+) {
   const ahora = Date.now();
 
   if (mapa.size > 1000) {

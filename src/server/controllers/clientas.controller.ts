@@ -1,6 +1,13 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { json, type Ctx } from "@/server/http";
-import { accesoDe, exigirAdmin, puede, puedeAlguno } from "@/server/services/authz.service";
+import {
+  accesoDe,
+  exigirAdmin,
+  puede,
+  puedeAlguno,
+  type Acceso,
+} from "@/server/services/authz.service";
 import { idsDelEquipo } from "@/server/services/agenda.service";
 import {
   exigirAlcanceDeClienta,
@@ -10,6 +17,7 @@ import {
 import { comoNumero } from "@/server/serializar";
 import { HORAS_PARA_QUE_LA_CLIENTA_TOQUE_SU_TURNO, laClientaTodaviaPuede } from "@/lib/shiraf";
 import type {
+  MiTurno,
   RtaClientas,
   RtaEquipo,
   RtaFichaDeClienta,
@@ -163,12 +171,31 @@ export async function guardarMiFicha(ctx: Ctx) {
 }
 
 export async function misTurnos(ctx: Ctx) {
+  // 🔴 El filtro es explícito. La policy decía "los propios O los de todas si
+  // tenés el permiso de turnos", así que sin este `client_id` la dueña o una
+  // secretaria abrirían SU cuenta y verían ahí los turnos de todas las
+  // clientas, mezclados con los suyos.
+  return json({
+    turnos: await turnosPropios({ client_id: ctx.user!.id }),
+  } satisfies RtaMisTurnos);
+}
+
+/**
+ * Los turnos de alguien, como los ve ella misma.
+ *
+ * Era el cuerpo de `misTurnos`. Se separó el 5/10/2026 porque pasó a tener dos
+ * dueñas posibles: la clienta con cuenta, que es `{ client_id }`, y la que
+ * reservó sin cuenta y entra por su enlace personal, que es una lista de ids
+ * resuelta por teléfono (ver enlace.controller.ts). Las dos ven lo mismo y con
+ * la misma forma, así que la consulta es una sola.
+ *
+ * ⚠️ `deQuien` es obligatorio y lo arma quien llama: es el filtro que dice de
+ * quién son los turnos. Acá adentro no hay ningún otro.
+ */
+export async function turnosPropios(deQuien: Prisma.appointmentsWhereInput): Promise<MiTurno[]> {
   const turnos = await prisma.appointments.findMany({
-    // 🔴 El filtro es explícito. La policy decía "los propios O los de todas si
-    // tenés el permiso de turnos", así que sin este `client_id` la dueña o una
-    // secretaria abrirían SU cuenta y verían ahí los turnos de todas las
-    // clientas, mezclados con los suyos.
-    where: { client_id: ctx.user!.id },
+    // Antes: `where: { client_id: ctx.user!.id },`
+    where: deQuien,
     select: {
       id: true,
       starts_at: true,
@@ -195,49 +222,49 @@ export async function misTurnos(ctx: Ctx) {
     orderBy: { starts_at: "desc" },
   });
 
-  return json({
-    turnos: turnos.map((t) => ({
-      id: t.id,
-      starts_at: t.starts_at.toISOString(),
-      status: t.status,
-      duration_minutes: t.duration_minutes,
-      buffer_minutes: t.buffer_minutes,
-      client_notes: t.client_notes,
-      // Los nombres anidados vienen del select de supabase-js y se conservan
-      // para no tener que tocar el JSX.
+  // Antes esto era `return json({ turnos: turnos.map(…) } satisfies RtaMisTurnos);`
+  // Ahora devuelve la lista y el `json` lo pone quien llama.
+  return turnos.map((t) => ({
+    id: t.id,
+    starts_at: t.starts_at.toISOString(),
+    status: t.status,
+    duration_minutes: t.duration_minutes,
+    buffer_minutes: t.buffer_minutes,
+    client_notes: t.client_notes,
+    // Los nombres anidados vienen del select de supabase-js y se conservan
+    // para no tener que tocar el JSX.
+    //
+    // `t.service` puede ser null: el tratamiento se borró del catálogo y el
+    // turno quedó sin vínculo. El nombre sale igual —congelado en la fila— y
+    // el precio se cae al que se cobró ese día, que es el único que queda.
+    services: {
+      name: nombreDelTratamiento(t),
+      // EL PRECIO DEL TURNO, congelado, y no el del catálogo.
       //
-      // `t.service` puede ser null: el tratamiento se borró del catálogo y el
-      // turno quedó sin vínculo. El nombre sale igual —congelado en la fila— y
-      // el precio se cae al que se cobró ese día, que es el único que queda.
-      services: {
-        name: nombreDelTratamiento(t),
-        // EL PRECIO DEL TURNO, congelado, y no el del catálogo.
-        //
-        // Decía `t.service ? t.service.price : t.price`: el del catálogo
-        // mientras el tratamiento existiera, y el congelado sólo si se había
-        // borrado. Eso ya contradecía al esquema —«no lo reemplaces por un
-        // join a services.price»— y con lo de esta semana pasó a mostrar
-        // números directamente falsos:
-        //
-        //   · con OPCIONES, `services.price` es el del tratamiento «a secas»,
-        //     que no se le cobra a nadie: un «cuerpo completo» de 85.000
-        //     figuraba en 0;
-        //   · con VARIAS SESIONES, el precio del paquete quedó en la primera
-        //     y las siguientes valen 0, pero el join les devolvía el paquete
-        //     entero — la misma plata, tres veces, en pantalla.
-        //
-        // El congelado es el que se acordó con la clienta ese día, que es lo
-        // único que esta lista tiene que decir.
-        price: comoNumero(t.price),
-        category: t.service?.category ?? null,
-      },
-      professionals: t.professional,
-      service_id: t.service_id,
-      professional_id: t.professional_id,
-      session_number: t.session_number,
-      sessions_total: t.sessions_total,
-    })),
-  } satisfies RtaMisTurnos);
+      // Decía `t.service ? t.service.price : t.price`: el del catálogo
+      // mientras el tratamiento existiera, y el congelado sólo si se había
+      // borrado. Eso ya contradecía al esquema —«no lo reemplaces por un
+      // join a services.price»— y con lo de esta semana pasó a mostrar
+      // números directamente falsos:
+      //
+      //   · con OPCIONES, `services.price` es el del tratamiento «a secas»,
+      //     que no se le cobra a nadie: un «cuerpo completo» de 85.000
+      //     figuraba en 0;
+      //   · con VARIAS SESIONES, el precio del paquete quedó en la primera
+      //     y las siguientes valen 0, pero el join les devolvía el paquete
+      //     entero — la misma plata, tres veces, en pantalla.
+      //
+      // El congelado es el que se acordó con la clienta ese día, que es lo
+      // único que esta lista tiene que decir.
+      price: comoNumero(t.price),
+      category: t.service?.category ?? null,
+    },
+    professionals: t.professional,
+    service_id: t.service_id,
+    professional_id: t.professional_id,
+    session_number: t.session_number,
+    sessions_total: t.sessions_total,
+  }));
 }
 
 /**
@@ -250,12 +277,31 @@ export async function misTurnos(ctx: Ctx) {
  * comentario de esa función, y es lo más fácil de olvidar de toda la migración.
  */
 export async function cancelarMiTurno(ctx: Ctx) {
+  const userId = ctx.user!.id;
+  return cancelarTurnoDe(ctx, { client_id: userId }, await accesoDe(userId));
+}
+
+/**
+ * Lo mismo, para quien sea la dueña del turno.
+ *
+ * Es el cuerpo de `cancelarMiTurno`, con el "de quién es" como parámetro
+ * (5/10/2026). La clienta con cuenta pasa `{ client_id }` y su acceso; la que
+ * reservó sin cuenta, los turnos de su teléfono y `null` — ver
+ * enlace.controller.ts. Las reglas son las mismas para las dos, y por eso no
+ * están escritas dos veces.
+ */
+export async function cancelarTurnoDe(
+  ctx: Ctx,
+  deQuien: Prisma.appointmentsWhereInput,
+  acceso: Acceso | null,
+) {
   const id = ctx.params["id"];
   if (!id) return json({ error: "Falta el turno." }, 400);
 
-  const userId = ctx.user!.id;
+  // const userId = ctx.user!.id;
   const turno = await prisma.appointments.findFirst({
-    where: { id, client_id: userId },
+    // Antes: `where: { id, client_id: userId },`
+    where: { AND: [{ id }, deQuien] },
     select: { id: true, status: true, starts_at: true },
   });
 
@@ -263,7 +309,8 @@ export async function cancelarMiTurno(ctx: Ctx) {
   // confirma que ese turno existe.
   if (!turno) return json({ error: "Ese turno no existe." }, 404);
 
-  exigirAlcanceDeClienta(await accesoDe(userId), turno, { status: "cancelled" });
+  // exigirAlcanceDeClienta(await accesoDe(userId), turno, { status: "cancelled" });
+  exigirAlcanceDeClienta(acceso, turno, { status: "cancelled" });
 
   // El corte de las horas. Se comprueba ACÁ y no sólo escondiendo el botón: la
   // pantalla se puede saltear con un pedido a mano, y esto es una regla del
@@ -333,12 +380,26 @@ export async function cancelarMiTurno(ctx: Ctx) {
  * del UPDATE. El router traduce su 23P01.
  */
 export async function reprogramarMiTurno(ctx: Ctx) {
+  const userId = ctx.user!.id;
+  return reprogramarTurnoDe(ctx, { client_id: userId }, await accesoDe(userId));
+}
+
+/**
+ * Lo mismo, para quien sea la dueña del turno. Ver `cancelarTurnoDe`: es el
+ * mismo desdoble y por el mismo motivo.
+ */
+export async function reprogramarTurnoDe(
+  ctx: Ctx,
+  deQuien: Prisma.appointmentsWhereInput,
+  acceso: Acceso | null,
+) {
   const id = ctx.params["id"];
   if (!id) return json({ error: "Falta el turno." }, 400);
 
-  const userId = ctx.user!.id;
+  // const userId = ctx.user!.id;
   const turno = await prisma.appointments.findFirst({
-    where: { id, client_id: userId },
+    // Antes: `where: { id, client_id: userId },`
+    where: { AND: [{ id }, deQuien] },
     select: { id: true, status: true, starts_at: true, service_id: true, variant_id: true },
   });
   if (!turno) return json({ error: "Ese turno no existe." }, 404);
@@ -378,7 +439,8 @@ export async function reprogramarMiTurno(ctx: Ctx) {
   // La opción es la MISMA que se reservó: mover la hora no es volver a elegir
   // qué se hace. Sin mandarla, un tratamiento con opciones haría rebotar la
   // reprogramación con "hay que elegir una opción", que acá no tendría sentido.
-  const validado = await validarTurno(await accesoDe(userId), {
+  // Antes: `await validarTurno(await accesoDe(userId), {`
+  const validado = await validarTurno(acceso, {
     service_id: turno.service_id,
     variant_id: turno.variant_id,
     professional_id: profesionalId,

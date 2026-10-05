@@ -494,6 +494,70 @@ async function avisarDeLosVencidos(): Promise<void> {
   );
 }
 
+/**
+ * «Ya podés reservar tu próxima sesión»: a quién le toca hoy (5/10/2026).
+ *
+ * Es el tercer aviso que sale solo, después del recordatorio del día antes y
+ * del resumen de vencidos. Existe porque desde hoy la sesión que sigue de un
+ * tratamiento de varias la saca la clienta: sin esto, la única forma de
+ * enterarse de que le toca sería entrar al sitio a mirar el cartel, y la que
+ * reservó sin cuenta ni siquiera tiene a dónde entrar.
+ *
+ * A quién, y cuándo, lo decide `sesionesParaAvisar` — acá sólo se manda y se
+ * anota. La marca es una fila en `next_session_notices`, que hace esta pasada
+ * tan idempotente como la de los recordatorios: corre a las 10 y a las 13, y la
+ * segunda no encuentra a nadie.
+ *
+ * ── SE MARCA SI SALIÓ POR CUALQUIERA DE LOS DOS ──────────────────────────
+ *
+ * Mismo criterio que `reminded_at`: la marca dice "ya está avisada", no "salió
+ * el mail". Si no salió por ninguno queda sin marcar y se reintenta mañana —
+ * el caso típico es el chip caído, que al día siguiente ya volvió.
+ */
+export async function avisarSesionesSiguientes(): Promise<{
+  found: number;
+  sent: number;
+  skipped: { id: string; reason: string }[];
+}> {
+  // Dinámicos, igual que el resto de lo que no hace falta al cargar el módulo.
+  const { sesionesParaAvisar } = await import("@/server/services/series.service");
+  const { deliverNextSessionNotice } = await import("@/lib/notifications.server");
+
+  const pendientes = await sesionesParaAvisar();
+  const skipped: { id: string; reason: string }[] = [];
+  let sent = 0;
+
+  // En serie, por lo mismo que los recordatorios: son mensajes por el mismo
+  // chip, y el espaciado lo pone el `delay` de cada envío.
+  for (const { anterior, desde } of pendientes) {
+    const { mail, whatsapp } = await deliverNextSessionNotice({ anteriorId: anterior.id, desde });
+
+    if (!mail.sent && !whatsapp.sent) {
+      skipped.push({
+        id: anterior.id,
+        reason: `mail: ${mail.reason} · whatsapp: ${whatsapp.reason}`,
+      });
+      continue;
+    }
+
+    // El aviso ya salió: si la marca falla no se cuenta como no enviado, se
+    // deja en el log. Igual que arriba.
+    try {
+      await prisma.next_session_notices.create({ data: { appointment_id: anterior.id } });
+    } catch (e) {
+      console.error(
+        `[sesiones] El aviso del turno ${anterior.id} salió pero no se pudo marcar: ${
+          e instanceof Error ? e.message : e
+        }`,
+      );
+    }
+
+    sent += 1;
+  }
+
+  return { found: pendientes.length, sent, skipped };
+}
+
 /** Para no programar dos relojes si el módulo se carga más de una vez. */
 let programado = false;
 
@@ -579,6 +643,24 @@ async function correr(): Promise<void> {
     }
   } catch (error) {
     console.error("[recordatorios] La corrida falló entera:", error);
+  }
+
+  // Los avisos de la sesión que sigue (5/10/2026), en su propio try/catch y
+  // DESPUÉS de los recordatorios: si esto tira —el caso real es la base todavía
+  // sin la tabla `next_session_notices`—, lo de arriba ya salió y ya quedó
+  // marcado, y el proceso sigue en pie.
+  try {
+    const sesiones = await avisarSesionesSiguientes();
+    if (sesiones.found > 0) {
+      console.log(
+        `[sesiones] ${sesiones.found} clienta(s) con una sesión por sacar, ${sesiones.sent} aviso(s) enviado(s).`,
+      );
+    }
+    for (const { id, reason } of sesiones.skipped) {
+      console.warn(`[sesiones] Sin enviar · turno ${id}: ${reason}`);
+    }
+  } catch (error) {
+    console.error("[sesiones] La corrida falló entera:", error);
   }
 }
 

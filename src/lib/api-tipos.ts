@@ -77,6 +77,10 @@ export type ServicioPublico = {
    * la clienta reserva la PRIMERA y el centro le agenda las siguientes: el
    * intervalo es lo que el panel propone, no un candado.
    *
+   * 5/10/2026 — las siguientes también las puede sacar ella, de a una y cuando
+   * le toca (ver `SesionPendiente`, al final). Para ella el intervalo sí es un
+   * mínimo.
+   *
    * El precio es el del tratamiento completo, no el de cada sesión.
    */
   sessions_count: number;
@@ -1020,3 +1024,70 @@ export type FichaDeClienta = {
 };
 
 export type RtaFichaDeClienta = { clienta: FichaDeClienta };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reservar sin cuenta, y la sesión que sigue (5/10/2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Lo que vuelve al reservar.
+ *
+ * `invitada` dice si el turno quedó a nombre de una cuenta o de alguien que
+ * reservó con nombre y teléfono. La pantalla lo usa para saber a dónde mandarla
+ * después: con cuenta va a «Mi cuenta»; sin cuenta no hay a dónde ir, y se
+ * queda en un cartel que le dice que el comprobante le llega por WhatsApp.
+ *
+ * ⚠️ El enlace personal de la invitada NO viaja acá, y no es un olvido: sale
+ * sólo adentro del WhatsApp. Ver `guest_links` en el esquema.
+ */
+export type RtaReserva = { id: string; invitada: boolean };
+
+/**
+ * Una sesión que a la clienta le falta sacar de un tratamiento de varias.
+ *
+ * Existe cuando la sesión anterior ya está REALIZADA y la que sigue no está
+ * reservada. La regla entera está en `series.service.ts`.
+ */
+export type SesionPendiente = {
+  /**
+   * El turno de la sesión ANTERIOR, la que ya se hizo. Es de donde se parte: el
+   * servidor copia de él el tratamiento, la opción y la persona, así que para
+   * sacar la que sigue alcanza con mandar este id y el horario.
+   */
+  id: string;
+  /** Para buscar quiénes hacen ese tratamiento. */
+  service_id: string;
+  /** "Exosomas — rostro completo", ya armado. */
+  tratamiento: string;
+  /** La que FALTA sacar, no la que ya se hizo: 2 en "sesión 2 de 3". */
+  session_number: number;
+  sessions_total: number;
+  /**
+   * "AAAA-MM-DD": el primer día en que se puede hacer, según el intervalo del
+   * tratamiento. Null si no tiene intervalo cargado y cualquier día sirve.
+   *
+   * Para la clienta es un mínimo —el servidor rechaza una fecha anterior—, al
+   * revés que en el panel, donde el centro lo puede adelantar.
+   */
+  desde: string | null;
+  /** Quien atendió la anterior, para dejarla preseleccionada. */
+  professional_id: string | null;
+  /** Los del turno anterior: la sesión que sigue ocupa lo mismo. */
+  duration_minutes: number;
+  buffer_minutes: number;
+};
+
+export type RtaSesionesPendientes = { pendientes: SesionPendiente[] };
+
+/**
+ * Todo lo de una invitada, para la pantalla que abre su enlace personal.
+ *
+ * Los turnos llevan la misma forma que los de «Mi cuenta» a propósito: las dos
+ * pantallas muestran lo mismo y comparten los diálogos de cambiar y cancelar.
+ */
+export type RtaTurnosDelEnlace = {
+  /** El nombre con que reservó la última vez, para saludarla. */
+  nombre: string | null;
+  turnos: MiTurno[];
+  pendientes: SesionPendiente[];
+};

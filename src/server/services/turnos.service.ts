@@ -97,11 +97,16 @@ export type CambioDeTurno = Partial<
  * olvidar.
  */
 export function exigirAlcanceDeClienta(
-  acceso: Acceso,
+  // `null` desde el 5/10/2026: es quien reservó sin cuenta y toca su turno
+  // desde el enlace personal. No tiene acceso que mirar, así que le caben las
+  // reglas de la clienta y ninguna excepción — igual que en `validarTurno`.
+  // acceso: Acceso,
+  acceso: Acceso | null,
   actual: { status: string },
   cambio: CambioDeTurno,
 ): void {
-  if (puede(acceso, "appointments")) return;
+  // if (puede(acceso, "appointments")) return;
+  if (acceso !== null && puede(acceso, "appointments")) return;
 
   if (cambio.status !== undefined && cambio.status !== actual.status) {
     if (cambio.status !== "cancelled") {
@@ -146,6 +151,10 @@ export type TurnoAValidar = {
    * Sólo lo manda `agendarSiguienteSesion`, que es el único lugar que crea una
    * sesión que no es la primera. Todo lo demás —la reserva de la clienta, el
    * alta del panel— empieza siempre por la 1.
+   *
+   * 5/10/2026 — son dos los que lo mandan: se sumó `sacarLaSesionSiguiente`
+   * (series.service.ts), con la que la clienta saca la que sigue desde el
+   * sitio.
    */
   session_number?: number;
 };

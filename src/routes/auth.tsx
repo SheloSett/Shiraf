@@ -13,6 +13,7 @@ import { buildWhatsappUrl } from "@/lib/contact";
 import { olvidarSesion, pedirSesion } from "@/lib/sesion";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { isTeamAccount } from "@/lib/roles";
+import { reservaPendiente } from "@/lib/volver-a-reservar";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -64,7 +65,13 @@ function AuthPage() {
    */
   async function goToMyPlace() {
     const team = await isTeamAccount(queryClient);
-    navigate({ to: team ? "/admin" : "/mi-cuenta" });
+    // 5/10/2026 — la clienta que vino desde /reservar a ingresar vuelve a la
+    // reserva, con lo que ya tenía elegido. Ver `volver-a-reservar.ts`. Al
+    // equipo no le toca: ese formulario no es el suyo y /reservar lo desvía.
+    //   navigate({ to: team ? "/admin" : "/mi-cuenta" });
+    const reserva = team ? null : reservaPendiente();
+    if (reserva) navigate({ to: "/reservar", search: reserva });
+    else navigate({ to: team ? "/admin" : "/mi-cuenta" });
   }
 
   // Ya venía con sesión abierta: no la dejamos en el formulario de ingreso, la
@@ -75,7 +82,11 @@ function AuthPage() {
     void pedirSesion(queryClient).then(async (sesion) => {
       if (!sesion) return;
       const team = await isTeamAccount(queryClient);
-      navigate({ to: team ? "/admin" : "/mi-cuenta" });
+      // Lo mismo que en `goToMyPlace`, y por lo mismo.
+      //   navigate({ to: team ? "/admin" : "/mi-cuenta" });
+      const reserva = team ? null : reservaPendiente();
+      if (reserva) navigate({ to: "/reservar", search: reserva });
+      else navigate({ to: team ? "/admin" : "/mi-cuenta" });
     });
   }, [navigate, queryClient]);
 

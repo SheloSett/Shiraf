@@ -314,3 +314,56 @@ son **3 endpoints más** sobre los 61.
 > el problema y no lo puede tocar. Y `GET /api/cierres` devuelve esos turnos
 > con nombre y teléfono, que es exactamente lo que `appointments` autoriza a
 > ver (arrastra `clients_contact`, ver `read profiles`).
+
+---
+
+## Reservar sin cuenta y el enlace personal — rutas abiertas a propósito (5/10/2026)
+
+Ninguna de las 39 policies cubre esto: en Supabase reservar pedía sesión
+(`clients create own appointments`, arriba). La dueña pidió que se pueda sacar
+turno con nombre y teléfono, sin registrarse, porque el registro era la traba.
+Lo que sigue son las rutas que quedaron **sin `authMiddleware`** y qué las
+protege en su lugar.
+
+| Ruta                                          | Quién                                   | Qué la protege                                                                                                                                   |
+| --------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/reservar/disponibilidad`            | Cualquiera                              | Lo que devuelve: cuándo y cuánto, nunca de quién (`schedules public`, arriba). Antes pedía sesión sin que hiciera falta                           |
+| `POST /api/reservar`                          | Cualquiera, con o sin sesión            | Con sesión, `client_id` sale de la sesión como siempre. Sin sesión: celular argentino válido, tope de turnos abiertos por teléfono y tope por IP |
+| `GET /api/enlace/:token`                      | Quien tenga el enlace                   | El token (ver abajo)                                                                                                                             |
+| `PUT /api/enlace/:token/turnos/:id/cancelar`  | Ídem                                    | El token, y las mismas reglas que `cancelarMiTurno` — es la misma función, `cancelarTurnoDe`                                                     |
+| `PUT /api/enlace/:token/turnos/:id/reprogramar` | Ídem                                  | El token, y las mismas reglas que `reprogramarMiTurno` — `reprogramarTurnoDe`                                                                    |
+| `POST /api/enlace/:token/siguiente-sesion`    | Ídem                                    | El token, y las reglas de `sacarLaSesionSiguiente`                                                                                               |
+
+Y dos que **sí** piden sesión, de la clienta con cuenta:
+
+| Ruta                                    | Quién       | Regla                                                                  |
+| --------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `GET /api/reservar/sesiones-pendientes` | Sólo sesión | Las suyas: `client_id` sale de la sesión                               |
+| `POST /api/reservar/siguiente-sesion`   | Sólo sesión | El turno del que parte se busca filtrando por `client_id` de la sesión |
+
+> ### 🔴 El token del enlace es una sesión, y se trata igual
+>
+> `guest_links` guarda un token por teléfono. Quien lo tiene ve y toca los
+> turnos de invitada anotados con ese número — y nada más: los handlers de
+> `enlace.controller` resuelven primero de quién es el enlace (`deQuienEs`) y
+> le pasan ese filtro a las mismas funciones de «Mi cuenta». Ninguno acepta un
+> teléfono ni una lista de turnos que venga del pedido.
+>
+> **El token sale únicamente adentro del WhatsApp mandado a ese teléfono.** No
+> lo devuelve ningún endpoint, ni siquiera `POST /api/reservar` a quien acaba
+> de reservar con ese número: ahí nadie comprobó que el número sea suyo, y
+> devolverlo dejaría que cualquiera mire el historial de otra persona
+> escribiendo su teléfono en el formulario. Si algún día se agrega una pantalla
+> de «ingresá tu teléfono para ver tus turnos», esa pantalla tiene que mandar
+> un código al teléfono — no mostrar nada.
+>
+> Los turnos que el centro le pasa a una cuenta (`vincularInvitada`) dejan de
+> verse por el enlace: el filtro lleva `client_id: null`.
+>
+> ### La sesión que sigue ya no es sólo del centro
+>
+> `POST /api/turnos/:id/siguiente-sesion` (permiso `appointments`) sigue como
+> estaba. Lo nuevo es que la clienta también puede, con reglas más duras que
+> las del panel: la sesión anterior tiene que estar **realizada**, el intervalo
+> del tratamiento es un mínimo y no una sugerencia, y el horario tiene que
+> entrar en la agenda. Están en `series.service.ts`.

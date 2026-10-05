@@ -43,10 +43,18 @@ import { buildSlots, formatDateTime, formatTime, WEEKDAYS } from "@/lib/shiraf";
  */
 export function ReprogramarTurnoDialog({
   turno,
+  token,
   onOpenChange,
 }: {
   /** El turno a mover, o null con el diálogo cerrado. */
   turno: MiTurno | null;
+  /**
+   * El enlace personal, cuando quien se mueve el turno reservó SIN cuenta
+   * (5/10/2026). Cambia a dónde va el pedido y quién avisa al centro: con el
+   * enlace lo hace el servidor, porque `notifyAppointment` exige una sesión que
+   * esa persona no tiene.
+   */
+  token?: string;
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
@@ -170,10 +178,20 @@ export function ReprogramarTurnoDialog({
        * que se manda tal cual, igual que hace /reservar con su `slot`. La
        * pantalla lo muestra con `formatTime`; lo que viaja es el ISO.
        */
-      await apiPut(`/api/mi-cuenta/turnos/${turno!.id}/reprogramar`, {
-        starts_at: hora,
-        professional_id: profesionalId,
-      });
+      // Antes: siempre `/api/mi-cuenta/turnos/…`. Con el enlace personal va a
+      // la ruta espejo, que resuelve de quién es el turno por el token.
+      await apiPut(
+        token
+          ? `/api/enlace/${token}/turnos/${turno!.id}/reprogramar`
+          : `/api/mi-cuenta/turnos/${turno!.id}/reprogramar`,
+        {
+          starts_at: hora,
+          professional_id: profesionalId,
+        },
+      );
+
+      // Sin cuenta, el aviso al centro ya lo disparó el servidor.
+      if (token) return;
 
       /*
        * Avisarle al CENTRO, que es el único que no se enteró.
@@ -201,6 +219,8 @@ export function ReprogramarTurnoDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-appointments"] });
+      // La lista de quien entró por su enlace personal vive bajo otra clave.
+      queryClient.invalidateQueries({ queryKey: ["enlace"] });
       toast.success("Listo, te movimos el turno.");
       onOpenChange(false);
     },

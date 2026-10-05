@@ -17,10 +17,11 @@ import { Route as ConfirmarMailRouteImport } from './routes/confirmar-mail'
 import { Route as ContactoRouteImport } from './routes/contacto'
 import { Route as ProfesionalesRouteImport } from './routes/profesionales'
 import { Route as RecuperarRouteImport } from './routes/recuperar'
+import { Route as ReservarRouteImport } from './routes/reservar'
 import { Route as ServiciosRouteImport } from './routes/servicios'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedMiCuentaRouteImport } from './routes/_authenticated/mi-cuenta'
-import { Route as AuthenticatedReservarRouteImport } from './routes/_authenticated/reservar'
+import { Route as MisTurnosTokenRouteImport } from './routes/mis-turnos.$token'
 import { Route as ServiciosIndexRouteImport } from './routes/servicios.index'
 import { Route as ServiciosSlugRouteImport } from './routes/servicios.$slug'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
@@ -82,6 +83,11 @@ const RecuperarRoute = RecuperarRouteImport.update({
   path: '/recuperar',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReservarRoute = ReservarRouteImport.update({
+  id: '/reservar',
+  path: '/reservar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ServiciosRoute = ServiciosRouteImport.update({
   id: '/servicios',
   path: '/servicios',
@@ -97,10 +103,10 @@ const AuthenticatedMiCuentaRoute = AuthenticatedMiCuentaRouteImport.update({
   path: '/mi-cuenta',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedReservarRoute = AuthenticatedReservarRouteImport.update({
-  id: '/reservar',
-  path: '/reservar',
-  getParentRoute: () => AuthenticatedRouteRoute,
+const MisTurnosTokenRoute = MisTurnosTokenRouteImport.update({
+  id: '/mis-turnos/$token',
+  path: '/mis-turnos/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ServiciosIndexRoute = ServiciosIndexRouteImport.update({
   id: '/',
@@ -234,10 +240,11 @@ export interface FileRoutesByFullPath {
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
   '/recuperar': typeof RecuperarRoute
+  '/reservar': typeof ReservarRoute
   '/servicios': typeof ServiciosRouteWithChildren
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
-  '/reservar': typeof AuthenticatedReservarRoute
+  '/mis-turnos/$token': typeof MisTurnosTokenRoute
   '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios/': typeof ServiciosIndexRoute
   '/admin/accesos': typeof AuthenticatedAdminAccesosRoute
@@ -268,8 +275,9 @@ export interface FileRoutesByTo {
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
   '/recuperar': typeof RecuperarRoute
+  '/reservar': typeof ReservarRoute
   '/mi-cuenta': typeof AuthenticatedMiCuentaRoute
-  '/reservar': typeof AuthenticatedReservarRoute
+  '/mis-turnos/$token': typeof MisTurnosTokenRoute
   '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios': typeof ServiciosIndexRoute
   '/admin/accesos': typeof AuthenticatedAdminAccesosRoute
@@ -302,10 +310,11 @@ export interface FileRoutesById {
   '/contacto': typeof ContactoRoute
   '/profesionales': typeof ProfesionalesRoute
   '/recuperar': typeof RecuperarRoute
+  '/reservar': typeof ReservarRoute
   '/servicios': typeof ServiciosRouteWithChildren
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/mi-cuenta': typeof AuthenticatedMiCuentaRoute
-  '/_authenticated/reservar': typeof AuthenticatedReservarRoute
+  '/mis-turnos/$token': typeof MisTurnosTokenRoute
   '/servicios/$slug': typeof ServiciosSlugRoute
   '/servicios/': typeof ServiciosIndexRoute
   '/_authenticated/admin/accesos': typeof AuthenticatedAdminAccesosRoute
@@ -338,10 +347,11 @@ export interface FileRouteTypes {
     | '/contacto'
     | '/profesionales'
     | '/recuperar'
+    | '/reservar'
     | '/servicios'
     | '/admin'
     | '/mi-cuenta'
-    | '/reservar'
+    | '/mis-turnos/$token'
     | '/servicios/$slug'
     | '/servicios/'
     | '/admin/accesos'
@@ -372,8 +382,9 @@ export interface FileRouteTypes {
     | '/contacto'
     | '/profesionales'
     | '/recuperar'
-    | '/mi-cuenta'
     | '/reservar'
+    | '/mi-cuenta'
+    | '/mis-turnos/$token'
     | '/servicios/$slug'
     | '/servicios'
     | '/admin/accesos'
@@ -405,10 +416,11 @@ export interface FileRouteTypes {
     | '/contacto'
     | '/profesionales'
     | '/recuperar'
+    | '/reservar'
     | '/servicios'
     | '/_authenticated/admin'
     | '/_authenticated/mi-cuenta'
-    | '/_authenticated/reservar'
+    | '/mis-turnos/$token'
     | '/servicios/$slug'
     | '/servicios/'
     | '/_authenticated/admin/accesos'
@@ -441,7 +453,9 @@ export interface RootRouteChildren {
   ContactoRoute: typeof ContactoRoute
   ProfesionalesRoute: typeof ProfesionalesRoute
   RecuperarRoute: typeof RecuperarRoute
+  ReservarRoute: typeof ReservarRoute
   ServiciosRoute: typeof ServiciosRouteWithChildren
+  MisTurnosTokenRoute: typeof MisTurnosTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -502,6 +516,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecuperarRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reservar': {
+      id: '/reservar'
+      path: '/reservar'
+      fullPath: '/reservar'
+      preLoaderRoute: typeof ReservarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/servicios': {
       id: '/servicios'
       path: '/servicios'
@@ -523,12 +544,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMiCuentaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/reservar': {
-      id: '/_authenticated/reservar'
-      path: '/reservar'
-      fullPath: '/reservar'
-      preLoaderRoute: typeof AuthenticatedReservarRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+    '/mis-turnos/$token': {
+      id: '/mis-turnos/$token'
+      path: '/mis-turnos/$token'
+      fullPath: '/mis-turnos/$token'
+      preLoaderRoute: typeof MisTurnosTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/servicios/': {
       id: '/servicios/'
@@ -735,13 +756,11 @@ const AuthenticatedAdminRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
   AuthenticatedMiCuentaRoute: typeof AuthenticatedMiCuentaRoute
-  AuthenticatedReservarRoute: typeof AuthenticatedReservarRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
   AuthenticatedMiCuentaRoute: AuthenticatedMiCuentaRoute,
-  AuthenticatedReservarRoute: AuthenticatedReservarRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -770,7 +789,9 @@ const rootRouteChildren: RootRouteChildren = {
   ContactoRoute: ContactoRoute,
   ProfesionalesRoute: ProfesionalesRoute,
   RecuperarRoute: RecuperarRoute,
+  ReservarRoute: ReservarRoute,
   ServiciosRoute: ServiciosRouteWithChildren,
+  MisTurnosTokenRoute: MisTurnosTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

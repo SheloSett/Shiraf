@@ -121,6 +121,19 @@ export type NotifiableAppointment = {
    * nombre de la sesión que disparó el aviso.
    */
   actorName?: string | null;
+  /**
+   * El enlace personal a «Mis turnos» de quien reservó SIN cuenta (5/10/2026).
+   *
+   * Sólo lo rellena el servidor, y sólo cuando el turno es de una invitada con
+   * un teléfono que sirve: es su única forma de ver el turno, cambiarlo o
+   * cancelarlo, porque no tiene dónde entrar. Con cuenta viene vacío y los
+   * mensajes no dicen nada — esa clienta ya tiene «Mi cuenta».
+   *
+   * ⚠️ Es una llave: abre el historial de ese teléfono sin pedir nada más. Por
+   * eso sale sólo en los avisos que van A ELLA (los cuatro de abajo que lo
+   * miran) y nunca en los que van al centro o a la profesional.
+   */
+  guestLink?: string | null;
 };
 
 export type AppointmentMessage = {
@@ -257,10 +270,30 @@ export function buildAppointmentMessage(
    * acuerdan en el centro. Repetirlo en la sesión 2 sería explicarle a alguien
    * algo que ya está viviendo.
    */
+  //
+  // 5/10/2026 — la que sigue ya no la agenda sólo el centro: la clienta también
+  // la puede sacar desde el sitio, y el reloj le avisa cuando le toca. El texto
+  // viejo decía una sola de las dos formas:
+  //   ? "Las próximas sesiones las coordinamos con vos cuando vengas."
+  // Se dicen LAS DOS, a pedido de la dueña: coordinarla en el centro sigue
+  // valiendo, y quien no se anime a reservarla sola tiene que saber que puede
+  // pedírsela a la secretaria.
   const avisoDeSerie =
     sesion && appointment.sessionNumber === 1
-      ? "Las próximas sesiones las coordinamos con vos cuando vengas."
+      ? "Las próximas sesiones las coordinamos con vos cuando vengas, o las reservás vos desde el sitio cuando te toque: te avisamos."
       : null;
+
+  /*
+   * El enlace de la invitada, como último renglón antes de la firma.
+   *
+   * Dice para qué sirve y no "tu enlace": quien lo recibe no sabe que existe
+   * una pantalla suya, sólo que quiere cambiar el turno. Va en los cuatro
+   * avisos que le llegan antes de venir; en el de cancelación no, que ya no
+   * tiene turno que mirar.
+   */
+  const enlace = appointment.guestLink
+    ? ["", `Para ver, cambiar o cancelar tus turnos: ${appointment.guestLink}`]
+    : [];
 
   switch (event) {
     /*
@@ -337,6 +370,7 @@ export function buildAppointmentMessage(
           tolerancia,
           "",
           "Si por algún motivo no podés asistir, avisanos con anticipación y con gusto te ayudamos a reprogramar tu experiencia.",
+          ...enlace,
           "",
           ...firma,
         ],
@@ -417,6 +451,7 @@ export function buildAppointmentMessage(
           "",
           `Te esperamos en ${place}.`,
           "Si ese horario no te sirve, avisanos y buscamos otro.",
+          ...enlace,
         ],
       };
 
@@ -436,6 +471,7 @@ export function buildAppointmentMessage(
           "",
           `Te esperamos en ${place}.`,
           "Si no podés venir, avisanos así liberamos el horario.",
+          ...enlace,
         ],
       };
 
@@ -668,6 +704,75 @@ export function buildProfessionalMessage(
         ],
       };
   }
+}
+
+/** Lo que hace falta para avisarle a alguien que ya puede sacar la sesión que sigue. */
+export type AvisoDeSesionSiguiente = {
+  clientName: string;
+  serviceName: string;
+  /** La que FALTA sacar: 2 en "sesión 2 de 3". */
+  sessionNumber: number;
+  sessionsTotal: number;
+  /** "AAAA-MM-DD": el primer día posible. Null si no hay intervalo. */
+  desde: string | null;
+  /** A dónde ir a sacarla: su enlace personal, o «Mi cuenta» si tiene cuenta. */
+  link: string;
+};
+
+/**
+ * «Ya podés reservar tu próxima sesión» — a la CLIENTA, una vez por sesión
+ * (5/10/2026).
+ *
+ * Es el quinto aviso que le llega a la clienta y el segundo que no dispara
+ * nadie: sale del reloj, como el recordatorio del día antes. Existe porque
+ * desde hoy la sesión que sigue la saca ella, y sin este mensaje la única forma
+ * de enterarse sería entrar al sitio a ver el cartel — que para quien reservó
+ * sin cuenta no es ni siquiera un lugar que sepa que existe.
+ *
+ * ── POR QUÉ NO ES UN `AppointmentEvent` MÁS ───────────────────────────────
+ *
+ * Por lo mismo que el resumen de la profesional: los eventos hablan de UN turno
+ * que existe, y esto habla de uno que todavía no. Meterlo en la lista obligaba
+ * a inventarle una plantilla de Meta y a sumarlo al `z.enum` de la puerta del
+ * navegador, que es justo por donde NO tiene que poder dispararse.
+ *
+ * Sobrio, sin los emojis de los mensajes de turno confirmado: es un
+ * recordatorio de algo por hacer, no la celebración de una reserva.
+ */
+export function buildNextSessionNotice(aviso: AvisoDeSesionSiguiente): AppointmentMessage {
+  const who = firstName(aviso.clientName);
+
+  // "A partir del…" sólo si ese día todavía no llegó. El aviso sale hasta una
+  // semana antes, pero también puede salir tarde —el reloj no corrió, el
+  // teléfono no servía ese día— y decirle "desde el lunes pasado" a alguien no
+  // le sirve de nada.
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: TIMEZONE });
+  const desde =
+    aviso.desde && aviso.desde > hoy
+      ? new Date(`${aviso.desde}T12:00:00-03:00`).toLocaleDateString("es-AR", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          timeZone: TIMEZONE,
+        })
+      : null;
+
+  return {
+    subject: "Ya podés reservar tu próxima sesión en Shiraf",
+    lines: [
+      `Hola ${who}, te escribimos de Shiraf.`,
+      "",
+      `Te falta la sesión ${aviso.sessionNumber} de ${aviso.sessionsTotal} de tu tratamiento: ${aviso.serviceName}.`,
+      desde ? `La podés hacer a partir del ${desde}.` : "Ya la podés hacer cuando quieras.",
+      "Está incluida en el tratamiento: no se paga de nuevo.",
+      "",
+      `Elegí día y horario acá: ${aviso.link}`,
+      // La otra forma, dicha en el mismo mensaje: que la reserve el centro por
+      // ella. Sin este renglón, la que no se lleva bien con el sitio lee un
+      // aviso que le pide hacer algo que no sabe hacer.
+      "Si preferís, escribinos y te la reservamos nosotras.",
+    ],
+  };
 }
 
 /** Un turno que ya pasó y sigue abierto, para el resumen de abajo. */

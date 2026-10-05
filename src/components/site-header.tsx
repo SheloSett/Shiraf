@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Menu } from "lucide-react";
 import { LogoWordmark } from "@/components/logo";
+import { AvisoSesionPendiente } from "@/components/aviso-sesion-pendiente";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -180,6 +181,12 @@ export function SiteHeader() {
           </Sheet>
         </div>
       </div>
+
+      {/* La franja de «te falta una sesión». Adentro del <header> y no debajo:
+          así queda pegada arriba junto con la barra y se ve en todo momento,
+          que es lo que pidió la dueña. Sin sesión, o sin nada pendiente, no
+          dibuja nada. Ver el componente. */}
+      <AvisoSesionPendiente />
     </header>
   );
 }

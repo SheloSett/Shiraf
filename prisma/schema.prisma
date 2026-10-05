@@ -351,6 +351,9 @@ model services {
    * propone la fecha de la próxima, no un candado sobre el calendario: si la
    * clienta se va de viaje, la sesión 2 va cuando se pueda y el turno se carga
    * igual.
+   * 5/10/2026 — ya no es SÓLO el centro: la clienta también puede sacar la que
+   * sigue desde el sitio. Para ella el intervalo SÍ es un mínimo; para el panel
+   * sigue siendo una propuesta. Ver series.service.ts.
    * 0 días es legítimo y quiere decir "sin espera sugerida".
    */
   sessions_count        Int @default(1)
@@ -593,6 +596,8 @@ model appointments {
 
   // NULL a propósito: son los turnos de invitada, que carga el centro por
   // teléfono para alguien sin cuenta. No es un dato faltante.
+  // Desde el 5/10/2026 también los saca ella misma: /reservar ya no pide
+  // cuenta, y quien reserva con nombre y teléfono queda como invitada.
   client_id        String?  @db.Uuid
   // NULL cuando el tratamiento se borró del catálogo. El turno viejo sigue
   // existiendo con su nombre y su precio congelados; ver `service_name`.
@@ -742,6 +747,9 @@ model appointments {
   // `variant_name` y en `price`.
   variant      service_variants? @relation(fields: [variant_id], references: [id], onDelete: SetNull)
   professional professionals?    @relation(fields: [professional_id], references: [id], onDelete: SetNull)
+  // No es una columna: es la otra punta de `next_session_notices`, que vive en
+  // su propia tabla. Ver ahí por qué no es un `..._at` más de ésta.
+  next_session_notice next_session_notices?
 
   // Los dos índices que appointments tenía desde la primera migración de
   // Supabase. Hay que declararlos: Prisma NO crea índices sobre las claves
@@ -758,6 +766,63 @@ model appointments {
   // Buscar las sesiones que siguen a una: se pregunta en cada turno de una
   // serie, para saber si ya está agendada la próxima.
   @@index([series_id])
+}
+
+/**
+ * El enlace personal de quien reserva SIN cuenta (5/10/2026).
+ *
+ * Desde hoy se puede sacar turno con nombre y teléfono, sin registrarse. Esa
+ * persona no tiene dónde entrar a ver sus turnos, así que cada aviso que le
+ * llega por WhatsApp trae un enlace —`/mis-turnos/<token>`— que le abre su
+ * historial, lo que tiene por venir y la sesión que le falta.
+ *
+ * ── LA IDENTIDAD ES EL TELÉFONO ───────────────────────────────────────────
+ *
+ * `phone` es el teléfono NORMALIZADO —los últimos diez dígitos, lo mismo que
+ * devuelven `normalizarTelefono()` y `normalize_phone()`— y es la clave: un
+ * número, un enlace. El enlace muestra los turnos de invitada anotados con ese
+ * número, escrito como sea que lo hayan escrito.
+ *
+ * ── POR QUÉ UN TOKEN Y NO «ESCRIBÍ TU TELÉFONO» ───────────────────────────
+ *
+ * Porque un teléfono lo sabe cualquiera. Una pantalla que mostrara los turnos
+ * con sólo tipear el número dejaría que una persona mire qué tratamientos se
+ * hizo otra. El token viaja ÚNICAMENTE adentro del WhatsApp que se manda a ese
+ * número: tenerlo prueba que el teléfono es de quien lo abre. Por eso el
+ * servidor no lo devuelve nunca en una respuesta, ni siquiera a quien acaba de
+ * reservar con ese número — ver `reservar.controller.ts`.
+ *
+ * Sin relación con `appointments` a propósito: el cruce es por el teléfono
+ * normalizado de cada turno, no por una clave foránea, igual que hace
+ * `vincularTurnosDeInvitada`.
+ */
+model guest_links {
+  phone      String   @id
+  token      String   @unique
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/**
+ * A quién ya se le avisó que puede sacar la sesión que sigue (5/10/2026).
+ *
+ * Una fila por turno REALIZADO de un tratamiento de varias sesiones, escrita
+ * cuando sale el aviso de «ya podés reservar la sesión 2». Es lo que hace que
+ * la tarea del reloj no lo mande dos veces, igual que `reminded_at`.
+ *
+ * ── POR QUÉ UNA TABLA Y NO UN `..._at` MÁS EN `appointments` ──────────────
+ *
+ * Las otras dos marcas son columnas del turno y ésta sería la tercera. No lo
+ * es por el orden en que se despliega: una columna nueva en `appointments`
+ * entra en el RETURNING de cada `update` que no lleve `select`, así que con el
+ * cliente de Prisma regenerado y la base todavía sin empujar fallan cancelar,
+ * reprogramar y marcar el recordatorio. Una tabla aparte no la toca nadie más
+ * que el aviso nuevo: si no existe todavía, lo único que no anda es eso.
+ */
+model next_session_notices {
+  appointment_id String   @id @db.Uuid
+  sent_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  appointment appointments @relation(fields: [appointment_id], references: [id], onDelete: Cascade)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

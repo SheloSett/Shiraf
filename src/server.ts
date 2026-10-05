@@ -184,6 +184,14 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // «Mis turnos» de quien reservó sin cuenta: todo cuelga del token de su
+      // enlace personal, que hace de sesión.
+      if (pathname.startsWith("/api/enlace/")) {
+        const { enlaceRouter } = await import("./server/routes/enlace.routes");
+        const respuesta = await enlaceRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       // Los días que el centro no abre: feriados, vacaciones de todo el equipo.
       if (pathname.startsWith("/api/cierres")) {
         const { cierresRouter } = await import("./server/routes/cierres.routes");
