@@ -392,6 +392,19 @@ export type RtaAltaDeClienta = {
   avisoMail?: string;
 };
 
+/**
+ * Qué tocó la edición de una clienta hecha desde el panel.
+ *
+ * Los dos booleanos están para que el aviso diga lo que hay que hacer después:
+ * a la clienta no le llega nada por mail, así que hay que avisarle con qué
+ * dirección entra ahora y pasarle la contraseña.
+ */
+export type RtaEdicionDeClienta = {
+  ok: true;
+  emailCambiado: boolean;
+  claveCambiada: boolean;
+};
+
 /** Los ids de las cuentas del centro, para no confundirlas con clientas. */
 export type RtaEquipo = { ids: string[] };
 

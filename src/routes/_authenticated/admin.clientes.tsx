@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { NewClientDialog } from "@/components/admin/new-client-dialog";
+import { EditClientDialog } from "@/components/admin/edit-client-dialog";
 import { api, apiDelete } from "@/lib/api";
 import type { RtaClientas, RtaFichaDeClienta } from "@/lib/api-tipos";
 import { formatDateTime, formatMoney, STATUS_LABEL } from "@/lib/shiraf";
@@ -342,6 +343,25 @@ function FichaDeClienta({
   clienta: { id: string; nombre: string } | null;
   onClose: () => void;
 }) {
+  const { isAdmin, professionalId } = useAccess();
+  /**
+   * Edita quien ve la ficha, menos las profesionales: una cuenta con ficha de
+   * profesional atada no cambia datos de clientas, tenga las casillas que
+   * tenga, y se lo pide a la secretaria. La dueña sí, atienda o no.
+   *
+   * Tiene que decir lo MISMO que `editarClientas` en clientas.routes.ts, que es
+   * quien lo hace cumplir: esto sólo evita mostrar un botón que va a rebotar.
+   */
+  const puedeEditar = isAdmin || !professionalId;
+  /**
+   * El id de la clienta que se está editando, o null.
+   *
+   * El id y no un `true`: el panel queda montado entre una ficha y la otra, y
+   * con un booleano que quedara prendido la ficha siguiente abriría con el
+   * formulario de edición encima.
+   */
+  const [editando, setEditando] = useState<string | null>(null);
+
   const ficha = useQuery({
     queryKey: ["admin-clients", "ficha", clienta?.id],
     enabled: clienta !== null,
@@ -360,7 +380,11 @@ function FichaDeClienta({
           un panel angosto cada turno ocuparía tres renglones. */}
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
-          <SheetTitle className="font-display text-2xl">{clienta?.nombre}</SheetTitle>
+          {/* El nombre de la ficha antes que el de la fila: es el que se
+              refresca al editarla, y el otro quedó copiado al abrir el panel. */}
+          <SheetTitle className="font-display text-2xl">
+            {ficha.data?.full_name ?? clienta?.nombre}
+          </SheetTitle>
         </SheetHeader>
 
         {ficha.isPending && (
@@ -375,6 +399,13 @@ function FichaDeClienta({
 
         {ficha.data && (
           <div className="mt-6 space-y-6">
+            {puedeEditar && (
+              <Button size="sm" variant="outline" onClick={() => setEditando(ficha.data.id)}>
+                <Pencil className="mr-2 h-4 w-4" aria-hidden="true" />
+                Editar datos
+              </Button>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <Dato etiqueta="Teléfono">
                 {ficha.data.phone ?? <span className="text-muted-foreground">Sin teléfono</span>}
@@ -463,6 +494,13 @@ function FichaDeClienta({
             </div>
           </div>
         )}
+
+        {/* Adentro del panel y no al lado: así el diálogo es una capa del panel
+            y cerrarlo devuelve a la ficha, ya con los datos nuevos. */}
+        <EditClientDialog
+          client={ficha.data && editando === ficha.data.id ? ficha.data : null}
+          onOpenChange={(open) => !open && setEditando(null)}
+        />
       </SheetContent>
     </Sheet>
   );

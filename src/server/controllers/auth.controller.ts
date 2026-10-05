@@ -1,11 +1,13 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { fichaDeProfesionalInactiva, miFichaDeProfesional } from "@/server/services/agenda.service";
 import { json, type Ctx } from "@/server/http";
 import { cookieDeCierre, crearCookieDeSesion } from "@/server/middleware/auth.middleware";
 import { resetearIntentos } from "@/server/middleware/loginLimiter";
 import { enviarMailDeCuenta } from "@/server/services/email.service";
+import type { RtaEdicionDeClienta } from "@/lib/api-tipos";
 
 /**
  * Las cuentas: entrar, salir, registrarse, recuperar la contraseña.
@@ -349,6 +351,203 @@ export async function crearClienta(ctx: Ctx) {
     // la clienta. Mandarla escrita la deja guardada para siempre en una casilla.
     ...(alta.avisoMail ? { avisoMail: alta.avisoMail } : {}),
   });
+}
+
+/**
+ * Editar una clienta desde el panel: sus datos y con qué entra.
+ *
+ * Vive acá, al lado de `crearClienta`, por lo mismo que ella: puede escribir una
+ * contraseña, y eso no se hace desde ningún otro archivo del servidor.
+ *
+ * ── SE CAMBIA SÓLO LO QUE VIAJA ───────────────────────────────────────────
+ *
+ * Cada campo es opcional y el que no viene no se toca. La pantalla manda nada
+ * más que lo que cambió, así que guardar un teléfono no puede pisar una nota
+ * que la clienta acaba de escribir desde «Mi cuenta» con la ficha abierta acá.
+ *
+ * ── QUIÉN PUEDE: QUIEN VE LA FICHA, MENOS LAS PROFESIONALES ───────────────
+ *
+ * El candado es el de la ruta —`editarClientas`, en clientas.routes.ts— y vale
+ * también para el mail y la contraseña. No piden ser la dueña, a diferencia de
+ * `updateEmployeeAccess`, y es a propósito (5/10/2026): quien usa el panel
+ * todos los días es la secretaria, y una clienta que llama porque no puede
+ * entrar no puede esperar a que aparezca una dueña.
+ *
+ * ⚠️ Lo que eso quiere decir, dicho sin vueltas: quien pasa ese candado puede
+ * entrar al sitio como cualquier clienta. Por eso la ruta deja afuera a las
+ * profesionales, y por eso el freno de acá abajo no es decorativo.
+ *
+ * ── 🔴 NO ALCANZA A NADIE QUE ENTRE AL PANEL ──────────────────────────────
+ *
+ * Ni a las dueñas, ni a las empleadas, ni a una cuenta de clienta que tenga
+ * una ficha de profesional atada o algún acceso tildado. Sin esto, la casilla
+ * «Gestionar turnos» alcanzaría para ponerle una contraseña nueva a la dueña y
+ * entrar como ella — y la regla de authz.service es que ningún permiso se
+ * amplía a sí mismo. La lista de Clientes esconde al equipo, así que llegar
+ * hasta acá con uno de esos ids es pedirlo a mano. Sus datos se cambian desde
+ * Accesos, que es sólo de la dueña.
+ *
+ * ── EL MAIL SE CAMBIA Y LISTO, SIN VOLVER A CONFIRMAR ─────────────────────
+ *
+ * Se aplica en el acto —no espera en `pending_email` como cuando lo pide la
+ * clienta—, porque acá el dedazo tiene arreglo: el centro lo corrige de nuevo
+ * desde esta misma pantalla. Y no le sale ningún enlace: la confirmación queda
+ * como estaba, a diferencia del alta, que nace sin confirmar. Se decidió así
+ * (5/10/2026) porque para la clienta era pedir un cambio por teléfono y
+ * recibir a cambio una tarea.
+ *
+ * Lo que se resigna es la prueba de que la casilla nueva es suya. Queda
+ * acotado porque esto NO le traspasa turnos de invitada —eso sigue pasando
+ * sólo en `verifyEmail` y `verifyEmailChange`, con el enlace abierto—; lo que
+ * sí hace una cuenta confirmada es recibir los que el centro corrija después
+ * con ese mail (ver `corregirInvitada`), que también los decide el centro.
+ *
+ * Y acá sí se dice que la dirección está tomada, por lo mismo que en
+ * `crearClienta`: del otro lado hay alguien que ya ve la lista entera.
+ *
+ * ── LA CONTRASEÑA ─────────────────────────────────────────────────────────
+ *
+ * La nueva anda y la vieja no, y nada más: la sesión que la clienta tenga
+ * abierta sigue viva, porque el token no guarda la contraseña. No viaja de
+ * vuelta ni sale por mail — se la dice el centro, como en el alta.
+ */
+export async function editarClienta(ctx: Ctx) {
+  const id = ctx.params["id"];
+  if (!id) return json({ error: "Falta la clienta." }, 400);
+
+  const emailPedido = normalizarMail(ctx.body["email"]);
+  const password = texto(ctx.body["password"]);
+
+  const cuenta = await prisma.users.findUnique({
+    where: { id },
+    select: {
+      email: true,
+      roles: { select: { role: true } },
+      permissions: { select: { permission: true }, take: 1 },
+      professional: { select: { id: true } },
+    },
+  });
+  if (!cuenta) return json({ error: "Esa clienta no existe." }, 404);
+
+  // «Todo lo que no sea client», como `idsDelEquipo`, más las dos formas de
+  // entrar al panel que no pasan por el rol.
+  const entraAlPanel =
+    cuenta.roles.some((r) => r.role !== "client") ||
+    cuenta.permissions.length > 0 ||
+    cuenta.professional !== null;
+  if (entraAlPanel) {
+    return json(
+      { error: "Esa cuenta es del equipo, no de una clienta. Se edita desde Accesos." },
+      422,
+    );
+  }
+
+  const cambios: Prisma.usersUpdateInput = {};
+
+  // ── La ficha ──────────────────────────────────────────────────────────────
+  const ficha: { full_name?: string; phone?: string | null; birth_date?: Date | null } = {};
+
+  if ("fullName" in ctx.body) {
+    const nombre = texto(ctx.body["fullName"]).trim();
+    if (!nombre) return json({ error: "Falta el nombre." }, 400);
+    ficha.full_name = nombre;
+  }
+
+  // Vacío lo borra: es cómo se saca un teléfono cargado por error.
+  if ("phone" in ctx.body) ficha.phone = texto(ctx.body["phone"]).trim() || null;
+
+  if ("birthDate" in ctx.body) {
+    const crudo = texto(ctx.body["birthDate"]).trim();
+    if (!crudo) {
+      ficha.birth_date = null;
+    } else {
+      // La columna es `date`: se guarda como medianoche UTC, que es como la
+      // leen `verClienta` y `miFicha`. La ida y vuelta por `toISOString`
+      // descarta un 31 de febrero, que `new Date` no siempre rechaza.
+      const fecha = new Date(crudo + "T00:00:00.000Z");
+      const seEntiende =
+        /^\d{4}-\d{2}-\d{2}$/.test(crudo) &&
+        !Number.isNaN(fecha.getTime()) &&
+        fecha.toISOString().slice(0, 10) === crudo;
+      if (!seEntiende || fecha.getTime() > Date.now()) {
+        return json({ error: "Esa fecha de cumpleaños no se entiende." }, 400);
+      }
+      ficha.birth_date = fecha;
+    }
+  }
+
+  if (Object.keys(ficha).length > 0) {
+    // `upsert` y no `update`, igual que en `updateEmployeeAccess`: una cuenta
+    // migrada de la base vieja puede no tener profile.
+    cambios.profile = { upsert: { create: ficha, update: ficha } };
+  }
+
+  // La nota clínica es la MISMA que la clienta escribe desde «Mi cuenta»: una
+  // sola fila en client_notes, sin una versión del centro aparte.
+  if ("notes" in ctx.body) {
+    const body = texto(ctx.body["notes"]).trim() || null;
+    cambios.client_note = { upsert: { create: { body }, update: { body } } };
+  }
+
+  // ── Con qué entra ─────────────────────────────────────────────────────────
+  // El mismo mail que ya tiene no es un cambio: sin esto, guardarlo tal cual
+  // chocaría contra su propia cuenta en el chequeo de "ya está tomado".
+  const emailNuevo = emailPedido && emailPedido !== cuenta.email ? emailPedido : null;
+
+  if (emailNuevo) {
+    if (!emailNuevo.includes("@")) return json({ error: "El mail no parece válido." }, 400);
+
+    const tomado = await prisma.users.findUnique({
+      where: { email: emailNuevo },
+      select: { id: true },
+    });
+    if (tomado) return json({ error: "Ese mail ya tiene cuenta. Buscala en la lista." }, 409);
+
+    cambios.email = emailNuevo;
+    // `email_verified_at` NO se toca: ver arriba. Lo que sí muere son los dos
+    // enlaces que hayan quedado sin abrir, porque los dos apuntan a una
+    // dirección que la cuenta dejó de tener: el de confirmar el alta, y el del
+    // cambio de mail que hubiera pedido ella — abierto después, ése pisaría la
+    // dirección que acaba de poner el centro.
+    cambios.verify_token = null;
+    cambios.verify_token_expiry = null;
+    cambios.pending_email = null;
+    cambios.email_change_token = null;
+    cambios.email_change_expiry = null;
+  }
+
+  if (password) {
+    if (password.length < MINIMO_CONTRASENA) {
+      return json(
+        { error: "La contraseña necesita al menos " + MINIMO_CONTRASENA + " caracteres." },
+        400,
+      );
+    }
+    cambios.password = await bcrypt.hash(password, RONDAS);
+  }
+
+  // Un enlace de «olvidé mi contraseña» que haya quedado sin usar deja de
+  // servir: salió a la casilla vieja, y si el mail se cambia justamente porque
+  // esa casilla se perdió, quien la tenga entraría a la cuenta con él.
+  if (emailNuevo || password) {
+    cambios.reset_token = null;
+    cambios.reset_token_expiry = null;
+  }
+
+  // Sin esto, un pedido vacío pasaría por todos los chequeos y contestaría que
+  // salió bien sin haber hecho nada.
+  if (Object.keys(cambios).length === 0) {
+    return json({ error: "No hay nada para cambiar." }, 400);
+  }
+
+  await prisma.users.update({ where: { id }, data: cambios });
+
+  // Se devuelve qué se tocó y NUNCA la contraseña.
+  return json({
+    ok: true,
+    emailCambiado: emailNuevo !== null,
+    claveCambiada: password !== "",
+  } satisfies RtaEdicionDeClienta);
 }
 
 export async function register(ctx: Ctx) {

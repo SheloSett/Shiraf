@@ -4,8 +4,9 @@ import { json, type Ctx, type Handler } from "@/server/http";
 import { accesoDe, exigirAlguno, exigirPermiso } from "@/server/services/authz.service";
 // El alta vive en auth.controller y no acá: es el único archivo que escribe
 // contraseñas, y tenerla junto a `login` es lo que deja ver que las dos puntas
-// usan el mismo bcrypt. Ver `crearCuentaDeClienta`.
-import { crearClienta } from "@/server/controllers/auth.controller";
+// usan el mismo bcrypt. Ver `crearCuentaDeClienta`. La edición va con ella por
+// lo mismo: también puede escribir una.
+import { crearClienta, editarClienta } from "@/server/controllers/auth.controller";
 import {
   borrarClienta,
   cancelarMiTurno,
@@ -60,6 +61,51 @@ const gestionarClientas: Handler = async (ctx: Ctx) => {
   return undefined;
 };
 
+/**
+ * Editar una clienta: quien ve la ficha, **menos las profesionales**.
+ *
+ * ── POR QUÉ LO MISMO QUE VER, Y NO LO DEL ALTA ────────────────────────────
+ *
+ * Quien usa el panel todos los días es la secretaria, que trabaja con
+ * «Gestionar turnos»: Accesos le muestra «Ver datos de clientas» tildado y
+ * bloqueado, pero en la base sólo queda guardado `appointments`. Pidiendo
+ * `clients_contact` a secas vería el botón y el guardado le volvería con un
+ * 403. Alcanza también para el mail y la contraseña (5/10/2026).
+ *
+ * ── 🔴 LAS PROFESIONALES NO, TENGAN LO QUE TENGAN TILDADO ────────────────
+ *
+ * Una cuenta con ficha de profesional atada no edita clientas, aunque tenga
+ * las dos casillas. Con este formulario se le pone mail y contraseña a una
+ * clienta —o sea, se entra al sitio como ella— y eso es de quien se encarga
+ * del panel: la profesional que lo necesite se lo pide a la secretaria.
+ *
+ * Va por la ficha y no por una casilla nueva a propósito, igual que la baja
+ * del 7/9/2026: si dependiera de acordarse de no tildarle algo, alcanzaría con
+ * darle «Gestionar turnos» para que cargue sus turnos y la regla dejaría de
+ * valer sin que nadie lo decidiera. La dueña pasa siempre, atienda o no.
+ *
+ * ⚠️ El límite: la regla reconoce a una profesional por la ficha ATADA a su
+ * cuenta (se ata desde Accesos). Una profesional que entre con una cuenta de
+ * empleada sin ficha atada es, para el sistema, una secretaria más.
+ *
+ * Tiene que decir lo mismo que `puedeEditar` en admin.clientes.tsx: si se
+ * separan, el botón aparece y el servidor lo rechaza.
+ */
+const editarClientas: Handler = async (ctx: Ctx) => {
+  if (!ctx.user) return json({ error: "No autorizado." }, 401);
+  const acceso = await accesoDe(ctx.user.id);
+  exigirAlguno(acceso, ["clients_contact", "appointments"]);
+  if (acceso.fichaProfesionalId !== null && !acceso.esAdmin) {
+    return json(
+      {
+        error: "Los datos de las clientas los cambia quien se encarga del panel. Pedíselo a ella.",
+      },
+      403,
+    );
+  }
+  return undefined;
+};
+
 // ── La lista del panel ──────────────────────────────────────────────────────
 clientasRouter.get("/clientas", authMiddleware, verClientas, listar);
 clientasRouter.post("/clientas", authMiddleware, gestionarClientas, crearClienta);
@@ -68,6 +114,10 @@ clientasRouter.get("/clientas/equipo", authMiddleware, verClientas, equipo);
 // declaran y gana la primera que matchea. Declarada antes, "/clientas/:id" se
 // comería a "equipo" y el panel pediría la ficha de una clienta con ese id.
 clientasRouter.get("/clientas/:id", authMiddleware, verClientas, verClienta);
+// Quién edita lo decide `editarClientas`, acá arriba. A QUIÉN se puede editar
+// —nunca a una cuenta que entre al panel— lo decide el controller. Ver
+// editarClienta.
+clientasRouter.put("/clientas/:id", authMiddleware, editarClientas, editarClienta);
 // ⚠️ Sin `verClientas`, y no es un olvido: el candado de esta ruta es `admin` y
 // está adentro del controller, igual que en las de Equipo y por el mismo motivo.
 // Poniéndole el middleware de arriba, cualquiera con `clients_contact` —o con

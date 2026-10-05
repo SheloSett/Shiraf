@@ -54,11 +54,11 @@ Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 
 ## Fichas de clientas — `profiles` (3)
 
-| ✔   | Policy               | Op     | Regla                                                              | Vigente en     | Dónde queda                                                                                                |
-| --- | -------------------- | ------ | ------------------------------------------------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------- |
-| ✅  | `read profiles`      | SELECT | `uid = id` **o** `clients_contact` **o** `appointments` ← ver nota | 20260813070000 | clientas.controller → listar (`clients_contact` o `appointments`) · turnos.controller → clientasParaElegir |
-| ✅  | `update profiles`    | UPDATE | `uid = id` **o** `clients_contact`                                 | 20260813070000 | clientas.controller → guardarMiFicha (sólo la propia)                                                      |
-| ✅  | `own profile insert` | INSERT | `uid = id`                                                         | 20260805164122 | auth.controller → register (crea profile y rol en la misma transacción)                                    |
+| ✔   | Policy               | Op     | Regla                                                              | Vigente en     | Dónde queda                                                                                                 |
+| --- | -------------------- | ------ | ------------------------------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------- |
+| ✅  | `read profiles`      | SELECT | `uid = id` **o** `clients_contact` **o** `appointments` ← ver nota | 20260813070000 | clientas.controller → listar (`clients_contact` o `appointments`) · turnos.controller → clientasParaElegir  |
+| ✅  | `update profiles`    | UPDATE | `uid = id` **o** `clients_contact`                                 | 20260813070000 | clientas.controller → guardarMiFicha (sólo la propia) · auth.controller → editarClienta (ver nota de abajo) |
+| ✅  | `own profile insert` | INSERT | `uid = id`                                                         | 20260805164122 | auth.controller → register (crea profile y rol en la misma transacción)                                     |
 
 > ### 🔴 El OR de `read profiles` no es un descuido
 >
@@ -87,6 +87,47 @@ Lo más sensible del sistema: una clienta tiene que ver **sólo** los suyos.
 > `/clientas` deja pasar a quien tiene `clients_contact` **o** `appointments`,
 > que es leer, no borrar cuentas con su historial.
 
+> ### Editar una clienta desde el panel (5/10/2026): quien ve la ficha, menos las profesionales
+>
+> `PUT /api/clientas/:id` es la mitad de `update profiles` que nunca se había
+> escrito: la policy dejaba editar la ficha a quien tuviera `clients_contact`,
+> pero el panel sólo sabía mostrarla. Se edita todo lo de la clienta: nombre,
+> teléfono, cumpleaños, nota clínica, **mail y contraseña**.
+>
+> **Quién puede** lo decide la ruta (`clientas.routes → editarClientas`), con
+> dos condiciones:
+>
+> 1. `clients_contact` **o** `appointments`, lo mismo que para leer la ficha y
+>    no el `clients_contact` a secas del alta. Quien usa el panel a diario es la
+>    secretaria, que trabaja con «Gestionar turnos» y en la base no tiene
+>    guardado el otro.
+> 2. **Que la cuenta no tenga una ficha de profesional atada**, tenga las
+>    casillas que tenga. La profesional que lo necesite se lo pide a la
+>    secretaria. La dueña pasa siempre, atienda o no.
+>
+> 🔴 **El mail y la contraseña no estaban entre las 39** (en Supabase eso era
+> la Admin API), y el criterio fail-closed del resto del archivo los habría
+> dejado en `exigirAdmin()`. Quedaron con el candado de arriba por decisión
+> expresa: la dueña casi no usa el panel. La consecuencia hay que tenerla
+> escrita: **quien pasa ese candado puede entrar al sitio como cualquier
+> clienta.** Por eso existe la condición 2, y por eso va por la ficha y no por
+> una casilla que haya que acordarse de no tildar.
+>
+> **A quién se puede editar** lo decide el controller (`auth.controller →
+editarClienta`): a ninguna cuenta que entre al panel —rol distinto de
+> `client`, ficha de profesional atada o algún acceso tildado—, ni siquiera
+> para el teléfono. Sin ese freno, «Gestionar turnos» alcanzaría para ponerle
+> una contraseña a la dueña: un permiso ampliándose a sí mismo. Ésas se editan
+> desde Accesos.
+>
+> El mail se aplica en el acto y **no** le saca la confirmación a la cuenta ni
+> manda enlace: si se escribió mal, se corrige desde la misma pantalla. No
+> traspasa turnos de invitada por sí solo.
+>
+> ⚠️ El límite de la condición 2: reconoce a una profesional por la ficha ATADA
+> a su cuenta. Una profesional que entre con una cuenta de empleada sin ficha
+> atada es, para el sistema, una secretaria más.
+
 ## Notas clínicas — `client_notes` (3)
 
 Alergias, embarazos, antecedentes. Tabla aparte de `profiles` justamente para
@@ -95,8 +136,8 @@ poder pedirle un permiso distinto.
 | ✔   | Policy                | Op     | Regla                                   | Vigente en     | Dónde queda                                                                                                        |
 | --- | --------------------- | ------ | --------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
 | ✅  | `read client notes`   | SELECT | `client_id = uid` **o** `clients_notes` | 20260814010000 | clientas.controller → listar (sólo si `clients_notes`) · agenda.service → miAgenda y miHistorial (sólo sus turnos) |
-| ✅  | `write client notes`  | INSERT | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                               |
-| ✅  | `update client notes` | UPDATE | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha                                                                               |
+| ✅  | `write client notes`  | INSERT | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha · auth.controller → editarClienta (ruta: `editarClientas`, ver nota arriba)   |
+| ✅  | `update client notes` | UPDATE | Ídem                                    | 20260814010000 | clientas.controller → guardarMiFicha · auth.controller → editarClienta (ruta: `editarClientas`, ver nota arriba)   |
 
 ## Reparto de accesos — `user_roles` (3) y `user_permissions` (3)
 
