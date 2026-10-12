@@ -818,7 +818,9 @@ export function buildWhatsappDownNotice(): AppointmentMessage {
       "",
       "Qué hacer:",
       "1. Fijate que el teléfono del chip esté prendido, cargado y con internet. Si estaba apagado, prendelo y esperá diez minutos: el sistema reintenta solo.",
-      "2. Si pasados esos diez minutos no llega otro mail diciendo que volvió, hay que vincular el chip de nuevo escaneando el QR, como la primera vez.",
+      // Decía: "2. Si pasados esos diez minutos no llega otro mail diciendo que volvió, hay que vincular el chip de nuevo escaneando el QR, como la primera vez."
+      // Desde el 11/10/2026 el QR está en el panel y lo escanea la dueña.
+      `2. Si pasados esos diez minutos sigue cortado, entrá al panel, en Configuración → WhatsApp de avisos (${CONTACT.siteUrl}/admin/configuracion/whatsapp), tocá «Vincular de nuevo» y escaneá el QR desde el teléfono del chip.`,
       "",
       "Los WhatsApp que no salieron mientras estuvo caído se pueden reenviar después, con el comando del VPS.",
     ],

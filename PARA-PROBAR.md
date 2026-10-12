@@ -83,6 +83,12 @@ banean el número. El porqué completo está en `evolution.service.ts` y en
   después del reinicio sigue cerrada manda UN mail al centro diciendo que hay
   que vincular el chip de nuevo. En el log: `docker logs shiraf-app 2>&1 |
   grep "\[whatsapp\]"`.
+  → **11/10/2026:** la dueña se queda con el chip y lo reconecta ella.
+  Pantalla nueva en el panel, **Configuración → WhatsApp de avisos**: estado
+  en vivo, «Reconectar» (reinicia la instancia, sin QR) y «Vincular de nuevo»
+  (el QR en pantalla, renovado cada 20 segundos, se esconde solo al conectar).
+  Reemplaza a los `curl` de la terminal. Sólo la dueña: ese QR vincula el
+  número a quien lo escanee.
 
 ### 🔴 Lo que salió mal al encenderlo
 

@@ -199,6 +199,14 @@ export default {
         if (respuesta) return respuesta;
       }
 
+      // La conexión del chip de WhatsApp, para que la dueña la reconecte sola
+      // desde el panel (11/10/2026).
+      if (pathname.startsWith("/api/whatsapp")) {
+        const { whatsappRouter } = await import("./server/routes/whatsapp.routes");
+        const respuesta = await whatsappRouter.handle(request);
+        if (respuesta) return respuesta;
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

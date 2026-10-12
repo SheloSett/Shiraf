@@ -1091,3 +1091,23 @@ export type RtaTurnosDelEnlace = {
   turnos: MiTurno[];
   pendientes: SesionPendiente[];
 };
+
+// ── La conexión del chip de WhatsApp (11/10/2026) ───────────────────────────
+
+/** `GET /api/whatsapp/estado`. */
+export type RtaWhatsappEstado = {
+  /** Por dónde salen los WhatsApp. `null` = apagado, sólo mail. */
+  transporte: "evolution" | "meta" | null;
+  /** El estado de la sesión del chip. `null` si Evolution no contesta o no aplica. */
+  estado: "open" | "close" | "connecting" | null;
+  instancia: string | null;
+};
+
+/** `GET /api/whatsapp/qr`. Con `estado: "open"` no hay código: ya está vinculado. */
+export type RtaWhatsappQr = {
+  estado: "open" | "close" | "connecting" | null;
+  /** La imagen del QR, lista para un `<img src>`. */
+  base64: string | null;
+  /** El código de 8 caracteres para «Vincular con el número», si Evolution lo dio. */
+  pairingCode: string | null;
+};

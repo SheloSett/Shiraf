@@ -258,3 +258,89 @@ export async function reiniciarEvolution(): Promise<Envio> {
     };
   }
 }
+
+// ── Vincular de nuevo, desde el panel (11/10/2026) ──────────────────────────
+//
+// Los dos endpoints que faltaban para que la dueña reconecte el chip sola,
+// sin terminal: pedir el QR y cerrar la sesión. Los usa
+// `whatsapp.controller.ts`, que es el único que los llama.
+//
+//   GET    /instance/connect/<instancia>  → { pairingCode, code, base64, count }
+//   DELETE /instance/logout/<instancia>
+
+/** El nombre de la instancia, para mostrarlo. `null` si no está configurado. */
+export function nombreDeLaInstancia(): string | null {
+  return variable("EVOLUTION_INSTANCIA") ?? null;
+}
+
+export type CodigoDeVinculacion =
+  { ok: true; base64: string | null; pairingCode: string | null } | { ok: false; motivo: string };
+
+/**
+ * Pide un QR nuevo para vincular el chip. `base64` es una imagen lista para un
+ * `<img src>`. Viene `null` cuando Evolution no lo generó —sesión vieja
+ * colgada, o ya conectado—; quien llama decide si reinicia y vuelve a pedir.
+ */
+export async function qrDeEvolution(): Promise<CodigoDeVinculacion> {
+  const url = variable("EVOLUTION_URL");
+  const apiKey = variable("EVOLUTION_API_KEY");
+  const instancia = variable("EVOLUTION_INSTANCIA");
+  if (!url || !apiKey || !instancia) {
+    return { ok: false, motivo: "El envío por Evolution todavía no está configurado." };
+  }
+
+  try {
+    const respuesta = await fetch(
+      `${url.replace(/\/+$/, "")}/instance/connect/${encodeURIComponent(instancia)}`,
+      { headers: { apikey: apiKey }, signal: AbortSignal.timeout(30_000) },
+    );
+    if (!respuesta.ok) {
+      const detalle = await respuesta.text().catch(() => "");
+      return {
+        ok: false,
+        motivo: `Evolution respondió ${respuesta.status}: ${detalle.slice(0, 300)}`,
+      };
+    }
+    const cuerpo = (await respuesta.json()) as { base64?: unknown; pairingCode?: unknown };
+    return {
+      ok: true,
+      base64: typeof cuerpo.base64 === "string" && cuerpo.base64 !== "" ? cuerpo.base64 : null,
+      pairingCode: typeof cuerpo.pairingCode === "string" ? cuerpo.pairingCode : null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      motivo: error instanceof Error ? `No se pudo llamar a Evolution: ${error.message}` : "Falló.",
+    };
+  }
+}
+
+/** Cierra la sesión del chip. Después de esto hace falta escanear el QR. */
+export async function desvincularEvolution(): Promise<Envio> {
+  const url = variable("EVOLUTION_URL");
+  const apiKey = variable("EVOLUTION_API_KEY");
+  const instancia = variable("EVOLUTION_INSTANCIA");
+  if (!url || !apiKey || !instancia) {
+    return { ok: false, motivo: "El envío por Evolution todavía no está configurado." };
+  }
+
+  try {
+    const respuesta = await fetch(
+      `${url.replace(/\/+$/, "")}/instance/logout/${encodeURIComponent(instancia)}`,
+      { method: "DELETE", headers: { apikey: apiKey }, signal: AbortSignal.timeout(30_000) },
+    );
+    if (!respuesta.ok) {
+      const detalle = await respuesta.text().catch(() => "");
+      return {
+        ok: false,
+        motivo: `Evolution respondió ${respuesta.status}: ${detalle.slice(0, 300)}`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      motivo: error instanceof Error ? `No se pudo llamar a Evolution: ${error.message}` : "Falló.",
+    };
+  }
+}

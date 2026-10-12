@@ -39,8 +39,10 @@ function Configuracion() {
       </div>
 
       <p className="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-        Lo que el centro decide una vez y vale para todo: qué días no se abre, qué dice el sitio.
-        Por ahora estas dos; lo que siga va a ir entrando acá.
+        {/* Decía «Por ahora estas dos; lo que siga va a ir entrando acá.» —
+            entró la tercera el 11/10/2026 y la cuenta dejó de servir. */}
+        Lo que el centro decide una vez y vale para todo: qué días no se abre, qué dice el sitio, y
+        el WhatsApp por el que salen los avisos.
       </p>
 
       {secciones.length === 0 ? (

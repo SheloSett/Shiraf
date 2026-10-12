@@ -42,6 +42,7 @@ import { Route as AuthenticatedAdminTurnosRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminConfiguracionIndexRouteImport } from './routes/_authenticated/admin.configuracion.index'
 import { Route as AuthenticatedAdminConfiguracionContenidoRouteImport } from './routes/_authenticated/admin.configuracion.contenido'
 import { Route as AuthenticatedAdminConfiguracionDiasCerradosRouteImport } from './routes/_authenticated/admin.configuracion.dias-cerrados'
+import { Route as AuthenticatedAdminConfiguracionWhatsappRouteImport } from './routes/_authenticated/admin.configuracion.whatsapp'
 import { Route as AuthenticatedAdminTurnosIdRouteImport } from './routes/_authenticated/admin.turnos_.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -225,6 +226,12 @@ const AuthenticatedAdminConfiguracionDiasCerradosRoute =
     path: '/configuracion/dias-cerrados',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminConfiguracionWhatsappRoute =
+  AuthenticatedAdminConfiguracionWhatsappRouteImport.update({
+    id: '/configuracion/whatsapp',
+    path: '/configuracion/whatsapp',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminTurnosIdRoute =
   AuthenticatedAdminTurnosIdRouteImport.update({
     id: '/turnos_/$id',
@@ -264,6 +271,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/configuracion/contenido': typeof AuthenticatedAdminConfiguracionContenidoRoute
   '/admin/configuracion/dias-cerrados': typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
+  '/admin/configuracion/whatsapp': typeof AuthenticatedAdminConfiguracionWhatsappRoute
   '/admin/turnos/$id': typeof AuthenticatedAdminTurnosIdRoute
   '/admin/configuracion/': typeof AuthenticatedAdminConfiguracionIndexRoute
 }
@@ -297,6 +305,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/configuracion/contenido': typeof AuthenticatedAdminConfiguracionContenidoRoute
   '/admin/configuracion/dias-cerrados': typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
+  '/admin/configuracion/whatsapp': typeof AuthenticatedAdminConfiguracionWhatsappRoute
   '/admin/turnos/$id': typeof AuthenticatedAdminTurnosIdRoute
   '/admin/configuracion': typeof AuthenticatedAdminConfiguracionIndexRoute
 }
@@ -334,6 +343,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/configuracion/contenido': typeof AuthenticatedAdminConfiguracionContenidoRoute
   '/_authenticated/admin/configuracion/dias-cerrados': typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
+  '/_authenticated/admin/configuracion/whatsapp': typeof AuthenticatedAdminConfiguracionWhatsappRoute
   '/_authenticated/admin/turnos_/$id': typeof AuthenticatedAdminTurnosIdRoute
   '/_authenticated/admin/configuracion/': typeof AuthenticatedAdminConfiguracionIndexRoute
 }
@@ -371,6 +381,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/admin/configuracion/contenido'
     | '/admin/configuracion/dias-cerrados'
+    | '/admin/configuracion/whatsapp'
     | '/admin/turnos/$id'
     | '/admin/configuracion/'
   fileRoutesByTo: FileRoutesByTo
@@ -404,6 +415,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/admin/configuracion/contenido'
     | '/admin/configuracion/dias-cerrados'
+    | '/admin/configuracion/whatsapp'
     | '/admin/turnos/$id'
     | '/admin/configuracion'
   id:
@@ -440,6 +452,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/'
     | '/_authenticated/admin/configuracion/contenido'
     | '/_authenticated/admin/configuracion/dias-cerrados'
+    | '/_authenticated/admin/configuracion/whatsapp'
     | '/_authenticated/admin/turnos_/$id'
     | '/_authenticated/admin/configuracion/'
   fileRoutesById: FileRoutesById
@@ -691,6 +704,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminConfiguracionDiasCerradosRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/configuracion/whatsapp': {
+      id: '/_authenticated/admin/configuracion/whatsapp'
+      path: '/configuracion/whatsapp'
+      fullPath: '/admin/configuracion/whatsapp'
+      preLoaderRoute: typeof AuthenticatedAdminConfiguracionWhatsappRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/turnos_/$id': {
       id: '/_authenticated/admin/turnos_/$id'
       path: '/turnos/$id'
@@ -719,6 +739,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedAdminConfiguracionContenidoRoute: typeof AuthenticatedAdminConfiguracionContenidoRoute
   AuthenticatedAdminConfiguracionDiasCerradosRoute: typeof AuthenticatedAdminConfiguracionDiasCerradosRoute
+  AuthenticatedAdminConfiguracionWhatsappRoute: typeof AuthenticatedAdminConfiguracionWhatsappRoute
   AuthenticatedAdminTurnosIdRoute: typeof AuthenticatedAdminTurnosIdRoute
   AuthenticatedAdminConfiguracionIndexRoute: typeof AuthenticatedAdminConfiguracionIndexRoute
 }
@@ -745,6 +766,8 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
     AuthenticatedAdminConfiguracionContenidoRoute,
   AuthenticatedAdminConfiguracionDiasCerradosRoute:
     AuthenticatedAdminConfiguracionDiasCerradosRoute,
+  AuthenticatedAdminConfiguracionWhatsappRoute:
+    AuthenticatedAdminConfiguracionWhatsappRoute,
   AuthenticatedAdminTurnosIdRoute: AuthenticatedAdminTurnosIdRoute,
   AuthenticatedAdminConfiguracionIndexRoute:
     AuthenticatedAdminConfiguracionIndexRoute,

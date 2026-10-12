@@ -1,4 +1,5 @@
-import { CalendarOff, FileText, type LucideIcon } from "lucide-react";
+// import { CalendarOff, FileText, type LucideIcon } from "lucide-react"; ← + MessageCircle (11/10/2026)
+import { CalendarOff, FileText, MessageCircle, type LucideIcon } from "lucide-react";
 import type { AccessRequirement } from "@/lib/permissions";
 
 /**
@@ -45,6 +46,16 @@ export const SECCIONES_DE_CONFIGURACION = [
     access: "admin",
     descripcion:
       "Los textos y las fotos del sitio público: lo que dice la portada, la página de tratamientos y los datos del centro.",
+  },
+  {
+    // 11/10/2026: el chip lo maneja la dueña, y reconectarlo también. Antes
+    // era terminal del VPS y desarrollador; el porqué en whatsapp.controller.ts.
+    to: "/admin/configuracion/whatsapp",
+    label: "WhatsApp de avisos",
+    icon: MessageCircle,
+    access: "admin",
+    descripcion:
+      "Si el chip de avisos está conectado, y cómo volver a conectarlo cuando se corta: un botón para reintentar y el QR para escanear desde el teléfono.",
   },
 ] as const satisfies readonly {
   to: string;
